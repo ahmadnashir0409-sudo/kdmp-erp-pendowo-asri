@@ -1,4 +1,22 @@
 
+// ==========================================
+// KDMP ERP PENDOWO ASRI
+// SUPABASE CONFIGURATION
+// ==========================================
+
+const SUPABASE_URL = "https://srfhamdyewblyuangxzz.supabase.co/rest/v1/";
+const SUPABASE_KEY = "sb_publishable_GBr3oKysuufZHQ4Ol-1J0Q_QJWabH1q";
+
+// Membuat koneksi Supabase
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+// ==========================================
+// MODULES
+// ==========================================
+
 const modules = {
   keuangan: [
     "💰",
@@ -72,6 +90,10 @@ const modules = {
   ]
 };
 
+// ==========================================
+// NAVIGATION
+// ==========================================
+
 function showPage(page, button) {
   document.querySelectorAll(".page").forEach(element => {
     element.style.display = "none";
@@ -114,7 +136,16 @@ function showPage(page, button) {
   window.scrollTo(0, 0);
 }
 
+// ==========================================
+// MOBILE SIDEBAR
+// ==========================================
+
 function toggleSidebar() {
   document.getElementById("sidebar").classList.toggle("open");
 }
 
+// ==========================================
+// SUPABASE STATUS
+// ==========================================
+
+console.log("KDMP ERP: Supabase client berhasil dibuat.");
