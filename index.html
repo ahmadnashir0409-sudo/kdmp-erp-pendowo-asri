@@ -10,12 +10,9 @@
 </head>
 
 <body>
-
 <div class="layout">
 
-  <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
-
     <div class="brand">
       <div class="brand-logo">KD</div>
       <div>
@@ -25,83 +22,35 @@
     </div>
 
     <div class="menu-title">MENU UTAMA</div>
-
     <nav class="menu">
-
       <button class="active" onclick="showPage('dashboard', this)">
         <span class="menu-icon">▦</span> Dashboard
       </button>
 
       <div class="menu-title">AKUNTANSI</div>
-
-      <button onclick="showPage('keuangan', this)">
-        <span class="menu-icon">💰</span> Pencatatan Keuangan
-      </button>
-
-      <button onclick="showPage('coa', this)">
-        <span class="menu-icon">📚</span> Chart of Accounts
-      </button>
-
-      <button onclick="showPage('jurnal', this)">
-        <span class="menu-icon">📖</span> Jurnal Umum
-      </button>
-
-      <button onclick="showPage('buku-besar', this)">
-        <span class="menu-icon">📒</span> Buku Besar
-      </button>
-
-      <button onclick="showPage('laporan', this)">
-        <span class="menu-icon">📊</span> Laporan Keuangan
-      </button>
-
-      <button onclick="showPage('utang-piutang', this)">
-        <span class="menu-icon">💳</span> Utang & Piutang
-      </button>
-
-      <button onclick="showPage('bank', this)">
-        <span class="menu-icon">🏦</span> Rekonsiliasi Bank
-      </button>
-
-      <button onclick="showPage('invoice', this)">
-        <span class="menu-icon">🧾</span> Invoice
-      </button>
+      <button onclick="showPage('keuangan', this)"><span class="menu-icon">💰</span> Pencatatan Keuangan</button>
+      <button onclick="showPage('coa', this)"><span class="menu-icon">📚</span> Chart of Accounts</button>
+      <button onclick="showPage('jurnal', this)"><span class="menu-icon">📖</span> Jurnal Umum</button>
+      <button onclick="showPage('buku-besar', this)"><span class="menu-icon">📒</span> Buku Besar</button>
+      <button onclick="showPage('laporan', this)"><span class="menu-icon">📊</span> Laporan Keuangan</button>
+      <button onclick="showPage('utang-piutang', this)"><span class="menu-icon">💳</span> Utang & Piutang</button>
+      <button onclick="showPage('bank', this)"><span class="menu-icon">🏦</span> Rekonsiliasi Bank</button>
+      <button onclick="showPage('invoice', this)"><span class="menu-icon">🧾</span> Invoice</button>
 
       <div class="menu-title">OPERASIONAL KOPERASI</div>
-
-      <button onclick="showPage('toko', this)">
-        <span class="menu-icon">🛒</span> Transaksi Toko
-      </button>
-
-      <button onclick="showPage('simpanan', this)">
-        <span class="menu-icon">👥</span> Simpanan & Pinjaman
-      </button>
-
-      <button onclick="showPage('persediaan', this)">
-        <span class="menu-icon">📦</span> Persediaan Barang
-      </button>
+      <button onclick="showPage('toko', this)"><span class="menu-icon">🛒</span> Transaksi Toko</button>
+      <button onclick="showPage('simpanan', this)"><span class="menu-icon">👥</span> Simpanan & Pinjaman</button>
+      <button onclick="showPage('persediaan', this)"><span class="menu-icon">📦</span> Persediaan Barang</button>
 
       <div class="menu-title">MANAJEMEN</div>
-
-      <button onclick="showPage('bulanan', this)">
-        <span class="menu-icon">📅</span> Laporan Bulanan
-      </button>
-
-      <button onclick="showPage('monitoring', this)">
-        <span class="menu-icon">🛡️</span> Monitoring Manajer
-      </button>
-
-      <button onclick="showPage('pengaturan', this)">
-        <span class="menu-icon">⚙️</span> Pengaturan
-      </button>
-
+      <button onclick="showPage('bulanan', this)"><span class="menu-icon">📅</span> Laporan Bulanan</button>
+      <button onclick="showPage('monitoring', this)"><span class="menu-icon">🛡️</span> Monitoring Manajer</button>
+      <button onclick="showPage('pengaturan', this)"><span class="menu-icon">⚙️</span> Pengaturan</button>
     </nav>
   </aside>
 
-  <!-- MAIN -->
   <main class="main">
-
     <header class="topbar">
-
       <div class="topbar-left">
         <button class="mobile-menu" onclick="toggleSidebar()">☰</button>
         <div>
@@ -109,36 +58,28 @@
           <p>KDMP Pendowo Asri</p>
         </div>
       </div>
-
       <div class="top-actions">
         <div class="avatar">M</div>
-        <div class="user-info">
-          Manajer
-          <small>Administrator</small>
-        </div>
+        <div class="user-info">Manajer<small>Administrator</small></div>
       </div>
-
     </header>
 
     <div class="content">
 
-      <!-- DASHBOARD -->
       <section id="dashboard" class="page">
-
         <div class="welcome">
           <h1>Selamat Datang di KDMP ERP 👋</h1>
           <p>Sistem manajemen dan akuntansi Koperasi Desa Merah Putih Pendowo Asri.</p>
         </div>
 
         <div class="stats">
-
           <div class="stat-card">
             <div class="stat-head">
               <span class="stat-label">Total Pemasukan</span>
               <div class="stat-icon green-bg">↗</div>
             </div>
-            <h3>Rp 0</h3>
-            <div class="stat-note positive">Menunggu data transaksi</div>
+            <h3 id="dashboardIncome">Rp 0</h3>
+            <div class="stat-note positive">Total pemasukan tercatat</div>
           </div>
 
           <div class="stat-card">
@@ -146,8 +87,8 @@
               <span class="stat-label">Total Pengeluaran</span>
               <div class="stat-icon red-bg">↘</div>
             </div>
-            <h3>Rp 0</h3>
-            <div class="stat-note negative">Menunggu data transaksi</div>
+            <h3 id="dashboardExpense">Rp 0</h3>
+            <div class="stat-note negative">Total pengeluaran tercatat</div>
           </div>
 
           <div class="stat-card">
@@ -155,8 +96,8 @@
               <span class="stat-label">Saldo Kas & Bank</span>
               <div class="stat-icon blue-bg">🏦</div>
             </div>
-            <h3>Rp 0</h3>
-            <div class="stat-note">Saldo tercatat</div>
+            <h3 id="dashboardCash">Rp 0</h3>
+            <div class="stat-note">Saldo dari jurnal terposting</div>
           </div>
 
           <div class="stat-card">
@@ -164,122 +105,88 @@
               <span class="stat-label">Total Transaksi</span>
               <div class="stat-icon orange-bg">📋</div>
             </div>
-            <h3>0</h3>
-            <div class="stat-note">Transaksi tercatat</div>
+            <h3 id="dashboardTransactionCount">0</h3>
+            <div class="stat-note">Transaksi keuangan tercatat</div>
           </div>
-
         </div>
 
         <div class="panels">
-
-          <!-- CHART -->
           <div class="panel">
-
             <div class="panel-header">
               <div>
                 <h3>Ringkasan Keuangan</h3>
                 <p>Visualisasi pemasukan dan pengeluaran</p>
               </div>
-              <select class="period">
-                <option>Bulan ini</option>
-                <option>3 Bulan</option>
-                <option>6 Bulan</option>
-                <option>1 Tahun</option>
+              <select class="period" id="dashboardPeriod">
+                <option value="1">Bulan ini</option>
+                <option value="3">3 Bulan</option>
+                <option value="6">6 Bulan</option>
+                <option value="12">1 Tahun</option>
               </select>
             </div>
 
-            <div class="chart">
-
+            <div class="chart" id="dashboardChart">
               <div class="chart-group">
                 <div class="bar income" style="height:0%"></div>
                 <div class="bar expense" style="height:0%"></div>
                 <span class="chart-label">Jan</span>
               </div>
-
               <div class="chart-group">
                 <div class="bar income" style="height:0%"></div>
                 <div class="bar expense" style="height:0%"></div>
                 <span class="chart-label">Feb</span>
               </div>
-
               <div class="chart-group">
                 <div class="bar income" style="height:0%"></div>
                 <div class="bar expense" style="height:0%"></div>
                 <span class="chart-label">Mar</span>
               </div>
-
               <div class="chart-group">
                 <div class="bar income" style="height:0%"></div>
                 <div class="bar expense" style="height:0%"></div>
                 <span class="chart-label">Apr</span>
               </div>
-
               <div class="chart-group">
                 <div class="bar income" style="height:0%"></div>
                 <div class="bar expense" style="height:0%"></div>
                 <span class="chart-label">Mei</span>
               </div>
-
               <div class="chart-group">
                 <div class="bar income" style="height:0%"></div>
                 <div class="bar expense" style="height:0%"></div>
                 <span class="chart-label">Jun</span>
               </div>
-
             </div>
 
             <div class="legend">
               <span><i class="dot" style="background:#b91c2c"></i>Pemasukan</span>
               <span><i class="dot" style="background:#f2a3aa"></i>Pengeluaran</span>
             </div>
-
           </div>
 
-          <!-- QUICK ACCESS -->
           <div class="panel">
-
             <div class="panel-header">
               <div>
                 <h3>Akses Cepat</h3>
                 <p>Pilih aktivitas yang ingin dilakukan</p>
               </div>
             </div>
-
             <div class="quick-menu">
-
-              <button onclick="showPage('keuangan')">
-                <span>💰</span>Catat Keuangan
-              </button>
-
-              <button onclick="showPage('jurnal')">
-                <span>📖</span>Jurnal Umum
-              </button>
-
-              <button onclick="showPage('invoice')">
-                <span>🧾</span>Buat Invoice
-              </button>
-
-              <button onclick="showPage('toko')">
-                <span>🛒</span>Transaksi Toko
-              </button>
-
+              <button onclick="showPage('keuangan')"><span>💰</span>Catat Keuangan</button>
+              <button onclick="showPage('jurnal')"><span>📖</span>Jurnal Umum</button>
+              <button onclick="showPage('invoice')"><span>🧾</span>Buat Invoice</button>
+              <button onclick="showPage('toko')"><span>🛒</span>Transaksi Toko</button>
             </div>
-
           </div>
-
         </div>
 
-        <!-- TRANSACTIONS -->
         <div class="panel">
-
           <div class="panel-header">
             <div>
               <h3>Transaksi Terbaru</h3>
               <p>Daftar transaksi keuangan koperasi</p>
             </div>
-            <button class="period" onclick="showPage('keuangan')">
-              Lihat Semua
-            </button>
+            <button class="period" onclick="showPage('keuangan')">Lihat Semua</button>
           </div>
 
           <div class="table-wrap">
@@ -293,35 +200,26 @@
                   <th>STATUS</th>
                 </tr>
               </thead>
-
-              <tbody>
+              <tbody id="dashboardRecentTransactions">
                 <tr>
                   <td colspan="5" style="text-align:center;color:#999;padding:30px">
-                    Belum ada transaksi. Data akan muncul setelah modul keuangan aktif.
+                    Memuat transaksi...
                   </td>
                 </tr>
               </tbody>
-
             </table>
           </div>
-
         </div>
-
       </section>
 
-      <!-- MODULE PAGES -->
       <section id="modulePage" class="page module-page">
-
         <div class="panel">
           <div class="empty-state">
             <div class="big-icon" id="moduleIcon">📚</div>
             <h3 id="moduleName">Modul</h3>
-            <p id="moduleDescription">
-              Modul ini sedang dalam tahap pembangunan.
-            </p>
+            <p id="moduleDescription">Modul ini sedang dalam tahap pembangunan.</p>
           </div>
         </div>
-
       </section>
 
     </div>
@@ -329,18 +227,10 @@
     <footer>
       © 2026 KDMP Pendowo Asri | ERP & Financial Management System
     </footer>
-
   </main>
-
 </div>
 
-
-<!-- SUPABASE LIBRARY -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-
-<!-- APPLICATION JAVASCRIPT -->
 <script src="app.js"></script>
-
-
 </body>
 </html>
