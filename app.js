@@ -1665,3 +1665,562 @@ async function checkLoginSession() {
   if(data.session)await loadUserProfile(data.session.user);
 }
 checkLoginSession();
+
+// =============================================
+// MODUL INVOICE KDMP PENDOWO ASRI
+// =============================================
+
+let invoiceRows = [];
+
+const invoiceStyle = document.createElement("style");
+invoiceStyle.textContent = `
+.invoice-wrap{display:grid;gap:18px}
+.invoice-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.invoice-stat{background:#fff;border:1px solid #eee;border-radius:12px;padding:17px}
+.invoice-stat small{display:block;color:#777;margin-bottom:8px}
+.invoice-stat strong{font-size:20px;color:#222}
+.invoice-panel{background:#fff;border:1px solid #eee;border-radius:12px;padding:20px}
+.invoice-panel h3{margin-top:0}
+.invoice-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.invoice-form-grid .full{grid-column:1/-1}
+.invoice-panel input,.invoice-panel textarea,.invoice-panel select{
+ box-sizing:border-box;width:100%;padding:11px;border:1px solid #ddd;
+ border-radius:7px;font:inherit;background:white
+}
+.invoice-panel label{display:block;font-size:13px;font-weight:bold;color:#555;margin-bottom:7px}
+.invoice-items{width:100%;border-collapse:collapse;min-width:650px}
+.invoice-items th,.invoice-items td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+.invoice-items input{min-width:80px}
+.invoice-total{text-align:right;margin-top:16px;font-weight:bold;font-size:18px}
+.invoice-action{border:0;border-radius:7px;padding:9px 13px;cursor:pointer;font-weight:bold}
+.invoice-primary{background:#a71925;color:#fff}
+.invoice-secondary{background:#f1f1f1;color:#444}
+.invoice-danger{background:#fee;color:#a71925}
+.invoice-status{padding:5px 9px;border-radius:20px;background:#f1f1f1;font-size:11px}
+.invoice-status.paid{background:#e8f7ed;color:#18743b}
+.invoice-status.sent{background:#eaf2ff;color:#2860a8}
+.invoice-status.overdue{background:#fee;color:#a71925}
+.invoice-message{font-size:13px;margin-top:12px}
+@media(max-width:650px){
+ .invoice-summary{grid-template-columns:1fr}
+ .invoice-form-grid{grid-template-columns:1fr}
+ .invoice-form-grid .full{grid-column:auto}
+ .invoice-panel{padding:14px}
+}
+@media print{
+ body *{visibility:hidden!important}
+ #invoicePrintArea,#invoicePrintArea *{visibility:visible!important}
+ #invoicePrintArea{position:absolute;left:0;top:0;width:100%;padding:25px}
+ .no-print{display:none!important}
+}
+`;
+document.head.appendChild(invoiceStyle);
+
+function setupInvoice() {
+ const page=document.getElementById("modulePage");
+ if(!page)return;
+
+ let section=document.getElementById("invoiceContent");
+ if(section)return;
+
+ section=document.createElement("section");
+ section.id="invoiceContent";
+ section.className="erp-content invoice-wrap";
+
+ section.innerHTML=`
+  <div class="invoice-summary">
+   <div class="invoice-stat">
+    <small>Total Invoice</small>
+    <strong id="invoiceCount">0</strong>
+   </div>
+   <div class="invoice-stat">
+    <small>Total Tagihan</small>
+    <strong id="invoiceTotal">Rp0</strong>
+   </div>
+   <div class="invoice-stat">
+    <small>Belum Dibayar</small>
+    <strong id="invoiceUnpaid">Rp0</strong>
+   </div>
+  </div>
+
+  <div class="invoice-panel">
+   <div class="erp-toolbar">
+    <div>
+     <h3>🧾 Daftar Invoice</h3>
+     <div class="erp-muted">Kelola faktur dan tagihan pelanggan KDMP.</div>
+    </div>
+    <button class="invoice-action invoice-primary" id="invoiceNewButton">
+     + Buat Invoice
+    </button>
+   </div>
+   <div id="invoiceMessage" class="invoice-message"></div>
+  </div>
+
+  <div class="invoice-panel" id="invoiceFormPanel" style="display:none">
+   <h3>Buat Invoice Baru</h3>
+
+   <form id="invoiceForm">
+    <div class="invoice-form-grid">
+     <div>
+      <label>Nama Pelanggan</label>
+      <input id="invCustomer" required maxlength="150" placeholder="Nama pelanggan">
+     </div>
+     <div>
+      <label>Nomor Telepon</label>
+      <input id="invPhone" placeholder="08xxxxxxxxxx">
+     </div>
+     <div>
+      <label>Email</label>
+      <input id="invEmail" type="email" placeholder="Email pelanggan">
+     </div>
+     <div>
+      <label>Tanggal Invoice</label>
+      <input id="invDate" type="date" required>
+     </div>
+     <div>
+      <label>Jatuh Tempo</label>
+      <input id="invDueDate" type="date">
+     </div>
+     <div class="full">
+      <label>Alamat Pelanggan</label>
+      <textarea id="invAddress" rows="2" placeholder="Alamat pelanggan"></textarea>
+     </div>
+    </div>
+
+    <h3 style="margin-top:25px">Rincian Barang / Jasa</h3>
+    <div style="overflow-x:auto">
+     <table class="invoice-items">
+      <thead>
+       <tr>
+        <th>Nama Barang / Jasa</th>
+        <th>Jumlah</th>
+        <th>Satuan</th>
+        <th>Harga</th>
+        <th>Total</th>
+        <th></th>
+       </tr>
+      </thead>
+      <tbody id="invoiceItemRows"></tbody>
+     </table>
+    </div>
+
+    <button type="button" class="invoice-action invoice-secondary"
+      id="invoiceAddItem" style="margin-top:12px">
+      + Tambah Barang
+    </button>
+
+    <div class="invoice-form-grid" style="margin-top:20px">
+     <div>
+      <label>Diskon (Rp)</label>
+      <input id="invDiscount" type="number" min="0" value="0">
+     </div>
+     <div>
+      <label>Pajak (Rp)</label>
+      <input id="invTax" type="number" min="0" value="0">
+     </div>
+     <div class="full">
+      <label>Catatan</label>
+      <textarea id="invNotes" rows="2" placeholder="Catatan tambahan"></textarea>
+     </div>
+    </div>
+
+    <div class="invoice-total">
+     Total: <span id="invoiceGrandTotal">Rp0</span>
+    </div>
+
+    <div id="invoiceFormMessage" class="invoice-message"></div>
+
+    <div class="erp-actions">
+     <button type="submit" class="invoice-action invoice-primary" id="invoiceSaveButton">
+      Simpan Invoice
+     </button>
+     <button type="button" class="invoice-action invoice-secondary" id="invoiceCancelButton">
+      Batal
+     </button>
+    </div>
+   </form>
+  </div>
+
+  <div class="invoice-panel">
+   <h3>Riwayat Invoice</h3>
+   <div style="overflow-x:auto">
+    <table class="erp-table">
+     <thead>
+      <tr>
+       <th>Nomor Invoice</th>
+       <th>Tanggal</th>
+       <th>Pelanggan</th>
+       <th>Total</th>
+       <th>Status</th>
+       <th>Aksi</th>
+      </tr>
+     </thead>
+     <tbody id="invoiceHistoryBody">
+      <tr><td colspan="6">Memuat invoice...</td></tr>
+     </tbody>
+    </table>
+   </div>
+  </div>
+
+  <div id="invoiceDetailPanel" class="invoice-panel" style="display:none"></div>
+ `;
+
+ page.appendChild(section);
+
+ document.getElementById("invoiceNewButton").addEventListener("click",openInvoiceForm);
+ document.getElementById("invoiceAddItem").addEventListener("click",addInvoiceItem);
+ document.getElementById("invoiceCancelButton").addEventListener("click",closeInvoiceForm);
+ document.getElementById("invoiceForm").addEventListener("submit",saveInvoice);
+ document.getElementById("invDiscount").addEventListener("input",updateInvoiceTotal);
+ document.getElementById("invTax").addEventListener("input",updateInvoiceTotal);
+
+ loadInvoiceHistory();
+}
+
+function openInvoiceForm() {
+ const form=document.getElementById("invoiceForm");
+ form.reset();
+ document.getElementById("invoiceFormPanel").style.display="block";
+ document.getElementById("invoiceDetailPanel").style.display="none";
+ document.getElementById("invDate").value=todayDate();
+ document.getElementById("invoiceFormMessage").textContent="";
+ document.getElementById("invoiceItemRows").replaceChildren();
+ addInvoiceItem();
+ document.getElementById("invoiceFormPanel").scrollIntoView({behavior:"smooth"});
+}
+
+function closeInvoiceForm() {
+ document.getElementById("invoiceFormPanel").style.display="none";
+}
+
+function addInvoiceItem() {
+ const body=document.getElementById("invoiceItemRows");
+ const row=document.createElement("tr");
+
+ row.innerHTML=`
+  <td><input class="inv-description" required placeholder="Nama barang / jasa"></td>
+  <td><input class="inv-quantity" type="number" min="0.01" step="0.01" value="1"></td>
+  <td><input class="inv-unit" value="pcs"></td>
+  <td><input class="inv-price" type="number" min="0" step="1" value="0"></td>
+  <td class="inv-line-total">Rp0</td>
+  <td><button type="button" class="invoice-action invoice-danger">×</button></td>
+ `;
+
+ row.querySelectorAll("input").forEach(input=>{
+  input.addEventListener("input",updateInvoiceTotal);
+ });
+ row.querySelector("button").addEventListener("click",()=>{
+  if(body.children.length<=1){
+   alert("Invoice minimal harus memiliki satu barang.");
+   return;
+  }
+  row.remove();
+  updateInvoiceTotal();
+ });
+
+ body.appendChild(row);
+ updateInvoiceTotal();
+}
+
+function getInvoiceItems() {
+ return [...document.querySelectorAll("#invoiceItemRows tr")].map(row=>{
+  const description=row.querySelector(".inv-description").value.trim();
+  const quantity=Number(row.querySelector(".inv-quantity").value);
+  const unit=row.querySelector(".inv-unit").value.trim()||"pcs";
+  const price=Number(row.querySelector(".inv-price").value);
+
+  return {
+   description,
+   quantity,
+   unit,
+   unit_price:price,
+   line_total:quantity*price
+  };
+ });
+}
+
+function calculateInvoiceTotal() {
+ const items=getInvoiceItems();
+ const subtotal=items.reduce((sum,item)=>sum+item.line_total,0);
+ const discount=Number(document.getElementById("invDiscount").value||0);
+ const tax=Number(document.getElementById("invTax").value||0);
+ return {
+  items,
+  subtotal,
+  discount,
+  tax,
+  total:Math.max(0,subtotal-discount+tax)
+ };
+}
+
+function updateInvoiceTotal() {
+ const result=calculateInvoiceTotal();
+
+ document.querySelectorAll("#invoiceItemRows tr").forEach((row,index)=>{
+  const item=result.items[index];
+  row.querySelector(".inv-line-total").textContent=formatRupiah(item?.line_total||0);
+ });
+
+ document.getElementById("invoiceGrandTotal").textContent=formatRupiah(result.total);
+}
+
+async function saveInvoice(event) {
+ event.preventDefault();
+
+ const message=document.getElementById("invoiceFormMessage");
+ const button=document.getElementById("invoiceSaveButton");
+
+ if(!["manajer","admin_keuangan"].includes(window.currentUser?.role)){
+  message.textContent="Akses tidak diizinkan.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ const result=calculateInvoiceTotal();
+ const date=document.getElementById("invDate").value;
+ const dueDate=document.getElementById("invDueDate").value;
+
+ if(!date || (dueDate && dueDate<date)){
+  message.textContent="Periksa tanggal invoice dan jatuh tempo.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ if(!result.items.length || result.items.some(item=>
+  !item.description || !Number.isFinite(item.quantity) ||
+  item.quantity<=0 || !Number.isFinite(item.unit_price) ||
+  item.unit_price<0
+ )){
+  message.textContent="Periksa rincian barang dan harga.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ if(result.discount<0 || result.tax<0 || result.discount>result.subtotal){
+  message.textContent="Diskon atau pajak tidak valid.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ button.disabled=true;
+ button.textContent="Menyimpan...";
+
+ try {
+  const invoiceNumber="INV-"+date.replaceAll("-","")+"-"+Date.now().toString().slice(-5);
+
+  const invoiceData={
+   invoice_number:invoiceNumber,
+   customer_name:document.getElementById("invCustomer").value.trim(),
+   customer_phone:document.getElementById("invPhone").value.trim()||null,
+   customer_email:document.getElementById("invEmail").value.trim()||null,
+   customer_address:document.getElementById("invAddress").value.trim()||null,
+   issue_date:date,
+   due_date:dueDate||null,
+   subtotal:result.subtotal,
+   discount:result.discount,
+   tax:result.tax,
+   total:result.total,
+   paid_amount:0,
+   status:"sent",
+   notes:document.getElementById("invNotes").value.trim()||null,
+   created_by:window.currentUser.id
+  };
+
+  const {data:invoice,error}=await supabaseClient
+   .from("invoices")
+   .insert(invoiceData)
+   .select("id")
+   .single();
+
+  if(error)throw error;
+
+  const itemRows=result.items.map(item=>({
+   invoice_id:invoice.id,
+   ...item
+  }));
+
+  const {error:itemError}=await supabaseClient
+   .from("invoice_items")
+   .insert(itemRows);
+
+  if(itemError){
+   await supabaseClient.from("invoices").delete().eq("id",invoice.id);
+   throw itemError;
+  }
+
+  message.textContent="Invoice berhasil dibuat: "+invoiceNumber;
+  message.className="invoice-message erp-success";
+
+  closeInvoiceForm();
+  await loadInvoiceHistory();
+
+ } catch(error) {
+  message.textContent="Gagal menyimpan invoice: "+error.message;
+  message.className="invoice-message erp-error";
+ } finally {
+  button.disabled=false;
+  button.textContent="Simpan Invoice";
+ }
+}
+
+async function loadInvoiceHistory() {
+ const body=document.getElementById("invoiceHistoryBody");
+ if(!body)return;
+
+ body.innerHTML='<tr><td colspan="6">Memuat invoice...</td></tr>';
+
+ const {data,error}=await supabaseClient
+  .from("invoices")
+  .select("*")
+  .order("created_at",{ascending:false})
+  .limit(100);
+
+ if(error){
+  body.innerHTML=`<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;
+  return;
+ }
+
+ const invoices=data||[];
+ const total=invoices.reduce((sum,item)=>sum+Number(item.total||0),0);
+ const unpaid=invoices.reduce((sum,item)=>sum+Math.max(0,Number(item.total||0)-Number(item.paid_amount||0)),0);
+
+ document.getElementById("invoiceCount").textContent=invoices.length;
+ document.getElementById("invoiceTotal").textContent=formatRupiah(total);
+ document.getElementById("invoiceUnpaid").textContent=formatRupiah(unpaid);
+
+ if(!invoices.length){
+  body.innerHTML='<tr><td colspan="6">Belum ada invoice.</td></tr>';
+  return;
+ }
+
+ body.replaceChildren();
+
+ invoices.forEach(invoice=>{
+  const row=document.createElement("tr");
+
+  const values=[
+   invoice.invoice_number,
+   invoice.issue_date,
+   invoice.customer_name,
+   formatRupiah(invoice.total)
+  ];
+
+  values.forEach(value=>{
+   const cell=document.createElement("td");
+   cell.textContent=value;
+   row.appendChild(cell);
+  });
+
+  const statusCell=document.createElement("td");
+  const badge=document.createElement("span");
+  badge.className="invoice-status "+(invoice.status==="paid"?"paid":invoice.status==="sent"?"sent":invoice.status==="overdue"?"overdue":"");
+  badge.textContent=invoice.status;
+  statusCell.appendChild(badge);
+  row.appendChild(statusCell);
+
+  const actionCell=document.createElement("td");
+  const detailButton=document.createElement("button");
+  detailButton.className="invoice-action invoice-secondary";
+  detailButton.textContent="Detail";
+  detailButton.addEventListener("click",()=>showInvoiceDetail(invoice.id));
+  actionCell.appendChild(detailButton);
+  row.appendChild(actionCell);
+
+  body.appendChild(row);
+ });
+}
+
+async function showInvoiceDetail(id) {
+ const panel=document.getElementById("invoiceDetailPanel");
+ panel.style.display="block";
+ panel.innerHTML="Memuat detail invoice...";
+
+ const {data:invoice,error}=await supabaseClient
+  .from("invoices").select("*").eq("id",id).single();
+
+ if(error){
+  panel.textContent="Gagal memuat invoice: "+error.message;
+  return;
+ }
+
+ const {data:items,error:itemError}=await supabaseClient
+  .from("invoice_items").select("*").eq("invoice_id",id);
+
+ if(itemError){
+  panel.textContent="Gagal memuat rincian: "+itemError.message;
+  return;
+ }
+
+ const rows=(items||[]).map(item=>`
+  <tr>
+   <td>${escapeHTML(item.description)}</td>
+   <td>${item.quantity} ${escapeHTML(item.unit||"")}</td>
+   <td>${formatRupiah(item.unit_price)}</td>
+   <td>${formatRupiah(item.line_total)}</td>
+  </tr>
+ `).join("");
+
+ panel.innerHTML=`
+  <div id="invoicePrintArea">
+   <div style="display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap">
+    <div>
+     <h2 style="color:#a71925;margin-bottom:5px">KDMP PENDOWO ASRI</h2>
+     <p>INVOICE / FAKTUR TAGIHAN</p>
+    </div>
+    <div>
+     <h3>${escapeHTML(invoice.invoice_number)}</h3>
+     <p>Tanggal: ${escapeHTML(invoice.issue_date)}</p>
+     <p>Jatuh tempo: ${escapeHTML(invoice.due_date||"-")}</p>
+    </div>
+   </div>
+   <hr>
+   <h3>Ditagihkan kepada:</h3>
+   <strong>${escapeHTML(invoice.customer_name)}</strong>
+   <p>${escapeHTML(invoice.customer_address||"-")}</p>
+   <p>${escapeHTML(invoice.customer_phone||"-")}</p>
+   <div style="overflow-x:auto;margin-top:20px">
+    <table class="invoice-items">
+     <thead><tr><th>Barang / Jasa</th><th>Jumlah</th><th>Harga</th><th>Total</th></tr></thead>
+     <tbody>${rows}</tbody>
+    </table>
+   </div>
+   <div style="text-align:right;margin-top:20px;line-height:2">
+    Subtotal: ${formatRupiah(invoice.subtotal)}<br>
+    Diskon: ${formatRupiah(invoice.discount)}<br>
+    Pajak: ${formatRupiah(invoice.tax)}<br>
+    <strong style="font-size:20px">TOTAL: ${formatRupiah(invoice.total)}</strong><br>
+    Dibayar: ${formatRupiah(invoice.paid_amount)}<br>
+    <strong>Sisa Tagihan: ${formatRupiah(Number(invoice.total)-Number(invoice.paid_amount))}</strong>
+   </div>
+   <p style="margin-top:25px">Catatan: ${escapeHTML(invoice.notes||"-")}</p>
+  </div>
+  <div class="erp-actions no-print">
+   <button class="invoice-action invoice-primary" id="invoicePrintButton">Cetak Invoice</button>
+   <button class="invoice-action invoice-secondary" id="invoiceCloseDetail">Tutup</button>
+  </div>
+ `;
+
+ document.getElementById("invoicePrintButton").addEventListener("click",()=>window.print());
+ document.getElementById("invoiceCloseDetail").addEventListener("click",()=>{
+  panel.style.display="none";
+ });
+
+ panel.scrollIntoView({behavior:"smooth"});
+}
+
+// Hubungkan menu Invoice ke navigasi yang sudah ada
+const previousInvoiceShowPage=window.showPage;
+
+window.showPage=function(page,button){
+ const invoiceContent=document.getElementById("invoiceContent");
+ if(invoiceContent)invoiceContent.style.display="none";
+
+ previousInvoiceShowPage(page,button);
+
+ if(page==="invoice"){
+  setupInvoice();
+  const content=document.getElementById("invoiceContent");
+  if(content)content.style.display="block";
+  loadInvoiceHistory();
+ }
+};
