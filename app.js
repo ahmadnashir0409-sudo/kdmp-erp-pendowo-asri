@@ -1182,6 +1182,479 @@ function showPage(page,button) {
 function toggleSidebar(){document.getElementById("sidebar").classList.toggle("open");}
 window.showPage=showPage;
 window.toggleSidebar=toggleSidebar;
+// =====================================
+// MODUL REKONSILIASI BANK KDMP
+// =====================================
+
+async function setupBankReconciliation() {
+  const client = window.kdmpSupabase;
+  const modulePage = document.getElementById("modulePage");
+
+  let content = document.getElementById("bankContent");
+
+  if (!content) {
+    content = document.createElement("div");
+    content.id = "bankContent";
+    content.className = "page";
+    modulePage.appendChild(content);
+  }
+
+  content.style.display = "block";
+
+  content.innerHTML = `
+    <div class="erp-card">
+      <h2>🏦 Rekonsiliasi Bank</h2>
+      <p>Cocokkan saldo rekening bank dengan catatan jurnal KDMP.</p>
+
+      <div class="form-grid">
+        <div>
+          <label>Akun Kas / Bank</label>
+          <select id="bankAccount" class="erp-input">
+            <option value="">Memuat akun...</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Tanggal Awal</label>
+          <input type="date" id="bankStart" class="erp-input">
+        </div>
+
+        <div>
+          <label>Tanggal Akhir</label>
+          <input type="date" id="bankEnd" class="erp-input">
+        </div>
+
+        <div>
+          <label>Saldo Akhir Menurut Rekening Bank</label>
+          <input type="number" id="bankStatementBalance"
+            class="erp-input" placeholder="Contoh: 5000000">
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="calculateBankReconciliation()">
+        Hitung Rekonsiliasi
+      </button>
+    </div>
+
+    <div id="bankResult"></div>
+
+    <div class="erp-card">
+      <h3>Tambah Mutasi Rekening</h3>
+
+      <div class="form-grid">
+        <div>
+          <label>Tanggal</label>
+          <input type="date" id="bankMutationDate" class="erp-input">
+        </div>
+
+        <div>
+          <label>Jenis Mutasi</label>
+          <select id="bankMutationType" class="erp-input">
+            <option value="deposit">Setoran / Uang Masuk</option>
+            <option value="withdrawal">Penarikan / Uang Keluar</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Keterangan</label>
+          <input id="bankMutationDescription" class="erp-input"
+            placeholder="Contoh: Setoran tunai">
+        </div>
+
+        <div>
+          <label>Nominal</label>
+          <input type="number" id="bankMutationAmount"
+            class="erp-input" placeholder="Masukkan nominal">
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="saveBankMutation()">
+        Simpan Mutasi
+      </button>
+    </div>
+
+    <div class="erp-card">
+      <h3>Riwayat Rekonsiliasi</h3>
+      <div id="bankHistory">Memuat data...</div>
+    </div>
+
+    <div class="erp-card">
+      <h3>Mutasi Rekening Periode Ini</h3>
+      <div id="bankMutations">Pilih akun dan periode terlebih dahulu.</div>
+    </div>
+  `;
+
+  document.getElementById("bankStart").value =
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      .toISOString().slice(0, 10);
+
+  document.getElementById("bankEnd").value =
+    new Date().toISOString().slice(0, 10);
+
+  document.getElementById("bankMutationDate").value =
+    new Date().toISOString().slice(0, 10);
+
+  const { data, error } = await client
+    .from("accounts")
+    .select("*")
+    .order("kode_akun");
+
+  if (error) {
+    document.getElementById("bankAccount").innerHTML =
+      `<option value="">Gagal memuat akun</option>`;
+    console.error(error);
+    return;
+  }
+
+  const accounts = (data || []).filter(account =>
+    /kas|bank/i.test(
+      String(account.nama_akun || account.name || "")
+    )
+  );
+
+  document.getElementById("bankAccount").innerHTML =
+    `<option value="">Pilih akun kas/bank</option>` +
+    accounts.map(account => `
+      <option value="${account.id}">
+        ${escapeHTML(account.kode_akun || "")}
+        - ${escapeHTML(account.nama_akun || account.name || "")}
+      </option>
+    `).join("");
+
+  await loadBankReconciliations();
+}
+
+async function calculateBankReconciliation() {
+  const client = window.kdmpSupabase;
+  const accountId = document.getElementById("bankAccount").value;
+  const start = document.getElementById("bankStart").value;
+  const end = document.getElementById("bankEnd").value;
+  const statementBalance = Number(
+    document.getElementById("bankStatementBalance").value
+  );
+
+  const result = document.getElementById("bankResult");
+
+  if (!accountId || !start || !end) {
+    alert("Pilih akun dan periode rekonsiliasi terlebih dahulu.");
+    return;
+  }
+
+  if (start > end) {
+    alert("Tanggal awal tidak boleh melewati tanggal akhir.");
+    return;
+  }
+
+  if (!Number.isFinite(statementBalance)) {
+    alert("Masukkan saldo akhir rekening bank.");
+    return;
+  }
+
+  result.innerHTML = "Menghitung saldo...";
+
+  const { data, error } = await client
+    .from("journal_lines")
+    .select(`
+      debit,
+      kredit,
+      journal_entries!inner (
+        tanggal,
+        nomor_jurnal,
+        keterangan,
+        status
+      )
+    `)
+    .eq("account_id", accountId)
+    .lte("journal_entries.tanggal", end);
+
+  if (error) {
+    result.innerHTML =
+      `<p class="error">Gagal mengambil jurnal: ${escapeHTML(error.message)}</p>`;
+    return;
+  }
+
+  const postedLines = (data || []).filter(line =>
+    String(line.journal_entries?.status || "").toLowerCase() === "posted"
+  );
+
+  const bookBalance = postedLines.reduce((total, line) =>
+    total + Number(line.debit || 0) - Number(line.kredit || 0), 0
+  );
+
+  const difference = statementBalance - bookBalance;
+
+  const periodLines = postedLines.filter(line =>
+    line.journal_entries.tanggal >= start &&
+    line.journal_entries.tanggal <= end
+  );
+
+  const rupiah = value => formatRupiah(value);
+
+  result.innerHTML = `
+    <div class="erp-card">
+      <h3>Hasil Rekonsiliasi</h3>
+
+      <div class="financial-summary">
+        <div class="summary-card">
+          <span>Saldo Menurut Buku</span>
+          <h3>${rupiah(bookBalance)}</h3>
+        </div>
+
+        <div class="summary-card">
+          <span>Saldo Menurut Bank</span>
+          <h3>${rupiah(statementBalance)}</h3>
+        </div>
+
+        <div class="summary-card">
+          <span>Selisih</span>
+          <h3>${rupiah(difference)}</h3>
+        </div>
+      </div>
+
+      <p>
+        ${Math.abs(difference) < 0.005
+          ? "✅ Saldo buku dan rekening bank sudah seimbang."
+          : "⚠️ Masih terdapat selisih antara saldo buku dan saldo bank."}
+      </p>
+
+      <h3>Jurnal Periode Ini</h3>
+
+      <div class="table-responsive">
+        <table class="erp-table">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>No. Jurnal</th>
+              <th>Keterangan</th>
+              <th>Debit</th>
+              <th>Kredit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${periodLines.map(line => `
+              <tr>
+                <td>${escapeHTML(line.journal_entries.tanggal || "")}</td>
+                <td>${escapeHTML(line.journal_entries.nomor_jurnal || "")}</td>
+                <td>${escapeHTML(line.journal_entries.keterangan || "")}</td>
+                <td>${rupiah(line.debit)}</td>
+                <td>${rupiah(line.kredit)}</td>
+              </tr>
+            `).join("") || `
+              <tr><td colspan="5">Belum ada jurnal pada periode ini.</td></tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+
+      <button class="btn-primary" onclick="saveBankReconciliation(
+        ${JSON.stringify(accountId)},
+        ${JSON.stringify(start)},
+        ${JSON.stringify(end)},
+        ${statementBalance},
+        ${bookBalance},
+        ${difference}
+      )">
+        Simpan Rekonsiliasi
+      </button>
+    </div>
+  `;
+}
+
+async function saveBankMutation() {
+  const client = window.kdmpSupabase;
+  const accountId = document.getElementById("bankAccount").value;
+  const date = document.getElementById("bankMutationDate").value;
+  const type = document.getElementById("bankMutationType").value;
+  const description = document.getElementById("bankMutationDescription").value;
+  const amount = Number(document.getElementById("bankMutationAmount").value);
+
+  if (!accountId || !date || !amount || amount <= 0) {
+    alert("Lengkapi akun, tanggal, dan nominal mutasi.");
+    return;
+  }
+
+  const { data: header, error: headerError } = await client
+    .from("bank_reconciliations")
+    .select("id")
+    .eq("account_id", accountId)
+    .eq("period_start", document.getElementById("bankStart").value)
+    .eq("period_end", document.getElementById("bankEnd").value)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (headerError || !header) {
+    alert("Buat dan simpan rekonsiliasi periode ini terlebih dahulu.");
+    return;
+  }
+
+  const { error } = await client
+    .from("bank_reconciliation_items")
+    .insert({
+      reconciliation_id: header.id,
+      item_type: type,
+      transaction_date: date,
+      description,
+      amount,
+      matched: false
+    });
+
+  if (error) {
+    alert("Gagal menyimpan mutasi: " + error.message);
+    return;
+  }
+
+  alert("Mutasi rekening berhasil disimpan.");
+  document.getElementById("bankMutationDescription").value = "";
+  document.getElementById("bankMutationAmount").value = "";
+  await loadBankMutations(header.id);
+}
+
+async function saveBankReconciliation(
+  accountId, start, end, statementBalance, bookBalance, difference
+) {
+  const client = window.kdmpSupabase;
+
+  const { data: userData } = await client.auth.getUser();
+
+  const { data, error } = await client
+    .from("bank_reconciliations")
+    .insert({
+      account_id: accountId,
+      period_start: start,
+      period_end: end,
+      statement_ending_balance: statementBalance,
+      book_balance: bookBalance,
+      difference,
+      status: Math.abs(difference) < 0.005 ? "balanced" : "draft",
+      created_by: userData.user?.id
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    alert("Gagal menyimpan rekonsiliasi: " + error.message);
+    return;
+  }
+
+  alert("Rekonsiliasi berhasil disimpan.");
+  await loadBankReconciliations();
+  await loadBankMutations(data.id);
+}
+
+async function loadBankReconciliations() {
+  const client = window.kdmpSupabase;
+  const target = document.getElementById("bankHistory");
+  if (!target) return;
+
+  const { data, error } = await client
+    .from("bank_reconciliations")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    target.innerHTML = "Gagal memuat riwayat: " + escapeHTML(error.message);
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="table-responsive">
+      <table class="erp-table">
+        <thead>
+          <tr>
+            <th>Periode</th>
+            <th>Saldo Bank</th>
+            <th>Saldo Buku</th>
+            <th>Selisih</th>
+            <th>Status</th>
+            <th>Mutasi</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(data || []).map(item => `
+            <tr>
+              <td>${escapeHTML(item.period_start)} s/d ${escapeHTML(item.period_end)}</td>
+              <td>${formatRupiah(item.statement_ending_balance)}</td>
+              <td>${formatRupiah(item.book_balance)}</td>
+              <td>${formatRupiah(item.difference)}</td>
+              <td>${item.status === "balanced" ? "Seimbang" : "Belum seimbang"}</td>
+              <td>
+                <button class="btn-secondary"
+                  onclick="loadBankMutations('${item.id}')">
+                  Lihat
+                </button>
+              </td>
+            </tr>
+          `).join("") || `
+            <tr><td colspan="6">Belum ada riwayat rekonsiliasi.</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadBankMutations(reconciliationId) {
+  const client = window.kdmpSupabase;
+  const target = document.getElementById("bankMutations");
+  if (!target) return;
+
+  const { data, error } = await client
+    .from("bank_reconciliation_items")
+    .select("*")
+    .eq("reconciliation_id", reconciliationId)
+    .order("transaction_date", { ascending: false });
+
+  if (error) {
+    target.innerHTML = "Gagal memuat mutasi: " + escapeHTML(error.message);
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="table-responsive">
+      <table class="erp-table">
+        <thead>
+          <tr>
+            <th>Tanggal</th>
+            <th>Jenis</th>
+            <th>Keterangan</th>
+            <th>Nominal</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(data || []).map(item => `
+            <tr>
+              <td>${escapeHTML(item.transaction_date)}</td>
+              <td>${item.item_type === "deposit" ? "Setoran" : "Penarikan"}</td>
+              <td>${escapeHTML(item.description || "-")}</td>
+              <td>${formatRupiah(item.amount)}</td>
+              <td>${item.matched ? "Cocok" : "Belum dicocokkan"}</td>
+            </tr>
+          `).join("") || `
+            <tr><td colspan="5">Belum ada mutasi rekening.</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+const originalBankShowPage = window.showPage;
+
+window.showPage = function(page, button) {
+  const bankContent = document.getElementById("bankContent");
+
+  if (bankContent) {
+    bankContent.style.display = page === "bank" ? "block" : "none";
+  }
+
+  originalBankShowPage(page, button);
+
+  if (page === "bank") {
+    setupBankReconciliation();
+  }
+};
 
 // ==========================================
 // PERIKSA SESSION
