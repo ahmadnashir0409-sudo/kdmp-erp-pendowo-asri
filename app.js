@@ -1043,5 +1043,4 @@ async function checkLoginSession() {
   if(error){loginError.textContent="Tidak dapat memeriksa sesi login.";return;}
   if(data.session)await loadUserProfile(data.session.user);
 }
-addLogoutButton();
-await loadDashboard();
+checkLoginSession();
