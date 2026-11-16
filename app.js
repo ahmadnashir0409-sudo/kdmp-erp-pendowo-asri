@@ -2,7 +2,7 @@
 const SUPABASE_URL = "https://srfhamdyewblyuangxzz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_GBr3oKysuufZHQ4Ol-1J0Q_QJWabH1q";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
+window.kdmpSupabase = supabaseClient;
 const modules = {
   keuangan: ["💰", "Pencatatan Keuangan", "Pencatatan pemasukan, pengeluaran, dan transaksi kas."],
   coa: ["📚", "Chart of Accounts", "Pengelolaan daftar akun dan kode perkiraan."],
