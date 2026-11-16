@@ -129,9 +129,182 @@ loginStyle.textContent = `
     cursor: pointer;
     margin-left: 15px;
   }
+
+  /* CHART OF ACCOUNTS */
+
+  #coaContent {
+    margin-top: 28px;
+    width: 100%;
+  }
+
+  .coa-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+
+  .coa-summary {
+    color: #666;
+    font-size: 14px;
+  }
+
+  .coa-add-button {
+    background: #a71925;
+    color: white;
+    border: none;
+    padding: 11px 17px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .coa-add-button:hover {
+    background: #80121c;
+  }
+
+  .coa-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 12px;
+  }
+
+  .coa-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 650px;
+  }
+
+  .coa-table th,
+  .coa-table td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+  }
+
+  .coa-table th {
+    background: #fafafa;
+    color: #555;
+    font-weight: 700;
+  }
+
+  .coa-table td {
+    color: #333;
+  }
+
+  .coa-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .coa-status {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: 20px;
+    background: #e8f7ed;
+    color: #18743b;
+    font-size: 11px;
+    font-weight: bold;
+  }
+
+  .coa-form {
+    display: none;
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .coa-form h3 {
+    margin-top: 0;
+    color: #333;
+  }
+
+  .coa-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .coa-field label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 13px;
+    font-weight: bold;
+    color: #555;
+  }
+
+  .coa-field input,
+  .coa-field select {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 11px;
+    border: 1px solid #ddd;
+    border-radius: 7px;
+    background: white;
+    font-size: 14px;
+  }
+
+  .coa-form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .coa-form-actions button {
+    border: none;
+    border-radius: 7px;
+    padding: 11px 17px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+
+  .coa-save {
+    background: #a71925;
+    color: white;
+  }
+
+  .coa-cancel {
+    background: #eee;
+    color: #444;
+  }
+
+  #coaMessage {
+    margin: 12px 0;
+    font-size: 13px;
+  }
+
+  .coa-error {
+    color: #b91c2c;
+  }
+
+  .coa-success {
+    color: #18743b;
+  }
+
+  .coa-empty {
+    padding: 25px;
+    text-align: center;
+    color: #777;
+  }
+
+  @media(max-width: 600px) {
+    .coa-form-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 `;
 
 document.head.appendChild(loginStyle);
+
+// ==========================================
+// MEMBUAT HALAMAN LOGIN
+// ==========================================
 
 const loginScreen = document.createElement("div");
 loginScreen.id = "loginScreen";
@@ -144,34 +317,25 @@ loginScreen.innerHTML = `
 
     <form id="loginForm">
       <label for="loginEmail">Email</label>
-      <input
-        type="email"
-        id="loginEmail"
+      <input type="email" id="loginEmail"
         placeholder="Masukkan email"
-        autocomplete="username"
-        required
-      >
+        autocomplete="username" required>
 
       <label for="loginPassword">Password</label>
-      <input
-        type="password"
-        id="loginPassword"
+      <input type="password" id="loginPassword"
         placeholder="Masukkan password"
-        autocomplete="current-password"
-        required
-      >
+        autocomplete="current-password" required>
 
-      <button type="submit" id="loginButton">Masuk ke Sistem</button>
+      <button type="submit" id="loginButton">
+        Masuk ke Sistem
+      </button>
+
       <div id="loginError" role="alert"></div>
     </form>
   </div>
 `;
 
 document.body.prepend(loginScreen);
-
-// ==========================================
-// FUNGSI LOGIN
-// ==========================================
 
 const layout = document.querySelector(".layout");
 
@@ -182,6 +346,10 @@ if (layout) {
 const loginForm = document.getElementById("loginForm");
 const loginButton = document.getElementById("loginButton");
 const loginError = document.getElementById("loginError");
+
+// ==========================================
+// LOGIN
+// ==========================================
 
 loginForm.addEventListener("submit", async function(event) {
   event.preventDefault();
@@ -209,7 +377,7 @@ loginForm.addEventListener("submit", async function(event) {
 });
 
 // ==========================================
-// MEMBACA PROFIL DAN JABATAN
+// MEMBACA PROFIL
 // ==========================================
 
 async function loadUserProfile(user) {
@@ -223,6 +391,7 @@ async function loadUserProfile(user) {
 
   if (error || !profile) {
     await supabaseClient.auth.signOut();
+
     loginError.textContent =
       "Profil pengguna tidak ditemukan. Hubungi manajer sistem.";
 
@@ -255,19 +424,19 @@ async function loadUserProfile(user) {
     avatar.textContent = profile.nama_lengkap.charAt(0).toUpperCase();
   }
 
-  addLogoutButton();
-
   window.currentUser = {
     id: user.id,
     nama: profile.nama_lengkap,
     role: profile.role
   };
 
+  addLogoutButton();
+
   console.log("Login berhasil:", profile.nama_lengkap, profile.role);
 }
 
 // ==========================================
-// TOMBOL LOGOUT
+// LOGOUT
 // ==========================================
 
 function addLogoutButton() {
@@ -295,7 +464,285 @@ function addLogoutButton() {
 }
 
 // ==========================================
-// MEMERIKSA SESSION SAAT HALAMAN DIBUKA
+// CHART OF ACCOUNTS
+// ==========================================
+
+function setupCOA() {
+  const modulePage = document.getElementById("modulePage");
+
+  if (!modulePage || document.getElementById("coaContent")) return;
+
+  const content = document.createElement("section");
+  content.id = "coaContent";
+
+  content.innerHTML = `
+    <div class="coa-toolbar">
+      <div class="coa-summary" id="coaSummary">
+        Memuat daftar akun...
+      </div>
+
+      <button class="coa-add-button" id="coaAddButton">
+        + Tambah Akun
+      </button>
+    </div>
+
+    <div class="coa-form" id="coaForm">
+      <h3>Tambah Akun Baru</h3>
+
+      <form id="coaCreateForm">
+        <div class="coa-form-grid">
+
+          <div class="coa-field">
+            <label for="coaCode">Kode Akun</label>
+            <input id="coaCode" required maxlength="20"
+              placeholder="Contoh: 1105">
+          </div>
+
+          <div class="coa-field">
+            <label for="coaName">Nama Akun</label>
+            <input id="coaName" required maxlength="100"
+              placeholder="Nama akun">
+          </div>
+
+          <div class="coa-field">
+            <label for="coaCategory">Kategori</label>
+            <select id="coaCategory" required>
+              <option value="aset">Aset</option>
+              <option value="kewajiban">Kewajiban</option>
+              <option value="ekuitas">Ekuitas</option>
+              <option value="pendapatan">Pendapatan</option>
+              <option value="beban">Beban</option>
+            </select>
+          </div>
+
+          <div class="coa-field">
+            <label for="coaNormal">Saldo Normal</label>
+            <select id="coaNormal" required>
+              <option value="debit">Debit</option>
+              <option value="kredit">Kredit</option>
+            </select>
+          </div>
+
+        </div>
+
+        <div id="coaMessage"></div>
+
+        <div class="coa-form-actions">
+          <button type="submit" class="coa-save" id="coaSaveButton">
+            Simpan Akun
+          </button>
+
+          <button type="button" class="coa-cancel" id="coaCancelButton">
+            Batal
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="coa-table-wrap">
+      <table class="coa-table">
+        <thead>
+          <tr>
+            <th>Kode Akun</th>
+            <th>Nama Akun</th>
+            <th>Kategori</th>
+            <th>Saldo Normal</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody id="coaTableBody">
+          <tr>
+            <td colspan="5" class="coa-empty">
+              Memuat data akun...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  modulePage.appendChild(content);
+
+  document.getElementById("coaAddButton").addEventListener("click", () => {
+    document.getElementById("coaForm").style.display = "block";
+    document.getElementById("coaMessage").textContent = "";
+  });
+
+  document.getElementById("coaCancelButton").addEventListener("click", () => {
+    document.getElementById("coaForm").style.display = "none";
+    document.getElementById("coaCreateForm").reset();
+  });
+
+  document.getElementById("coaCreateForm").addEventListener(
+    "submit",
+    createCOAAccount
+  );
+
+  if (window.currentUser?.role !== "manajer") {
+    document.getElementById("coaAddButton").style.display = "none";
+  }
+}
+
+// ==========================================
+// MENGAMBIL DATA AKUN DARI SUPABASE
+// ==========================================
+
+async function loadCOA() {
+  setupCOA();
+
+  const summary = document.getElementById("coaSummary");
+  const tableBody = document.getElementById("coaTableBody");
+
+  if (!summary || !tableBody) return;
+
+  summary.textContent = "Memuat daftar akun...";
+
+  tableBody.innerHTML = `
+    <tr>
+      <td colspan="5" class="coa-empty">
+        Sedang mengambil data dari database...
+      </td>
+    </tr>
+  `;
+
+  const { data: accounts, error } = await supabaseClient
+    .from("accounts")
+    .select("id, kode_akun, nama_akun, kategori, saldo_normal, aktif")
+    .order("kode_akun", { ascending: true });
+
+  if (error) {
+    summary.textContent = "Gagal mengambil data akun.";
+
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="coa-empty coa-error">
+          ${escapeHTML(error.message)}
+        </td>
+      </tr>
+    `;
+
+    console.error("Kesalahan mengambil akun:", error);
+    return;
+  }
+
+  summary.textContent = `Total ${accounts.length} akun terdaftar`;
+
+  if (accounts.length === 0) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="coa-empty">
+          Belum ada akun yang terdaftar.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tableBody.replaceChildren();
+
+  accounts.forEach(account => {
+    const row = document.createElement("tr");
+
+    const values = [
+      account.kode_akun,
+      account.nama_akun,
+      capitalize(account.kategori),
+      capitalize(account.saldo_normal)
+    ];
+
+    values.forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+
+    const statusCell = document.createElement("td");
+    const status = document.createElement("span");
+
+    status.className = account.aktif ? "coa-status" : "";
+    status.textContent = account.aktif ? "Aktif" : "Nonaktif";
+
+    statusCell.appendChild(status);
+    row.appendChild(statusCell);
+
+    tableBody.appendChild(row);
+  });
+}
+
+// ==========================================
+// TAMBAH AKUN BARU
+// ==========================================
+
+async function createCOAAccount(event) {
+  event.preventDefault();
+
+  if (window.currentUser?.role !== "manajer") {
+    alert("Hanya manajer yang dapat menambah akun.");
+    return;
+  }
+
+  const code = document.getElementById("coaCode").value.trim();
+  const name = document.getElementById("coaName").value.trim();
+  const category = document.getElementById("coaCategory").value;
+  const normal = document.getElementById("coaNormal").value;
+
+  const saveButton = document.getElementById("coaSaveButton");
+  const message = document.getElementById("coaMessage");
+
+  saveButton.disabled = true;
+  saveButton.textContent = "Menyimpan...";
+  message.textContent = "";
+
+  const { error } = await supabaseClient
+    .from("accounts")
+    .insert({
+      kode_akun: code,
+      nama_akun: name,
+      kategori: category,
+      saldo_normal: normal
+    });
+
+  saveButton.disabled = false;
+  saveButton.textContent = "Simpan Akun";
+
+  if (error) {
+    message.className = "coa-error";
+    message.textContent =
+      "Gagal menyimpan akun: " + error.message;
+    return;
+  }
+
+  message.className = "coa-success";
+  message.textContent = "Akun berhasil disimpan.";
+
+  document.getElementById("coaCreateForm").reset();
+
+  await loadCOA();
+}
+
+// ==========================================
+// FUNGSI BANTU
+// ==========================================
+
+function capitalize(value) {
+  if (!value) return "-";
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[character]);
+}
+
+// ==========================================
+// MEMERIKSA SESSION LOGIN
 // ==========================================
 
 async function checkLoginSession() {
@@ -338,6 +785,16 @@ function showPage(page, button) {
     document.getElementById("moduleName").textContent = data[1];
     document.getElementById("moduleDescription").textContent = data[2];
     document.getElementById("pageTitle").textContent = data[1];
+
+    const coaContent = document.getElementById("coaContent");
+
+    if (coaContent) {
+      coaContent.style.display = page === "coa" ? "block" : "none";
+    }
+
+    if (page === "coa") {
+      loadCOA();
+    }
   }
 
   document.querySelectorAll(".menu button").forEach(element => {
@@ -361,6 +818,10 @@ function showPage(page, button) {
 function toggleSidebar() {
   document.getElementById("sidebar").classList.toggle("open");
 }
+
+// Memastikan fungsi bisa dipanggil dari tombol HTML
+window.showPage = showPage;
+window.toggleSidebar = toggleSidebar;
 
 // Jalankan pemeriksaan sesi
 checkLoginSession();
