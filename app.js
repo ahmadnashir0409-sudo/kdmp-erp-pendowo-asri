@@ -81,6 +81,301 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+// ==========================================
+// DASHBOARD - DATA DARI SUPABASE
+// ==========================================
+
+const dashboardStyle = document.createElement("style");
+dashboardStyle.textContent = `
+.dashboard-chart-wrap {
+  background:white;
+  border:1px solid #eee;
+  border-radius:12px;
+  padding:20px;
+  overflow-x:auto;
+}
+.dashboard-chart {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-around;
+  gap:12px;
+  min-height:220px;
+  min-width:320px;
+  padding-top:15px;
+}
+.dashboard-chart-group {
+  flex:1;
+  min-width:35px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  height:200px;
+}
+.dashboard-bars {
+  height:170px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  gap:4px;
+  width:100%;
+}
+.dashboard-bar {
+  width:35%;
+  min-height:2px;
+  border-radius:5px 5px 0 0;
+}
+.dashboard-bar.income {background:#16a36a}
+.dashboard-bar.expense {background:#d34b55}
+.dashboard-chart-label {
+  font-size:11px;
+  color:#777;
+  margin-top:8px;
+}
+.dashboard-legend {
+  display:flex;
+  gap:18px;
+  flex-wrap:wrap;
+  margin-top:15px;
+  font-size:12px;
+  color:#666;
+}
+.dashboard-legend span {
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.dashboard-dot {
+  width:9px;
+  height:9px;
+  border-radius:3px;
+  display:inline-block;
+}
+.dashboard-error {
+  color:#b91c2c;
+  font-size:13px;
+  padding:12px 0;
+}
+`;
+document.head.appendChild(dashboardStyle);
+
+async function getAllFinancialTransactions() {
+  const all = [];
+  const pageSize = 500;
+  let from = 0;
+
+  while (true) {
+    const {data,error} = await supabaseClient
+      .from("financial_transactions")
+      .select("id,tanggal,jenis,akun_kas_id,akun_lawan_id,nominal,keterangan,journal_id,created_at")
+      .order("tanggal",{ascending:false})
+      .range(from,from+pageSize-1);
+
+    if (error) throw error;
+
+    all.push(...(data || []));
+
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return all;
+}
+
+async function getDashboardCashBalance() {
+  const {data:accounts,error:accountError} = await supabaseClient
+    .from("accounts")
+    .select("id,kode_akun,nama_akun")
+    .in("kode_akun",["1101","1102"]);
+
+  if (accountError) throw accountError;
+
+  const accountIds = (accounts || []).map(a=>a.id);
+  if (!accountIds.length) return 0;
+
+  let balance = 0;
+  let from = 0;
+  const pageSize = 500;
+
+  while (true) {
+    const {data,error} = await supabaseClient
+      .from("journal_lines")
+      .select("account_id,debit,kredit,journal_entries!inner(status)")
+      .in("account_id",accountIds)
+      .eq("journal_entries.status","posted")
+      .range(from,from+pageSize-1);
+
+    if (error) throw error;
+
+    (data || []).forEach(line=>{
+      balance += Number(line.debit || 0) - Number(line.kredit || 0);
+    });
+
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return balance;
+}
+
+function dashboardMonthKey(date) {
+  return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0");
+}
+
+function renderDashboardChart(transactions) {
+  const chart = document.getElementById("dashboardChart");
+  const periodSelect = document.getElementById("dashboardPeriod");
+
+  if (!chart) return;
+
+  const months = Number(periodSelect?.value || 1);
+  const now = new Date();
+  const start = new Date(now.getFullYear(),now.getMonth()-months+1,1);
+  const totals = {};
+
+  for (let i=0;i<months;i++) {
+    const date = new Date(start.getFullYear(),start.getMonth()+i,1);
+    totals[dashboardMonthKey(date)] = {
+      label:date.toLocaleDateString("id-ID",{month:"short"}),
+      income:0,
+      expense:0
+    };
+  }
+
+  transactions.forEach(item=>{
+    const date = new Date(item.tanggal+"T00:00:00");
+    const key = dashboardMonthKey(date);
+    if (!totals[key]) return;
+
+    if (item.jenis==="pemasukan") {
+      totals[key].income += Number(item.nominal);
+    } else if (item.jenis==="pengeluaran") {
+      totals[key].expense += Number(item.nominal);
+    }
+  });
+
+  const values = Object.values(totals);
+  const maximum = Math.max(
+    1,
+    ...values.map(x=>Math.max(x.income,x.expense))
+  );
+
+  chart.className = "dashboard-chart-wrap";
+  chart.innerHTML = `
+    <div class="dashboard-chart">
+      ${values.map(item=>{
+        const incomeHeight = item.income/maximum*100;
+        const expenseHeight = item.expense/maximum*100;
+
+        return `
+          <div class="dashboard-chart-group">
+            <div class="dashboard-bars">
+              <div class="dashboard-bar income"
+                style="height:${incomeHeight}%"
+                title="Pemasukan: ${formatRupiah(item.income)}"></div>
+              <div class="dashboard-bar expense"
+                style="height:${expenseHeight}%"
+                title="Pengeluaran: ${formatRupiah(item.expense)}"></div>
+            </div>
+            <div class="dashboard-chart-label">${escapeHTML(item.label)}</div>
+          </div>`;
+      }).join("")}
+    </div>
+    <div class="dashboard-legend">
+      <span><i class="dashboard-dot" style="background:#16a36a"></i>Pemasukan</span>
+      <span><i class="dashboard-dot" style="background:#d34b55"></i>Pengeluaran</span>
+    </div>`;
+}
+
+function renderDashboardRecent(transactions) {
+  const container = document.getElementById("dashboardRecentTransactions");
+  if (!container) return;
+
+  const latest = [...transactions]
+    .sort((a,b)=>{
+      const dateCompare = String(b.tanggal).localeCompare(String(a.tanggal));
+      if (dateCompare !== 0) return dateCompare;
+      return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+    })
+    .slice(0,5);
+
+  if (!latest.length) {
+    container.innerHTML = `
+      <tr><td colspan="5">Belum ada transaksi keuangan.</td></tr>`;
+    return;
+  }
+
+  container.innerHTML = latest.map(item=>`
+    <tr>
+      <td>${escapeHTML(item.tanggal)}</td>
+      <td>${item.jenis==="pemasukan"?"Pemasukan":"Pengeluaran"}</td>
+      <td>${escapeHTML(item.keterangan)}</td>
+      <td>${formatRupiah(item.nominal)}</td>
+      <td><span class="erp-status">Posted</span></td>
+    </tr>
+  `).join("");
+}
+
+async function loadDashboard() {
+  const incomeElement = document.getElementById("dashboardIncome");
+  if (!incomeElement) return;
+
+  incomeElement.textContent = "Memuat...";
+
+  try {
+    const [transactions,cashBalance] = await Promise.all([
+      getAllFinancialTransactions(),
+      getDashboardCashBalance()
+    ]);
+
+    const income = transactions
+      .filter(x=>x.jenis==="pemasukan")
+      .reduce((sum,x)=>sum+Number(x.nominal),0);
+
+    const expense = transactions
+      .filter(x=>x.jenis==="pengeluaran")
+      .reduce((sum,x)=>sum+Number(x.nominal),0);
+
+    incomeElement.textContent = formatRupiah(income);
+
+    const expenseElement = document.getElementById("dashboardExpense");
+    if (expenseElement) expenseElement.textContent = formatRupiah(expense);
+
+    const cashElement = document.getElementById("dashboardCash");
+    if (cashElement) cashElement.textContent = formatRupiah(cashBalance);
+
+    const countElement = document.getElementById("dashboardTransactionCount");
+    if (countElement) countElement.textContent = transactions.length;
+
+    renderDashboardChart(transactions);
+    renderDashboardRecent(transactions);
+
+  } catch (error) {
+    console.error("Dashboard error:",error);
+
+    incomeElement.textContent = "Gagal memuat";
+
+    ["dashboardExpense","dashboardCash","dashboardTransactionCount"].forEach(id=>{
+      const element = document.getElementById(id);
+      if (element) element.textContent = "-";
+    });
+
+    const chart = document.getElementById("dashboardChart");
+    if (chart) {
+      chart.innerHTML = `<div class="dashboard-error">Dashboard gagal mengambil data. Periksa hak akses database dan koneksi Supabase.</div>`;
+    }
+
+    const recent = document.getElementById("dashboardRecentTransactions");
+    if (recent) {
+      recent.innerHTML = `<tr><td colspan="5">Gagal memuat transaksi.</td></tr>`;
+    }
+  }
+}
+
+document.getElementById("dashboardPeriod")?.addEventListener("change",async ()=>{
+  await loadDashboard();
+});
+
 // LOGIN
 const loginScreen = document.createElement("div");
 loginScreen.id = "loginScreen";
@@ -708,7 +1003,9 @@ function showPage(page,button) {
   document.querySelectorAll(".page").forEach(element=>element.style.display="none");
   const dashboard=document.getElementById("dashboard"),modulePage=document.getElementById("modulePage");
   if(page==="dashboard") {
-    dashboard.style.display="block";document.getElementById("pageTitle").textContent="Dashboard";
+    dashboard.style.display="block";
+    document.getElementById("pageTitle").textContent="Dashboard";
+    loadDashboard();
   } else if(modules[page]) {
     modulePage.style.display="block";const data=modules[page];
     document.getElementById("moduleIcon").textContent=data[0];
@@ -746,4 +1043,5 @@ async function checkLoginSession() {
   if(error){loginError.textContent="Tidak dapat memeriksa sesi login.";return;}
   if(data.session)await loadUserProfile(data.session.user);
 }
-checkLoginSession();
+addLogoutButton();
+await loadDashboard();
