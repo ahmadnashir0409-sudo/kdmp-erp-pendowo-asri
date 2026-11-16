@@ -66,6 +66,7 @@
 
     <div class="content">
 
+      <!-- DASHBOARD -->
       <section id="dashboard" class="page">
         <div class="welcome">
           <h1>Selamat Datang di KDMP ERP 👋</h1>
@@ -212,14 +213,16 @@
         </div>
       </section>
 
+      <!-- MODULE PAGES -->
       <section id="modulePage" class="page module-page">
-        <div class="panel">
-          <div class="empty-state">
-            <div class="big-icon" id="moduleIcon">📚</div>
-            <h3 id="moduleName">Modul</h3>
-            <p id="moduleDescription">Modul ini sedang dalam tahap pembangunan.</p>
-          </div>
+
+        <!-- Metadata dipertahankan untuk kompatibilitas app.js -->
+        <div hidden>
+          <span id="moduleIcon">📚</span>
+          <h3 id="moduleName">Modul</h3>
+          <p id="moduleDescription">Modul KDMP ERP</p>
         </div>
+
       </section>
 
     </div>
@@ -232,6 +235,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script type="module" src="app.js"></script>
-  <script type="module" src="utang-piutang.js"></script>
+<script type="module" src="utang-piutang.js"></script>
+
 </body>
 </html>
