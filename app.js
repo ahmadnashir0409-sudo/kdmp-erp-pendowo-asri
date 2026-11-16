@@ -22,7 +22,9 @@ const modules = {
 };
 
 let coaCache = [];
+let financialAccountsCache = [];
 let journalRowCount = 0;
+let financialType = "pemasukan";
 
 // ==========================================
 // CSS TAMBAHAN
@@ -144,6 +146,41 @@ style.textContent = `
 }
 .journal-total {font-weight:bold}
 .journal-balance {margin-top:12px;font-size:13px;font-weight:bold}
+
+/* PENCATATAN KEUANGAN */
+.financial-summary {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+  margin-bottom:20px;
+}
+.financial-card {
+  background:white;border:1px solid #eee;
+  border-radius:12px;padding:18px;
+}
+.financial-card small {
+  color:#777;display:block;margin-bottom:9px;
+}
+.financial-card strong {
+  font-size:20px;color:#222;
+}
+.financial-tabs {
+  display:flex;gap:10px;margin-bottom:18px;
+}
+.financial-tabs button {
+  border:1px solid #ddd;background:white;color:#555;
+  padding:10px 18px;border-radius:8px;
+  cursor:pointer;font-weight:bold;
+}
+.financial-tabs button.active {
+  background:#a71925;color:white;border-color:#a71925;
+}
+.financial-note {
+  background:#fff8e8;border:1px solid #f1dfb7;
+  color:#75551c;padding:12px;border-radius:8px;
+  font-size:12px;margin-bottom:16px;
+}
+
 @media(max-width:700px) {
   .erp-grid {grid-template-columns:1fr}
   .journal-line {
@@ -154,6 +191,9 @@ style.textContent = `
   .journal-line .account-field,
   .journal-line .description-field {grid-column:1/-1}
   .journal-remove {grid-column:1/-1}
+}
+@media(max-width:600px) {
+  .financial-summary {grid-template-columns:1fr}
 }
 `;
 
@@ -200,7 +240,7 @@ loginForm.addEventListener("submit", async event => {
   const email = document.getElementById("loginEmail").value.trim();
   const password = document.getElementById("loginPassword").value;
 
-  const {data, error} = await supabaseClient.auth.signInWithPassword({
+  const {data,error} = await supabaseClient.auth.signInWithPassword({
     email, password
   });
 
@@ -302,6 +342,12 @@ function formatRupiah(value) {
   return new Intl.NumberFormat("id-ID", {
     style:"currency",currency:"IDR",maximumFractionDigits:0
   }).format(value || 0);
+}
+
+function todayDate() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0,10);
 }
 
 // ==========================================
@@ -467,6 +513,396 @@ async function createCOAAccount(event) {
 }
 
 // ==========================================
+// PENCATATAN KEUANGAN
+// ==========================================
+
+function setupFinancial() {
+  const page = document.getElementById("modulePage");
+  if (!page || document.getElementById("financialContent")) return;
+
+  const section = document.createElement("section");
+  section.id = "financialContent";
+  section.className = "erp-content";
+
+  section.innerHTML = `
+    <div class="financial-summary">
+      <div class="financial-card">
+        <small>Total Pemasukan</small>
+        <strong id="financialIncome">Rp0</strong>
+      </div>
+      <div class="financial-card">
+        <small>Total Pengeluaran</small>
+        <strong id="financialExpense">Rp0</strong>
+      </div>
+    </div>
+
+    <div class="erp-toolbar">
+      <div>
+        <h3 style="margin:0 0 5px">Transaksi Keuangan</h3>
+        <div class="erp-muted">Catat pemasukan dan pengeluaran KDMP.</div>
+      </div>
+      <button class="erp-button" id="financialNewButton">+ Catat Transaksi</button>
+    </div>
+
+    <div class="erp-form" id="financialForm">
+      <h3 id="financialFormTitle">Catat Pemasukan</h3>
+
+      <div class="financial-tabs">
+        <button type="button" id="financialIncomeTab" class="active">Pemasukan</button>
+        <button type="button" id="financialExpenseTab">Pengeluaran</button>
+      </div>
+
+      <div class="financial-note">
+        Transaksi yang disimpan akan otomatis membentuk jurnal debit dan kredit.
+      </div>
+
+      <form id="financialCreateForm">
+        <div class="erp-grid">
+          <div class="erp-field">
+            <label>Tanggal Transaksi</label>
+            <input type="date" id="financialDate" required>
+          </div>
+
+          <div class="erp-field">
+            <label>Nominal (Rp)</label>
+            <input type="number" id="financialAmount"
+              min="1" step="0.01" required placeholder="Contoh: 500000">
+          </div>
+
+          <div class="erp-field">
+            <label>Akun Kas / Bank</label>
+            <select id="financialCashAccount" required>
+              <option value="">Memuat akun...</option>
+            </select>
+          </div>
+
+          <div class="erp-field">
+            <label id="financialCounterpartLabel">Akun Pendapatan</label>
+            <select id="financialCounterpartAccount" required>
+              <option value="">Pilih akun</option>
+            </select>
+          </div>
+
+          <div class="erp-field" style="grid-column:1/-1">
+            <label>Keterangan Transaksi</label>
+            <input id="financialDescription" required maxlength="500"
+              placeholder="Contoh: Penjualan barang toko">
+          </div>
+        </div>
+
+        <div id="financialMessage" class="erp-message"></div>
+
+        <div class="erp-actions">
+          <button type="submit" class="erp-button" id="financialSaveButton">
+            Simpan Transaksi
+          </button>
+          <button type="button" class="erp-button secondary" id="financialCancelButton">
+            Batal
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <h3>Riwayat Transaksi</h3>
+
+    <div class="erp-table-wrap">
+      <table class="erp-table">
+        <thead>
+          <tr>
+            <th>Tanggal</th>
+            <th>Jenis</th>
+            <th>Keterangan</th>
+            <th>Akun Kas/Bank</th>
+            <th>Akun Lawan</th>
+            <th>Nominal</th>
+            <th>Nomor Jurnal</th>
+          </tr>
+        </thead>
+        <tbody id="financialHistoryBody">
+          <tr><td colspan="7">Memuat transaksi...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  page.appendChild(section);
+
+  document.getElementById("financialNewButton")
+    .addEventListener("click", openFinancialForm);
+
+  document.getElementById("financialIncomeTab")
+    .addEventListener("click", () => setFinancialType("pemasukan"));
+
+  document.getElementById("financialExpenseTab")
+    .addEventListener("click", () => setFinancialType("pengeluaran"));
+
+  document.getElementById("financialCancelButton")
+    .addEventListener("click", closeFinancialForm);
+
+  document.getElementById("financialCreateForm")
+    .addEventListener("submit", saveFinancialTransaction);
+
+  if (!["manajer","admin_keuangan"].includes(window.currentUser?.role)) {
+    document.getElementById("financialNewButton").style.display = "none";
+  }
+}
+
+function setFinancialType(type) {
+  financialType = type;
+
+  const incomeTab = document.getElementById("financialIncomeTab");
+  const expenseTab = document.getElementById("financialExpenseTab");
+  const title = document.getElementById("financialFormTitle");
+  const label = document.getElementById("financialCounterpartLabel");
+
+  incomeTab.classList.toggle("active", type === "pemasukan");
+  expenseTab.classList.toggle("active", type === "pengeluaran");
+
+  title.textContent = type === "pemasukan"
+    ? "Catat Pemasukan"
+    : "Catat Pengeluaran";
+
+  label.textContent = type === "pemasukan"
+    ? "Akun Pendapatan"
+    : "Akun Beban";
+
+  loadFinancialAccountOptions();
+}
+
+async function loadFinancialAccountOptions() {
+  const cashSelect = document.getElementById("financialCashAccount");
+  const counterpartSelect = document.getElementById("financialCounterpartAccount");
+
+  if (!cashSelect || !counterpartSelect) return;
+
+  const cashAccounts = financialAccountsCache.filter(account =>
+    account.aktif &&
+    account.kategori === "aset" &&
+    /(kas|bank)/i.test(account.nama_akun)
+  );
+
+  const targetCategory = financialType === "pemasukan"
+    ? "pendapatan"
+    : "beban";
+
+  const counterpartAccounts = financialAccountsCache.filter(account =>
+    account.aktif && account.kategori === targetCategory
+  );
+
+  cashSelect.innerHTML =
+    `<option value="">Pilih akun kas/bank</option>` +
+    cashAccounts.map(account =>
+      `<option value="${escapeHTML(account.id)}">
+        ${escapeHTML(account.kode_akun)} - ${escapeHTML(account.nama_akun)}
+      </option>`
+    ).join("");
+
+  counterpartSelect.innerHTML =
+    `<option value="">Pilih akun ${financialType === "pemasukan" ? "pendapatan" : "beban"}</option>` +
+    counterpartAccounts.map(account =>
+      `<option value="${escapeHTML(account.id)}">
+        ${escapeHTML(account.kode_akun)} - ${escapeHTML(account.nama_akun)}
+      </option>`
+    ).join("");
+
+  if (cashAccounts.length === 0) {
+    cashSelect.innerHTML = `<option value="">Akun Kas/Bank belum tersedia</option>`;
+  }
+
+  if (counterpartAccounts.length === 0) {
+    counterpartSelect.innerHTML = `<option value="">Akun belum tersedia</option>`;
+  }
+}
+
+async function openFinancialForm() {
+  const button = document.getElementById("financialNewButton");
+  button.disabled = true;
+
+  const {data,error} = await supabaseClient
+    .from("accounts")
+    .select("id,kode_akun,nama_akun,kategori,aktif")
+    .eq("aktif",true)
+    .order("kode_akun");
+
+  button.disabled = false;
+
+  if (error) {
+    alert("Gagal memuat akun: " + error.message);
+    return;
+  }
+
+  financialAccountsCache = data || [];
+
+  document.getElementById("financialCreateForm").reset();
+  document.getElementById("financialDate").value = todayDate();
+  document.getElementById("financialMessage").textContent = "";
+
+  setFinancialType("pemasukan");
+
+  document.getElementById("financialForm").style.display = "block";
+
+  if (financialAccountsCache.filter(a =>
+    a.aktif && a.kategori === "aset" && /(kas|bank)/i.test(a.nama_akun)
+  ).length === 0) {
+    document.getElementById("financialMessage").textContent =
+      "Belum ada akun dengan nama Kas atau Bank. Periksa Chart of Accounts.";
+    document.getElementById("financialMessage").className =
+      "erp-message erp-error";
+  }
+}
+
+function closeFinancialForm() {
+  document.getElementById("financialForm").style.display = "none";
+}
+
+async function saveFinancialTransaction(event) {
+  event.preventDefault();
+
+  const button = document.getElementById("financialSaveButton");
+  const message = document.getElementById("financialMessage");
+
+  if (!["manajer","admin_keuangan"].includes(window.currentUser?.role)) {
+    message.textContent = "Akses tidak diizinkan.";
+    message.className = "erp-message erp-error";
+    return;
+  }
+
+  const date = document.getElementById("financialDate").value;
+  const amount = Number(document.getElementById("financialAmount").value);
+  const cashAccount = document.getElementById("financialCashAccount").value;
+  const counterpartAccount = document.getElementById("financialCounterpartAccount").value;
+  const description = document.getElementById("financialDescription").value.trim();
+
+  if (!date || !cashAccount || !counterpartAccount || !description ||
+      !Number.isFinite(amount) || amount <= 0) {
+    message.textContent = "Lengkapi semua data dengan benar.";
+    message.className = "erp-message erp-error";
+    return;
+  }
+
+  if (cashAccount === counterpartAccount) {
+    message.textContent = "Akun kas dan akun lawan tidak boleh sama.";
+    message.className = "erp-message erp-error";
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Menyimpan transaksi...";
+  message.textContent = "";
+
+  const {data,error} = await supabaseClient.rpc(
+    "catat_transaksi_keuangan",
+    {
+      p_tanggal:date,
+      p_jenis:financialType,
+      p_akun_kas_id:cashAccount,
+      p_akun_lawan_id:counterpartAccount,
+      p_nominal:amount,
+      p_keterangan:description
+    }
+  );
+
+  button.disabled = false;
+  button.textContent = "Simpan Transaksi";
+
+  if (error) {
+    message.textContent = "Gagal menyimpan transaksi: " + error.message;
+    message.className = "erp-message erp-error";
+    return;
+  }
+
+  message.textContent = "Transaksi dan jurnal otomatis berhasil disimpan.";
+  message.className = "erp-message erp-success";
+
+  document.getElementById("financialCreateForm").reset();
+  closeFinancialForm();
+
+  await loadFinancialHistory();
+
+  alert("Transaksi berhasil disimpan dan jurnal otomatis sudah dibuat!");
+}
+
+async function loadFinancialHistory() {
+  const body = document.getElementById("financialHistoryBody");
+  if (!body) return;
+
+  body.innerHTML = `<tr><td colspan="7">Memuat transaksi...</td></tr>`;
+
+  const {data:transactions,error} = await supabaseClient
+    .from("financial_transactions")
+    .select("id,tanggal,jenis,akun_kas_id,akun_lawan_id,nominal,keterangan,journal_id")
+    .order("tanggal",{ascending:false})
+    .limit(100);
+
+  if (error) {
+    body.innerHTML =
+      `<tr><td colspan="7">${escapeHTML(error.message)}</td></tr>`;
+    return;
+  }
+
+  if (!transactions || transactions.length === 0) {
+    body.innerHTML = `<tr><td colspan="7">Belum ada transaksi keuangan.</td></tr>`;
+    document.getElementById("financialIncome").textContent = formatRupiah(0);
+    document.getElementById("financialExpense").textContent = formatRupiah(0);
+    return;
+  }
+
+  const {data:accounts} = await supabaseClient
+    .from("accounts")
+    .select("id,kode_akun,nama_akun");
+
+  const accountMap = new Map(
+    (accounts || []).map(account => [account.id, account])
+  );
+
+  const income = transactions
+    .filter(item => item.jenis === "pemasukan")
+    .reduce((sum,item) => sum + Number(item.nominal),0);
+
+  const expense = transactions
+    .filter(item => item.jenis === "pengeluaran")
+    .reduce((sum,item) => sum + Number(item.nominal),0);
+
+  document.getElementById("financialIncome").textContent = formatRupiah(income);
+  document.getElementById("financialExpense").textContent = formatRupiah(expense);
+
+  body.replaceChildren();
+
+  transactions.forEach(item => {
+    const cash = accountMap.get(item.akun_kas_id);
+    const counterpart = accountMap.get(item.akun_lawan_id);
+
+    const row = document.createElement("tr");
+
+    const values = [
+      item.tanggal,
+      item.jenis === "pemasukan" ? "Pemasukan" : "Pengeluaran",
+      item.keterangan,
+      cash ? `${cash.kode_akun} - ${cash.nama_akun}` : "-",
+      counterpart ? `${counterpart.kode_akun} - ${counterpart.nama_akun}` : "-",
+      formatRupiah(item.nominal),
+      item.journal_id ? "Jurnal tercatat" : "-"
+    ];
+
+    values.forEach((value,index) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+
+      if (index === 1) {
+        const badge = document.createElement("span");
+        badge.className = "erp-status";
+        badge.textContent = value;
+        cell.replaceChildren(badge);
+      }
+
+      row.appendChild(cell);
+    });
+
+    body.appendChild(row);
+  });
+}
+
+// ==========================================
 // JURNAL UMUM - TAMPILAN
 // ==========================================
 
@@ -553,8 +989,7 @@ function setupJournal() {
   document.getElementById("journalCancelButton").addEventListener("click", closeJournalForm);
   document.getElementById("journalCreateForm").addEventListener("submit", saveJournal);
 
-  document.getElementById("journalDate").value =
-    new Date().toLocaleDateString("en-CA");
+  document.getElementById("journalDate").value = todayDate();
 
   if (!["manajer","admin_keuangan"].includes(window.currentUser?.role)) {
     document.getElementById("journalNewButton").style.display = "none";
@@ -582,8 +1017,7 @@ async function openJournalForm() {
 
   document.getElementById("journalForm").style.display = "block";
   document.getElementById("journalCreateForm").reset();
-  document.getElementById("journalDate").value =
-    new Date().toLocaleDateString("en-CA");
+  document.getElementById("journalDate").value = todayDate();
 
   document.getElementById("journalLines").replaceChildren();
   journalRowCount = 0;
@@ -760,7 +1194,6 @@ async function saveJournal(event) {
   const journalNumber =
     "JU-" + date.replaceAll("-","") + "-" + Date.now().toString().slice(-6);
 
-  // 1. Simpan header sebagai draft terlebih dahulu.
   const {data:header,error:headerError} = await supabaseClient
     .from("journal_entries")
     .insert({
@@ -781,7 +1214,6 @@ async function saveJournal(event) {
     return;
   }
 
-  // 2. Simpan baris debit dan kredit.
   const journalLines = lines.map(line => ({
     ...line,
     journal_id:header.id
@@ -800,14 +1232,12 @@ async function saveJournal(event) {
     return;
   }
 
-  // 3. Posting. Trigger database memeriksa keseimbangan.
   const {error:postError} = await supabaseClient
     .from("journal_entries")
     .update({status:"posted"})
     .eq("id",header.id);
 
   if (postError) {
-    // Bersihkan jurnal draft jika posting gagal.
     await supabaseClient.from("journal_entries").delete().eq("id",header.id);
 
     button.disabled = false;
@@ -926,11 +1356,18 @@ function showPage(page, button) {
     document.getElementById("moduleDescription").textContent = data[2];
     document.getElementById("pageTitle").textContent = data[1];
 
+    const financial = document.getElementById("financialContent");
     const coa = document.getElementById("coaContent");
     const journal = document.getElementById("journalContent");
 
+    if (financial) financial.style.display = page === "keuangan" ? "block" : "none";
     if (coa) coa.style.display = page === "coa" ? "block" : "none";
     if (journal) journal.style.display = page === "jurnal" ? "block" : "none";
+
+    if (page === "keuangan") {
+      setupFinancial();
+      loadFinancialHistory();
+    }
 
     if (page === "coa") loadCOA();
 
