@@ -3306,3 +3306,453 @@ window.showPage=function(page,button){
   }
 };
 document.getElementById("operationalMenuButton")?.remove();
+
+// ==========================================
+// MODUL DATA ANGGOTA KDMP PENDOWO ASRI
+// ==========================================
+
+const memberStyle = document.createElement("style");
+memberStyle.textContent = `
+.member-wrap{display:grid;gap:17px}
+.member-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.member-card{background:white;border:1px solid #e9e9e9;border-radius:12px;padding:17px}
+.member-card small{display:block;color:#777;margin-bottom:8px}
+.member-card strong{font-size:22px}
+.member-panel{background:white;border:1px solid #e9e9e9;border-radius:12px;padding:20px}
+.member-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.member-field{margin-bottom:13px}
+.member-field label{display:block;font-size:13px;font-weight:600;margin-bottom:7px;color:#555}
+.member-field input,.member-field select,.member-field textarea{
+  width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;
+  border-radius:7px;font:inherit;background:white
+}
+.member-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.member-btn{border:0;border-radius:7px;padding:10px 15px;background:#a71925;color:white;font-weight:600;cursor:pointer}
+.member-btn.gray{background:#eee;color:#333}
+.member-btn:disabled{opacity:.6;cursor:not-allowed}
+.member-search{max-width:360px;width:100%;padding:11px;border:1px solid #ddd;border-radius:7px}
+.member-table-wrap{overflow-x:auto;border:1px solid #eee;border-radius:10px}
+.member-table{width:100%;min-width:750px;border-collapse:collapse}
+.member-table th,.member-table td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.member-table th{background:#fafafa;color:#666}
+.member-status{display:inline-block;padding:5px 9px;border-radius:20px;background:#e8f8ef;color:#16834e;font-size:11px;font-weight:bold}
+.member-status.inactive{background:#fee2e2;color:#991b1b}
+.member-message{font-size:13px;margin:10px 0}
+@media(max-width:650px){
+ .member-stats{grid-template-columns:1fr}
+ .member-grid{grid-template-columns:1fr}
+ .member-panel{padding:14px}
+}
+`;
+document.head.appendChild(memberStyle);
+
+let memberCache = [];
+let editingMemberId = null;
+
+function setupMemberManagement(){
+  const page = document.getElementById("modulePage");
+  if(!page || document.getElementById("memberContent")) return;
+
+  const section = document.createElement("section");
+  section.id = "memberContent";
+  section.className = "erp-content";
+
+  section.innerHTML = `
+    <div class="member-wrap">
+
+      <div class="erp-toolbar">
+        <div>
+          <h3>Data Anggota Koperasi</h3>
+          <p class="erp-muted">Kelola identitas dan status keanggotaan KDMP Pendowo Asri.</p>
+        </div>
+        <button class="member-btn" id="memberAddButton">+ Tambah Anggota</button>
+      </div>
+
+      <div class="member-stats">
+        <div class="member-card">
+          <small>Total Anggota</small>
+          <strong id="memberTotal">0</strong>
+        </div>
+        <div class="member-card">
+          <small>Anggota Aktif</small>
+          <strong id="memberActive">0</strong>
+        </div>
+        <div class="member-card">
+          <small>Anggota Nonaktif</small>
+          <strong id="memberInactive">0</strong>
+        </div>
+      </div>
+
+      <div class="member-panel" id="memberFormPanel" style="display:none">
+        <h3 id="memberFormTitle">Tambah Anggota Baru</h3>
+
+        <form id="memberForm">
+          <div class="member-grid">
+            <div class="member-field">
+              <label>Nomor Anggota</label>
+              <input id="memberNumber" required placeholder="Contoh: KDMP-0001">
+            </div>
+
+            <div class="member-field">
+              <label>Nama Lengkap</label>
+              <input id="memberName" required placeholder="Nama sesuai identitas">
+            </div>
+
+            <div class="member-field">
+              <label>Nomor HP</label>
+              <input id="memberPhone" placeholder="08xxxxxxxxxx">
+            </div>
+
+            <div class="member-field">
+              <label>NIK (Opsional)</label>
+              <input id="memberNIK" maxlength="16" inputmode="numeric"
+                placeholder="16 digit NIK">
+            </div>
+
+            <div class="member-field">
+              <label>Tanggal Bergabung</label>
+              <input id="memberJoinDate" type="date" required>
+            </div>
+
+            <div class="member-field">
+              <label>Status Anggota</label>
+              <select id="memberStatus">
+                <option value="aktif">Aktif</option>
+                <option value="nonaktif">Nonaktif</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="member-field">
+            <label>Alamat</label>
+            <textarea id="memberAddress" rows="3"
+              placeholder="Alamat lengkap anggota"></textarea>
+          </div>
+
+          <div class="member-field">
+            <label>Catatan (Opsional)</label>
+            <textarea id="memberNotes" rows="2"
+              placeholder="Catatan tambahan"></textarea>
+          </div>
+
+          <div id="memberFormMessage" class="member-message"></div>
+
+          <div class="member-actions">
+            <button type="submit" class="member-btn" id="memberSaveButton">
+              Simpan Anggota
+            </button>
+            <button type="button" class="member-btn gray" id="memberCancelButton">
+              Batal
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="member-panel">
+        <div class="erp-toolbar">
+          <div>
+            <h3>Daftar Anggota</h3>
+            <p class="erp-muted">Data anggota yang terdaftar di koperasi.</p>
+          </div>
+          <input class="member-search" id="memberSearch"
+            placeholder="Cari nama atau nomor anggota...">
+        </div>
+
+        <div id="memberListMessage" class="member-message">
+          Memuat data anggota...
+        </div>
+
+        <div class="member-table-wrap">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>No. Anggota</th>
+                <th>Nama Lengkap</th>
+                <th>Nomor HP</th>
+                <th>Tanggal Bergabung</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="memberTableBody">
+              <tr><td colspan="6">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  page.appendChild(section);
+
+  document.getElementById("memberAddButton").onclick =
+    openMemberForm;
+
+  document.getElementById("memberCancelButton").onclick =
+    closeMemberForm;
+
+  document.getElementById("memberForm").onsubmit =
+    saveMember;
+
+  document.getElementById("memberSearch").oninput =
+    filterMembers;
+
+  loadMembers();
+}
+
+function openMemberForm(member=null){
+  editingMemberId = member?.id || null;
+
+  const form = document.getElementById("memberForm");
+  form.reset();
+
+  document.getElementById("memberFormTitle").textContent =
+    member ? "Edit Data Anggota" : "Tambah Anggota Baru";
+
+  document.getElementById("memberNumber").value =
+    member?.member_number || "";
+
+  document.getElementById("memberName").value =
+    member?.full_name || "";
+
+  document.getElementById("memberPhone").value =
+    member?.phone || "";
+
+  document.getElementById("memberNIK").value =
+    member?.national_id || "";
+
+  document.getElementById("memberAddress").value =
+    member?.address || "";
+
+  document.getElementById("memberJoinDate").value =
+    member?.join_date || new Date().toISOString().slice(0,10);
+
+  document.getElementById("memberStatus").value =
+    member?.status || "aktif";
+
+  document.getElementById("memberNotes").value =
+    member?.notes || "";
+
+  document.getElementById("memberFormMessage").textContent = "";
+
+  document.getElementById("memberFormPanel").style.display = "block";
+  document.getElementById("memberFormPanel").scrollIntoView({
+    behavior:"smooth"
+  });
+}
+
+function closeMemberForm(){
+  document.getElementById("memberFormPanel").style.display = "none";
+  editingMemberId = null;
+}
+
+async function saveMember(event){
+  event.preventDefault();
+
+  const button = document.getElementById("memberSaveButton");
+  const message = document.getElementById("memberFormMessage");
+
+  const number = document.getElementById("memberNumber").value.trim();
+  const name = document.getElementById("memberName").value.trim();
+  const nik = document.getElementById("memberNIK").value.trim();
+
+  if(!number || !name){
+    message.textContent = "Nomor anggota dan nama wajib diisi.";
+    return;
+  }
+
+  if(nik && !/^\d{16}$/.test(nik)){
+    message.textContent = "NIK harus terdiri dari 16 digit angka.";
+    return;
+  }
+
+  const record = {
+    member_number:number,
+    full_name:name,
+    national_id:nik || null,
+    phone:document.getElementById("memberPhone").value.trim() || null,
+    address:document.getElementById("memberAddress").value.trim() || null,
+    join_date:document.getElementById("memberJoinDate").value,
+    status:document.getElementById("memberStatus").value,
+    notes:document.getElementById("memberNotes").value.trim() || null,
+    updated_at:new Date().toISOString()
+  };
+
+  button.disabled = true;
+  button.textContent = "Menyimpan...";
+
+  try{
+    if(editingMemberId){
+      const {error} = await supabaseClient
+        .from("cooperative_members")
+        .update(record)
+        .eq("id",editingMemberId);
+
+      if(error) throw error;
+
+    }else{
+      record.created_by = window.currentUser?.id || null;
+
+      const {error} = await supabaseClient
+        .from("cooperative_members")
+        .insert(record);
+
+      if(error) throw error;
+    }
+
+    closeMemberForm();
+    await loadMembers();
+
+    alert("Data anggota berhasil disimpan.");
+
+  }catch(error){
+    message.textContent = "Gagal menyimpan: " + error.message;
+    message.style.color = "#b91c1c";
+
+  }finally{
+    button.disabled = false;
+    button.textContent = "Simpan Anggota";
+  }
+}
+
+async function loadMembers(){
+  const body = document.getElementById("memberTableBody");
+  if(!body) return;
+
+  body.innerHTML = '<tr><td colspan="6">Memuat data...</td></tr>';
+
+  const {data,error} = await supabaseClient
+    .from("cooperative_members")
+    .select("*")
+    .order("created_at",{ascending:false});
+
+  if(error){
+    body.innerHTML =
+      `<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;
+
+    document.getElementById("memberListMessage").textContent =
+      "Gagal memuat data anggota.";
+
+    return;
+  }
+
+  memberCache = data || [];
+  renderMembers(memberCache);
+
+  document.getElementById("memberTotal").textContent =
+    memberCache.length;
+
+  document.getElementById("memberActive").textContent =
+    memberCache.filter(m=>m.status==="aktif").length;
+
+  document.getElementById("memberInactive").textContent =
+    memberCache.filter(m=>m.status==="nonaktif").length;
+
+  document.getElementById("memberListMessage").textContent =
+    memberCache.length + " anggota terdaftar.";
+}
+
+function renderMembers(members){
+  const body = document.getElementById("memberTableBody");
+  if(!body) return;
+
+  if(!members.length){
+    body.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center;padding:25px">
+          Belum ada anggota terdaftar. Klik Tambah Anggota untuk memulai.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  body.innerHTML = members.map(member=>`
+    <tr>
+      <td><strong>${escapeHTML(member.member_number)}</strong></td>
+      <td>${escapeHTML(member.full_name)}</td>
+      <td>${escapeHTML(member.phone || "-")}</td>
+      <td>${escapeHTML(member.join_date || "-")}</td>
+      <td>
+        <span class="member-status ${member.status==="aktif"?"":"inactive"}">
+          ${member.status==="aktif"?"Aktif":"Nonaktif"}
+        </span>
+      </td>
+      <td>
+        <button class="member-btn gray"
+          onclick="editMemberData('${member.id}')">
+          Edit
+        </button>
+        <button class="member-btn"
+          onclick="toggleMemberStatus('${member.id}')">
+          ${member.status==="aktif"?"Nonaktifkan":"Aktifkan"}
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function filterMembers(){
+  const keyword = document.getElementById("memberSearch")
+    .value.toLowerCase().trim();
+
+  const filtered = memberCache.filter(member=>
+    String(member.member_number).toLowerCase().includes(keyword) ||
+    String(member.full_name).toLowerCase().includes(keyword) ||
+    String(member.phone || "").toLowerCase().includes(keyword)
+  );
+
+  renderMembers(filtered);
+}
+
+window.editMemberData = function(id){
+  const member = memberCache.find(m=>m.id===id);
+  if(member) openMemberForm(member);
+};
+
+window.toggleMemberStatus = async function(id){
+  const member = memberCache.find(m=>m.id===id);
+  if(!member) return;
+
+  const nextStatus = member.status==="aktif"?"nonaktif":"aktif";
+
+  if(!confirm(
+    `Ubah status ${member.full_name} menjadi ${nextStatus}?`
+  )) return;
+
+  const {error} = await supabaseClient
+    .from("cooperative_members")
+    .update({
+      status:nextStatus,
+      updated_at:new Date().toISOString()
+    })
+    .eq("id",id);
+
+  if(error){
+    alert("Gagal mengubah status: "+error.message);
+    return;
+  }
+
+  await loadMembers();
+};
+
+// Hubungkan ke menu Simpanan & Pinjaman yang sudah ada.
+const previousMemberShowPage = window.showPage;
+
+window.showPage = function(page,button){
+  const content = document.getElementById("memberContent");
+
+  if(content) content.style.display = "none";
+
+  previousMemberShowPage(page,button);
+
+  if(page==="simpanan"){
+    setupMemberManagement();
+
+    const memberContent = document.getElementById("memberContent");
+    if(memberContent) memberContent.style.display = "block";
+
+    loadMembers();
+  }
+};
