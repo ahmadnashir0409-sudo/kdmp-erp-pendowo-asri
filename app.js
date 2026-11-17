@@ -1701,11 +1701,20 @@ invoiceStyle.textContent = `
 .invoice-status.sent{background:#eaf2ff;color:#2860a8}
 .invoice-status.overdue{background:#fee;color:#a71925}
 .invoice-message{font-size:13px;margin-top:12px}
+.invoice-payment-box{margin-top:22px;padding:16px;border:1px solid #eee;border-radius:10px;background:#fafafa}
+.invoice-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.invoice-payment-grid label{display:block;margin-bottom:6px;font-size:12px;font-weight:bold;color:#555}
+.invoice-payment-grid input,.invoice-payment-grid select{box-sizing:border-box;width:100%;padding:10px;border:1px solid #ddd;border-radius:7px;background:white}
+.invoice-payment-table{width:100%;border-collapse:collapse;margin-top:12px}
+.invoice-payment-table th,.invoice-payment-table td{padding:9px;border-bottom:1px solid #e8e8e8;text-align:left;font-size:12px}
+.invoice-status.partial{background:#fff4d8;color:#8a5a00}
+.invoice-status.unpaid{background:#fff0e6;color:#a34b12}
 @media(max-width:650px){
  .invoice-summary{grid-template-columns:1fr}
  .invoice-form-grid{grid-template-columns:1fr}
  .invoice-form-grid .full{grid-column:auto}
  .invoice-panel{padding:14px}
+ .invoice-payment-grid{grid-template-columns:1fr}
 }
 @media print{
  body *{visibility:hidden!important}
@@ -2148,8 +2157,11 @@ async function loadInvoiceHistory() {
 
   const statusCell=document.createElement("td");
   const badge=document.createElement("span");
-  badge.className="invoice-status "+(invoice.status==="paid"?"paid":invoice.status==="sent"?"sent":invoice.status==="overdue"?"overdue":"");
-  badge.textContent=invoice.status;
+  const paid=Number(invoice.paid_amount||0);
+  const remaining=Math.max(0,Number(invoice.total||0)-paid);
+  const paymentStatus=invoice.payment_status || (remaining<=0?"lunas":paid>0?"dibayar_sebagian":"belum_dibayar");
+  badge.className="invoice-status "+(paymentStatus==="lunas"?"paid":paymentStatus==="dibayar_sebagian"?"partial":"unpaid");
+  badge.textContent=paymentStatus==="lunas"?"Lunas":paymentStatus==="dibayar_sebagian"?"Dibayar Sebagian":"Belum Dibayar";
   statusCell.appendChild(badge);
   row.appendChild(statusCell);
 
@@ -2163,6 +2175,65 @@ async function loadInvoiceHistory() {
 
   body.appendChild(row);
  });
+}
+
+function invoicePaymentStatus(invoice) {
+ const paid=Number(invoice.paid_amount||0);
+ const total=Number(invoice.total||0);
+ if(total>0 && paid>=total) return "lunas";
+ if(paid>0) return "dibayar_sebagian";
+ return "belum_dibayar";
+}
+
+async function submitInvoicePayment(invoiceId) {
+ const message=document.getElementById("invoicePaymentMessage");
+ const button=document.getElementById("invoicePaymentSaveButton");
+ if(!message || !button) return;
+
+ if(!["manajer","admin_keuangan"].includes(window.currentUser?.role)){
+  message.textContent="Akses tidak diizinkan.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ const amount=Number(document.getElementById("invoicePaymentAmount").value);
+ const paymentDate=document.getElementById("invoicePaymentDate").value;
+ const paymentMethod=document.getElementById("invoicePaymentMethod").value;
+ const notes=document.getElementById("invoicePaymentNotes").value.trim()||null;
+
+ if(!Number.isFinite(amount)||amount<=0){
+  message.textContent="Masukkan nominal pembayaran lebih dari nol.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+ if(!paymentDate){
+  message.textContent="Tanggal pembayaran wajib diisi.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ button.disabled=true;
+ button.textContent="Menyimpan...";
+ try {
+  const {data,error}=await supabaseClient.rpc("record_invoice_payment",{
+   p_invoice_id:invoiceId,
+   p_amount:amount,
+   p_payment_date:paymentDate,
+   p_payment_method:paymentMethod,
+   p_notes:notes
+  });
+  if(error) throw error;
+  message.textContent="Pembayaran berhasil dicatat. Sisa tagihan: "+formatRupiah(data.remaining);
+  message.className="invoice-message erp-success";
+  await loadInvoiceHistory();
+  await showInvoiceDetail(invoiceId);
+ } catch(error) {
+  message.textContent="Gagal mencatat pembayaran: "+error.message;
+  message.className="invoice-message erp-error";
+ } finally {
+  button.disabled=false;
+  button.textContent="Simpan Pembayaran";
+ }
 }
 
 async function showInvoiceDetail(id) {
@@ -2185,6 +2256,21 @@ async function showInvoiceDetail(id) {
   panel.textContent="Gagal memuat rincian: "+itemError.message;
   return;
  }
+
+ const {data:payments,error:paymentError}=await supabaseClient
+  .from("invoice_payments")
+  .select("*")
+  .eq("invoice_id",id)
+  .order("payment_date",{ascending:false});
+
+ const paymentRows=(payments||[]).map(payment=>`
+  <tr>
+   <td>${escapeHTML(payment.payment_date||"-")}</td>
+   <td>${escapeHTML(payment.payment_method||"-")}</td>
+   <td>${formatRupiah(payment.amount)}</td>
+   <td>${escapeHTML(payment.notes||"-")}</td>
+  </tr>
+ `).join("");
 
  const rows=(items||[]).map(item=>`
   <tr>
@@ -2225,9 +2311,31 @@ async function showInvoiceDetail(id) {
     Pajak: ${formatRupiah(invoice.tax)}<br>
     <strong style="font-size:20px">TOTAL: ${formatRupiah(invoice.total)}</strong><br>
     Dibayar: ${formatRupiah(invoice.paid_amount)}<br>
-    <strong>Sisa Tagihan: ${formatRupiah(Number(invoice.total)-Number(invoice.paid_amount))}</strong>
+    <strong>Sisa Tagihan: ${formatRupiah(Math.max(0,Number(invoice.total)-Number(invoice.paid_amount||0)))}</strong><br>
+    <strong>Status: ${invoicePaymentStatus(invoice)==="lunas"?"Lunas":invoicePaymentStatus(invoice)==="dibayar_sebagian"?"Dibayar Sebagian":"Belum Dibayar"}</strong>
    </div>
    <p style="margin-top:25px">Catatan: ${escapeHTML(invoice.notes||"-")}</p>
+  </div>
+  <div class="invoice-payment-box no-print">
+   <h3>Riwayat Pembayaran</h3>
+   ${paymentError?`<p class="invoice-message erp-error">Gagal memuat riwayat pembayaran: ${escapeHTML(paymentError.message)}</p>`:""}
+   <div style="overflow-x:auto">
+    <table class="invoice-payment-table">
+     <thead><tr><th>Tanggal</th><th>Metode</th><th>Nominal</th><th>Catatan</th></tr></thead>
+     <tbody>${paymentRows||'<tr><td colspan="4">Belum ada pembayaran.</td></tr>'}</tbody>
+    </table>
+   </div>
+   ${invoicePaymentStatus(invoice)!=="lunas"?`
+    <h3 style="margin-top:20px">Catat Pembayaran</h3>
+    <div class="invoice-payment-grid">
+     <div><label>Nominal Pembayaran (Rp)</label><input id="invoicePaymentAmount" type="number" min="1" max="${Math.max(0,Number(invoice.total)-Number(invoice.paid_amount||0))}" step="1" placeholder="Masukkan nominal"></div>
+     <div><label>Tanggal Pembayaran</label><input id="invoicePaymentDate" type="date" value="${todayDate()}"></div>
+     <div><label>Metode Pembayaran</label><select id="invoicePaymentMethod"><option value="tunai">Tunai</option><option value="transfer">Transfer Bank</option><option value="qris">QRIS</option><option value="lainnya">Lainnya</option></select></div>
+     <div><label>Catatan</label><input id="invoicePaymentNotes" placeholder="Opsional"></div>
+    </div>
+    <div id="invoicePaymentMessage" class="invoice-message"></div>
+    <button class="invoice-action invoice-primary" id="invoicePaymentSaveButton" type="button" style="margin-top:12px">Simpan Pembayaran</button>
+   `:`<p class="invoice-message erp-success">Invoice sudah lunas.</p>`}
   </div>
   <div class="erp-actions no-print">
    <button class="invoice-action invoice-primary" id="invoicePrintButton">Cetak Invoice</button>
@@ -2235,6 +2343,9 @@ async function showInvoiceDetail(id) {
   </div>
  `;
 
+ if(document.getElementById("invoicePaymentSaveButton")){
+  document.getElementById("invoicePaymentSaveButton").addEventListener("click",()=>submitInvoicePayment(id));
+ }
  document.getElementById("invoicePrintButton").addEventListener("click",()=>window.print());
  document.getElementById("invoiceCloseDetail").addEventListener("click",()=>{
   panel.style.display="none";
