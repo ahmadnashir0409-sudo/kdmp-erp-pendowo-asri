@@ -2711,3 +2711,597 @@ window.showPage=function(page,button){
     loadOperationalHistory();
   }
 };
+
+// ==========================================
+// MODUL TRANSAKSI TOKO - KDMP PENDOWO ASRI
+// ==========================================
+
+const tokoStyle = document.createElement("style");
+tokoStyle.textContent = `
+.toko-box{background:white;border:1px solid #e8e8e8;border-radius:12px;padding:20px;margin-bottom:18px}
+.toko-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.toko-field{margin-bottom:13px}
+.toko-field label{display:block;font-size:13px;font-weight:600;margin-bottom:7px;color:#555}
+.toko-field input,.toko-field select{width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;border-radius:7px;font:inherit;background:white}
+.toko-table-wrap{overflow-x:auto}
+.toko-table{width:100%;min-width:650px;border-collapse:collapse}
+.toko-table th,.toko-table td{padding:11px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.toko-table th{background:#fafafa}
+.toko-table input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #ddd;border-radius:6px}
+.toko-total{display:flex;justify-content:space-between;padding:8px 0}
+.toko-grand-total{font-size:22px;font-weight:800;color:#a71925}
+.toko-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.toko-stat{background:white;border:1px solid #eee;border-radius:10px;padding:16px}
+.toko-stat small{display:block;color:#777;margin-bottom:7px}
+.toko-stat strong{font-size:19px}
+.toko-btn{border:0;border-radius:7px;padding:10px 15px;background:#a71925;color:white;font-weight:600;cursor:pointer}
+.toko-btn.secondary{background:#eee;color:#333}
+.toko-btn.danger{background:#fee2e2;color:#991b1b}
+.toko-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}
+.toko-history{overflow-x:auto;background:white;border:1px solid #eee;border-radius:10px}
+.toko-history table{width:100%;min-width:650px;border-collapse:collapse}
+.toko-history th,.toko-history td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.toko-history th{background:#fafafa}
+@media(max-width:650px){
+ .toko-grid{grid-template-columns:1fr}
+ .toko-stat-grid{grid-template-columns:1fr}
+ .toko-box{padding:13px}
+}
+`;
+document.head.appendChild(tokoStyle);
+
+let tokoItems = [];
+
+function setupToko(){
+  const page=document.getElementById("modulePage");
+  if(!page || document.getElementById("tokoContent"))return;
+
+  const section=document.createElement("section");
+  section.id="tokoContent";
+  section.className="erp-content";
+
+  section.innerHTML=`
+    <div class="erp-toolbar">
+      <div>
+        <h3>Kasir Transaksi Toko</h3>
+        <p class="erp-muted">Pencatatan penjualan dan pembayaran KDMP Pendowo Asri.</p>
+      </div>
+    </div>
+
+    <div class="toko-stat-grid">
+      <div class="toko-stat">
+        <small>Transaksi Hari Ini</small>
+        <strong id="tokoStatCount">0</strong>
+      </div>
+      <div class="toko-stat">
+        <small>Omzet Hari Ini</small>
+        <strong id="tokoStatOmzet">Rp0</strong>
+      </div>
+      <div class="toko-stat">
+        <small>Rata-rata Transaksi</small>
+        <strong id="tokoStatAverage">Rp0</strong>
+      </div>
+    </div>
+
+    <div class="toko-box">
+      <h3>Transaksi Penjualan Baru</h3>
+
+      <div class="toko-grid">
+        <div class="toko-field">
+          <label>Nama Pelanggan (Opsional)</label>
+          <input id="tokoCustomer" placeholder="Pelanggan umum">
+        </div>
+        <div class="toko-field">
+          <label>Metode Pembayaran</label>
+          <select id="tokoPayment">
+            <option value="tunai">Tunai</option>
+            <option value="transfer">Transfer Bank</option>
+            <option value="qris">QRIS</option>
+          </select>
+        </div>
+      </div>
+
+      <h4>Rincian Barang</h4>
+      <div class="toko-table-wrap">
+        <table class="toko-table">
+          <thead>
+            <tr>
+              <th>Nama Barang</th>
+              <th>Jumlah</th>
+              <th>Satuan</th>
+              <th>Harga (Rp)</th>
+              <th>Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tokoItemsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="toko-actions">
+        <button type="button" class="toko-btn secondary" id="tokoAddItem">
+          + Tambah Barang
+        </button>
+      </div>
+
+      <div class="toko-grid" style="margin-top:18px">
+        <div class="toko-field">
+          <label>Diskon (Rp)</label>
+          <input type="number" id="tokoDiscount" min="0" value="0">
+        </div>
+        <div class="toko-field">
+          <label>Uang Diterima (Rp)</label>
+          <input type="number" id="tokoPaid" min="0" value="0">
+        </div>
+      </div>
+
+      <div style="max-width:400px;margin-left:auto">
+        <div class="toko-total">
+          <span>Subtotal</span>
+          <strong id="tokoSubtotal">Rp0</strong>
+        </div>
+        <div class="toko-total">
+          <span>Diskon</span>
+          <strong id="tokoDiscountDisplay">Rp0</strong>
+        </div>
+        <div class="toko-total" style="border-top:1px solid #ddd;padding-top:13px">
+          <span>Total Belanja</span>
+          <strong class="toko-grand-total" id="tokoGrandTotal">Rp0</strong>
+        </div>
+        <div class="toko-total">
+          <span>Kembalian</span>
+          <strong id="tokoChange">Rp0</strong>
+        </div>
+      </div>
+
+      <div class="toko-field" style="margin-top:12px">
+        <label>Catatan (Opsional)</label>
+        <input id="tokoNotes" placeholder="Catatan transaksi">
+      </div>
+
+      <div id="tokoMessage" class="erp-message"></div>
+
+      <div class="toko-actions">
+        <button type="button" class="toko-btn" id="tokoSave">
+          Simpan Transaksi
+        </button>
+        <button type="button" class="toko-btn secondary" id="tokoReset">
+          Reset Form
+        </button>
+      </div>
+    </div>
+
+    <div class="toko-box">
+      <h3>Riwayat Penjualan</h3>
+      <div class="toko-grid">
+        <div class="toko-field">
+          <label>Filter Tanggal</label>
+          <input type="date" id="tokoFilterDate">
+        </div>
+        <div class="toko-field" style="display:flex;align-items:end">
+          <button class="toko-btn" id="tokoFilterButton">Tampilkan</button>
+          <button class="toko-btn secondary" id="tokoRefresh" style="margin-left:8px">Reset</button>
+        </div>
+      </div>
+      <div id="tokoHistoryMessage" class="erp-muted"></div>
+      <div class="toko-history">
+        <table>
+          <thead>
+            <tr>
+              <th>Nomor Transaksi</th>
+              <th>Tanggal</th>
+              <th>Pelanggan</th>
+              <th>Pembayaran</th>
+              <th>Total</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="tokoHistoryBody">
+            <tr><td colspan="6">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  page.appendChild(section);
+
+  document.getElementById("tokoAddItem").onclick=addTokoItem;
+  document.getElementById("tokoDiscount").oninput=calculateTokoTotal;
+  document.getElementById("tokoPaid").oninput=calculateTokoTotal;
+  document.getElementById("tokoSave").onclick=saveTokoSale;
+  document.getElementById("tokoReset").onclick=resetTokoForm;
+  document.getElementById("tokoFilterButton").onclick=loadTokoHistory;
+  document.getElementById("tokoRefresh").onclick=()=>{
+    document.getElementById("tokoFilterDate").value="";
+    loadTokoHistory();
+  };
+
+  addTokoItem();
+  loadTokoHistory();
+}
+
+function addTokoItem(){
+  tokoItems.push({
+    name:"",
+    quantity:1,
+    unit:"pcs",
+    price:0
+  });
+  renderTokoItems();
+}
+
+function renderTokoItems(){
+  const body=document.getElementById("tokoItemsBody");
+  if(!body)return;
+
+  body.innerHTML=tokoItems.map((item,index)=>`
+    <tr>
+      <td>
+        <input type="text" placeholder="Nama barang"
+          value="${escapeHTML(item.name)}"
+          oninput="updateTokoItem(${index},'name',this.value)">
+      </td>
+      <td>
+        <input type="number" min="0.001" step="0.001"
+          value="${item.quantity}"
+          oninput="updateTokoItem(${index},'quantity',this.value)">
+      </td>
+      <td>
+        <input type="text" value="${escapeHTML(item.unit)}"
+          oninput="updateTokoItem(${index},'unit',this.value)">
+      </td>
+      <td>
+        <input type="number" min="0" step="1"
+          value="${item.price}"
+          oninput="updateTokoItem(${index},'price',this.value)">
+      </td>
+      <td id="tokoLine${index}">${formatRupiah(item.quantity*item.price)}</td>
+      <td>
+        <button class="toko-btn danger" type="button"
+          onclick="removeTokoItem(${index})">X</button>
+      </td>
+    </tr>
+  `).join("");
+
+  calculateTokoTotal();
+}
+
+window.updateTokoItem=function(index,field,value){
+  if(!tokoItems[index])return;
+
+  if(field==="name" || field==="unit"){
+    tokoItems[index][field]=value;
+  }else{
+    tokoItems[index][field]=Math.max(0,Number(value)||0);
+  }
+
+  const line=document.getElementById("tokoLine"+index);
+  if(line){
+    line.textContent=formatRupiah(
+      tokoItems[index].quantity*tokoItems[index].price
+    );
+  }
+  calculateTokoTotal();
+};
+
+window.removeTokoItem=function(index){
+  tokoItems.splice(index,1);
+  renderTokoItems();
+};
+
+function calculateTokoTotal(){
+  const subtotal=tokoItems.reduce(
+    (sum,item)=>sum+(item.quantity*item.price),0
+  );
+
+  const discount=Math.max(
+    0,Number(document.getElementById("tokoDiscount")?.value)||0
+  );
+
+  const total=Math.max(0,subtotal-discount);
+  const paid=Math.max(
+    0,Number(document.getElementById("tokoPaid")?.value)||0
+  );
+
+  document.getElementById("tokoSubtotal").textContent=formatRupiah(subtotal);
+  document.getElementById("tokoDiscountDisplay").textContent=formatRupiah(discount);
+  document.getElementById("tokoGrandTotal").textContent=formatRupiah(total);
+  document.getElementById("tokoChange").textContent=formatRupiah(Math.max(0,paid-total));
+
+  return {subtotal,discount,total,paid,change:Math.max(0,paid-total)};
+}
+
+function resetTokoForm(){
+  tokoItems=[];
+  document.getElementById("tokoCustomer").value="";
+  document.getElementById("tokoPayment").value="tunai";
+  document.getElementById("tokoDiscount").value=0;
+  document.getElementById("tokoPaid").value=0;
+  document.getElementById("tokoNotes").value="";
+  document.getElementById("tokoMessage").textContent="";
+  addTokoItem();
+}
+
+function makeTokoSaleNumber(){
+  const now=new Date();
+  const date=now.toISOString().slice(0,10).replace(/-/g,"");
+  const time=now.getTime().toString().slice(-6);
+  return "TRX-"+date+"-"+time;
+}
+
+async function saveTokoSale(){
+  const button=document.getElementById("tokoSave");
+  const message=document.getElementById("tokoMessage");
+  const totals=calculateTokoTotal();
+
+  const items=tokoItems.filter(item=>
+    item.name.trim() && item.quantity>0 && item.price>=0
+  );
+
+  if(!window.currentUser?.id){
+    message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  if(!items.length){
+    message.textContent="Masukkan minimal satu barang dengan nama dan jumlah.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  if(totals.discount>totals.subtotal){
+    message.textContent="Diskon tidak boleh lebih besar dari subtotal.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  if(totals.paid<totals.total){
+    message.textContent="Uang diterima belum mencukupi total belanja.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  if(totals.total<=0){
+    message.textContent="Total transaksi harus lebih dari nol.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  const saleNumber=makeTokoSaleNumber();
+
+  const sale={
+    sale_number:saleNumber,
+    customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
+    payment_method:document.getElementById("tokoPayment").value,
+    subtotal:totals.subtotal,
+    discount:totals.discount,
+    total:totals.total,
+    paid_amount:totals.paid,
+    change_amount:totals.change,
+    status:"selesai",
+    notes:document.getElementById("tokoNotes").value.trim()||null,
+    created_by:window.currentUser.id
+  };
+
+  button.disabled=true;
+  button.textContent="Menyimpan...";
+
+  try{
+    const {data:createdSale,error:saleError}=await supabaseClient
+      .from("store_sales")
+      .insert(sale)
+      .select()
+      .single();
+
+    if(saleError)throw saleError;
+
+    const detailItems=items.map(item=>({
+      sale_id:createdSale.id,
+      product_name:item.name.trim(),
+      quantity:item.quantity,
+      unit:item.unit.trim()||"pcs",
+      unit_price:item.price,
+      line_total:item.quantity*item.price
+    }));
+
+    const {error:itemError}=await supabaseClient
+      .from("store_sale_items")
+      .insert(detailItems);
+
+    if(itemError){
+      // Hindari transaksi tanpa rincian barang.
+      await supabaseClient
+        .from("store_sales")
+        .delete()
+        .eq("id",createdSale.id);
+
+      throw itemError;
+    }
+
+    message.textContent="Transaksi berhasil disimpan: "+saleNumber;
+    message.className="erp-message erp-success";
+
+    resetTokoForm();
+    await loadTokoHistory();
+    printTokoReceipt(createdSale,items);
+
+  }catch(error){
+    message.textContent="Gagal menyimpan transaksi: "+error.message;
+    message.className="erp-message erp-error";
+  }finally{
+    button.disabled=false;
+    button.textContent="Simpan Transaksi";
+  }
+}
+
+async function loadTokoHistory(){
+  const body=document.getElementById("tokoHistoryBody");
+  const message=document.getElementById("tokoHistoryMessage");
+  if(!body)return;
+
+  body.innerHTML='<tr><td colspan="6">Memuat data...</td></tr>';
+
+  const date=document.getElementById("tokoFilterDate").value;
+
+  let query=supabaseClient
+    .from("store_sales")
+    .select("*")
+    .order("sale_date",{ascending:false})
+    .limit(200);
+
+  if(date){
+    query=query.gte("sale_date",date+"T00:00:00")
+      .lt("sale_date",date+"T23:59:59.999");
+  }
+
+  const {data,error}=await query;
+
+  if(error){
+    body.innerHTML=`<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;
+    message.textContent="Gagal mengambil riwayat transaksi.";
+    return;
+  }
+
+  const sales=data||[];
+  const today=new Date().toISOString().slice(0,10);
+  const todaySales=sales.filter(s=>
+    String(s.sale_date).slice(0,10)===today
+  );
+
+  const omzet=todaySales.reduce((sum,s)=>sum+Number(s.total||0),0);
+
+  document.getElementById("tokoStatCount").textContent=todaySales.length;
+  document.getElementById("tokoStatOmzet").textContent=formatRupiah(omzet);
+  document.getElementById("tokoStatAverage").textContent=
+    formatRupiah(todaySales.length?omzet/todaySales.length:0);
+
+  if(!sales.length){
+    body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px">Belum ada transaksi penjualan.</td></tr>';
+    message.textContent="Belum ada riwayat transaksi.";
+    return;
+  }
+
+  const paymentLabels={
+    tunai:"Tunai",
+    transfer:"Transfer",
+    qris:"QRIS"
+  };
+
+  body.innerHTML=sales.map(sale=>`
+    <tr>
+      <td>${escapeHTML(sale.sale_number)}</td>
+      <td>${new Date(sale.sale_date).toLocaleString("id-ID")}</td>
+      <td>${escapeHTML(sale.customer_name||"Pelanggan Umum")}</td>
+      <td>${paymentLabels[sale.payment_method]||"-"}</td>
+      <td>${formatRupiah(sale.total)}</td>
+      <td>
+        <button class="toko-btn secondary"
+          onclick="printTokoReceiptById('${sale.id}')">Cetak</button>
+      </td>
+    </tr>
+  `).join("");
+
+  message.textContent="Menampilkan "+sales.length+" transaksi.";
+}
+
+window.printTokoReceiptById=async function(id){
+  const {data:sale,error}=await supabaseClient
+    .from("store_sales")
+    .select("*")
+    .eq("id",id)
+    .single();
+
+  if(error){
+    alert("Gagal mengambil transaksi: "+error.message);
+    return;
+  }
+
+  const {data:items,itemError}=await supabaseClient
+    .from("store_sale_items")
+    .select("*")
+    .eq("sale_id",id);
+
+  if(itemError){
+    alert("Gagal mengambil rincian barang.");
+    return;
+  }
+
+  printTokoReceipt(sale,items||[]);
+};
+
+function printTokoReceipt(sale,items){
+  const win=window.open("","_blank","width=420,height=650");
+
+  if(!win){
+    alert("Izinkan pop-up browser untuk mencetak struk.");
+    return;
+  }
+
+  const rows=items.map(item=>`
+    <tr>
+      <td>${escapeHTML(item.product_name)}<br>
+      ${item.quantity} ${escapeHTML(item.unit)} x ${formatRupiah(item.unit_price)}</td>
+      <td style="text-align:right">${formatRupiah(item.line_total)}</td>
+    </tr>
+  `).join("");
+
+  win.document.write(`
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8">
+      <title>Struk ${escapeHTML(sale.sale_number)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;width:300px;margin:20px auto;font-size:12px;color:#111}
+        h2{text-align:center;font-size:18px;margin-bottom:4px}
+        p{text-align:center;margin:4px}
+        table{width:100%;border-collapse:collapse;margin-top:15px}
+        td{padding:6px 0;border-bottom:1px dashed #ccc;vertical-align:top}
+        .total{font-weight:bold;font-size:15px}
+        .center{text-align:center;margin-top:20px}
+        @media print{button{display:none}}
+      </style>
+    </head>
+    <body>
+      <h2>KDMP PENDOWO ASRI</h2>
+      <p>Struk Penjualan</p>
+      <hr>
+      <p style="text-align:left">No: ${escapeHTML(sale.sale_number)}</p>
+      <p style="text-align:left">Tanggal: ${new Date(sale.sale_date).toLocaleString("id-ID")}</p>
+      <p style="text-align:left">Pelanggan: ${escapeHTML(sale.customer_name||"Pelanggan Umum")}</p>
+      <hr>
+      <table>${rows}</table>
+      <hr>
+      <p style="text-align:right">Subtotal: ${formatRupiah(sale.subtotal)}</p>
+      <p style="text-align:right">Diskon: ${formatRupiah(sale.discount)}</p>
+      <p class="total" style="text-align:right">TOTAL: ${formatRupiah(sale.total)}</p>
+      <p style="text-align:right">Bayar: ${formatRupiah(sale.paid_amount)}</p>
+      <p style="text-align:right">Kembali: ${formatRupiah(sale.change_amount)}</p>
+      <p class="center">Terima kasih telah berbelanja!</p>
+      <script>window.onload=function(){window.print()}<\/script>
+    </body>
+    </html>
+  `);
+
+  win.document.close();
+}
+
+// Hubungkan ke menu toko yang sudah ada
+const previousTokoShowPage=window.showPage;
+
+window.showPage=function(page,button){
+  const content=document.getElementById("tokoContent");
+
+  if(content)content.style.display="none";
+
+  previousTokoShowPage(page,button);
+
+  if(page==="toko"){
+    setupToko();
+    const toko=document.getElementById("tokoContent");
+    if(toko)toko.style.display="block";
+    loadTokoHistory();
+  }
+};
