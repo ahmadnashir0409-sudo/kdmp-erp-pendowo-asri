@@ -3036,7 +3036,9 @@ async function saveTokoSale(){
   const totals=calculateTokoTotal();
 
   const items=tokoItems.filter(item=>
-    item.name.trim() && item.quantity>0 && item.price>=0
+    String(item.name||"").trim() &&
+    Number(item.quantity)>0 &&
+    Number(item.price)>=0
   );
 
   if(!window.currentUser?.id){
@@ -3069,33 +3071,99 @@ async function saveTokoSale(){
     return;
   }
 
-  const saleNumber=makeTokoSaleNumber();
-
-  const sale={
-    sale_number:saleNumber,
-    customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
-    payment_method:document.getElementById("tokoPayment").value,
-    subtotal:totals.subtotal,
-    discount:totals.discount,
-    total:totals.total,
-    paid_amount:totals.paid,
-    change_amount:totals.change,
-    status:"selesai",
-    notes:document.getElementById("tokoNotes").value.trim()||null,
-    created_by:window.currentUser.id
-  };
-
   button.disabled=true;
-  button.textContent="Menyimpan...";
+  button.textContent="Memeriksa stok...";
+  message.textContent="";
+
+  let createdSale=null;
+  let detailsSaved=false;
+  const stockChanges=[];
+  const movementIds=[];
 
   try{
-    const {data:createdSale,error:saleError}=await supabaseClient
+    const {data:products,error:productError}=await supabaseClient
+      .from("inventory_products")
+      .select("id,product_name,unit,current_stock,purchase_price")
+      .eq("is_active",true);
+
+    if(productError)throw productError;
+
+    const grouped=new Map();
+
+    for(const item of items){
+      const itemName=String(item.name).trim();
+
+      const product=(products||[]).find(p=>
+        String(p.product_name||"").trim().toLowerCase()===itemName.toLowerCase()
+      );
+
+      if(!product){
+        throw new Error(
+          'Barang "'+itemName+'" belum terdaftar di Persediaan Barang.'
+        );
+      }
+
+      const itemUnit=String(item.unit||"pcs").trim().toLowerCase();
+      const productUnit=String(product.unit||"pcs").trim().toLowerCase();
+
+      if(itemUnit!==productUnit){
+        throw new Error(
+          'Satuan "'+itemName+'" tidak sesuai. Gunakan "'+product.unit+'".'
+        );
+      }
+
+      const quantity=Number(item.quantity);
+
+      if(!Number.isFinite(quantity)||quantity<=0){
+        throw new Error('Jumlah barang "'+itemName+'" tidak valid.');
+      }
+
+      const existing=grouped.get(product.id);
+
+      if(existing){
+        existing.quantity+=quantity;
+      }else{
+        grouped.set(product.id,{product,quantity});
+      }
+    }
+
+    for(const entry of grouped.values()){
+      const available=Number(entry.product.current_stock||0);
+
+      if(available<entry.quantity){
+        throw new Error(
+          'Stok '+entry.product.product_name+
+          ' tidak cukup. Tersedia: '+available+' '+entry.product.unit+'.'
+        );
+      }
+    }
+
+    const saleNumber=makeTokoSaleNumber();
+
+    const sale={
+      sale_number:saleNumber,
+      customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
+      payment_method:document.getElementById("tokoPayment").value,
+      subtotal:totals.subtotal,
+      discount:totals.discount,
+      total:totals.total,
+      paid_amount:totals.paid,
+      change_amount:totals.change,
+      status:"selesai",
+      notes:document.getElementById("tokoNotes").value.trim()||null,
+      created_by:window.currentUser.id
+    };
+
+    button.textContent="Menyimpan transaksi...";
+
+    const {data:created,error:saleError}=await supabaseClient
       .from("store_sales")
       .insert(sale)
       .select()
       .single();
 
     if(saleError)throw saleError;
+    createdSale=created;
 
     const detailItems=items.map(item=>({
       sale_id:createdSale.id,
@@ -3110,33 +3178,108 @@ async function saveTokoSale(){
       .from("store_sale_items")
       .insert(detailItems);
 
-    if(itemError){
-      // Hindari transaksi tanpa rincian barang.
-      await supabaseClient
-        .from("store_sales")
-        .delete()
-        .eq("id",createdSale.id);
+    if(itemError)throw itemError;
+    detailsSaved=true;
 
-      throw itemError;
+    for(const entry of grouped.values()){
+      const product=entry.product;
+      const before=Number(product.current_stock||0);
+      const after=before-entry.quantity;
+
+      const {error:updateError}=await supabaseClient
+        .from("inventory_products")
+        .update({current_stock:after})
+        .eq("id",product.id);
+
+      if(updateError)throw updateError;
+
+      stockChanges.push({
+        productId:product.id,
+        before:before
+      });
+
+      const {data:movement,error:movementError}=await supabaseClient
+        .from("inventory_movements")
+        .insert({
+          movement_number:inventoryNumber("JUAL"),
+          product_id:product.id,
+          movement_type:"keluar",
+          quantity:entry.quantity,
+          stock_before:before,
+          stock_after:after,
+          unit_cost:Number(product.purchase_price||0),
+          movement_date:new Date().toISOString().slice(0,10),
+          reference_number:saleNumber,
+          notes:"Barang keluar dari transaksi penjualan toko",
+          created_by:window.currentUser.id
+        })
+        .select("id")
+        .single();
+
+      if(movementError)throw movementError;
+      if(movement?.id)movementIds.push(movement.id);
     }
 
-    message.textContent="Transaksi berhasil disimpan: "+saleNumber;
+    message.textContent=
+      "Transaksi berhasil disimpan dan stok sudah dikurangi: "+saleNumber;
     message.className="erp-message erp-success";
 
     resetTokoForm();
     await loadTokoHistory();
+    await loadInventoryProducts();
+    await loadInventoryMovements();
+
     printTokoReceipt(createdSale,items);
 
   }catch(error){
-    message.textContent="Gagal menyimpan transaksi: "+error.message;
+    console.error("Gagal menyimpan penjualan toko:",error);
+
+    for(const change of stockChanges.reverse()){
+      const {error:restoreError}=await supabaseClient
+        .from("inventory_products")
+        .update({current_stock:change.before})
+        .eq("id",change.productId);
+
+      if(restoreError)console.error("Gagal memulihkan stok:",restoreError);
+    }
+
+    if(movementIds.length){
+      const {error:deleteMovementError}=await supabaseClient
+        .from("inventory_movements")
+        .delete()
+        .in("id",movementIds);
+
+      if(deleteMovementError)console.error(deleteMovementError);
+    }
+
+    if(createdSale){
+      if(detailsSaved){
+        const {error:deleteDetailError}=await supabaseClient
+          .from("store_sale_items")
+          .delete()
+          .eq("sale_id",createdSale.id);
+
+        if(deleteDetailError)console.error(deleteDetailError);
+      }
+
+      const {error:deleteSaleError}=await supabaseClient
+        .from("store_sales")
+        .delete()
+        .eq("id",createdSale.id);
+
+      if(deleteSaleError)console.error(deleteSaleError);
+    }
+
+    message.textContent=
+      "Gagal menyimpan transaksi: "+(error.message||"Kesalahan tidak diketahui");
     message.className="erp-message erp-error";
+
   }finally{
     button.disabled=false;
     button.textContent="Simpan Transaksi";
   }
 }
 
-async function loadTokoHistory(){
   const body=document.getElementById("tokoHistoryBody");
   const message=document.getElementById("tokoHistoryMessage");
   if(!body)return;
