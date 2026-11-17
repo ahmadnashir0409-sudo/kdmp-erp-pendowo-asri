@@ -5506,3 +5506,249 @@ window.showPage = function(page, button) {
     showSavingsMainMenu();
   }
 };
+
+// ==========================================
+// DASHBOARD MANAJER - MONITORING TAMBAHAN
+// ==========================================
+
+const managerDashboardStyle = document.createElement("style");
+managerDashboardStyle.textContent = `
+.manager-dashboard-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:15px;
+  margin:22px 0;
+}
+.manager-info-card {
+  background:#fff;
+  border:1px solid #eee;
+  border-radius:13px;
+  padding:19px;
+  min-width:0;
+}
+.manager-info-top {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  margin-bottom:13px;
+}
+.manager-info-title {
+  color:#666;
+  font-size:13px;
+  font-weight:600;
+}
+.manager-info-icon {
+  width:36px;
+  height:36px;
+  border-radius:10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#fff1f2;
+  font-size:18px;
+}
+.manager-info-value {
+  font-size:23px;
+  font-weight:750;
+  color:#252525;
+  overflow-wrap:anywhere;
+}
+.manager-info-note {
+  font-size:12px;
+  color:#888;
+  margin-top:8px;
+}
+.manager-info-card.warning .manager-info-value {
+  color:#b91c2c;
+}
+.manager-dashboard-message {
+  font-size:12px;
+  color:#888;
+  margin-top:15px;
+}
+@media(max-width:850px) {
+  .manager-dashboard-grid {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:520px) {
+  .manager-dashboard-grid {
+    grid-template-columns:1fr;
+  }
+}
+`;
+document.head.appendChild(managerDashboardStyle);
+
+function setupManagerDashboardCards() {
+  const dashboard = document.getElementById("dashboard");
+  if (!dashboard || document.getElementById("managerDashboardCards")) return;
+
+  const stats = dashboard.querySelector(".stats");
+  if (!stats) return;
+
+  const section = document.createElement("div");
+  section.id = "managerDashboardCards";
+  section.innerHTML = `
+    <div style="margin:25px 0 12px">
+      <h3 style="margin:0 0 5px;color:#292929">Monitoring Manajer</h3>
+      <p style="margin:0;color:#888;font-size:13px">
+        Ringkasan tagihan, persetujuan, dan kondisi pembukuan koperasi
+      </p>
+    </div>
+
+    <div class="manager-dashboard-grid">
+
+      <div class="manager-info-card">
+        <div class="manager-info-top">
+          <span class="manager-info-title">Sisa Tagihan Angsuran</span>
+          <span class="manager-info-icon">💳</span>
+        </div>
+        <div class="manager-info-value" id="managerOutstandingAmount">Memuat...</div>
+        <div class="manager-info-note" id="managerOutstandingCount">
+          Menghitung angsuran belum lunas
+        </div>
+      </div>
+
+      <div class="manager-info-card">
+        <div class="manager-info-top">
+          <span class="manager-info-title">Menunggu Persetujuan</span>
+          <span class="manager-info-icon">📝</span>
+        </div>
+        <div class="manager-info-value" id="managerPendingLoans">-</div>
+        <div class="manager-info-note">
+          Pengajuan pinjaman anggota
+        </div>
+      </div>
+
+      <div class="manager-info-card warning">
+        <div class="manager-info-top">
+          <span class="manager-info-title">Peringatan Pembukuan</span>
+          <span class="manager-info-icon">⚠️</span>
+        </div>
+        <div class="manager-info-value" id="managerBookkeepingWarnings">-</div>
+        <div class="manager-info-note" id="managerBookkeepingDetail">
+          Memeriksa kondisi pembukuan
+        </div>
+      </div>
+
+    </div>
+
+    <div class="manager-dashboard-message" id="managerDashboardMessage">
+      Memuat monitoring...
+    </div>
+  `;
+
+  stats.insertAdjacentElement("afterend", section);
+}
+
+async function loadManagerDashboardCards() {
+  setupManagerDashboardCards();
+
+  const outstandingElement = document.getElementById("managerOutstandingAmount");
+  if (!outstandingElement) return;
+
+  const pendingElement = document.getElementById("managerPendingLoans");
+  const warningElement = document.getElementById("managerBookkeepingWarnings");
+  const outstandingCountElement = document.getElementById("managerOutstandingCount");
+  const detailElement = document.getElementById("managerBookkeepingDetail");
+  const messageElement = document.getElementById("managerDashboardMessage");
+
+  outstandingElement.textContent = "Memuat...";
+  pendingElement.textContent = "Memuat...";
+  warningElement.textContent = "Memuat...";
+
+  try {
+    const results = await Promise.all([
+      supabaseClient
+        .from("loan_installments")
+        .select("id,total_due,paid_amount,status,due_date")
+        .neq("status", "lunas"),
+
+      supabaseClient
+        .from("member_loans")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "diajukan"),
+
+      supabaseClient
+        .from("journal_entries")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "draft")
+    ]);
+
+    const installmentResult = results[0];
+    const pendingResult = results[1];
+    const draftResult = results[2];
+
+    if (installmentResult.error) throw installmentResult.error;
+    if (pendingResult.error) throw pendingResult.error;
+    if (draftResult.error) throw draftResult.error;
+
+    const installments = installmentResult.data || [];
+    const today = todayDate();
+
+    const unpaid = installments.filter(item =>
+      Number(item.total_due || 0) > Number(item.paid_amount || 0)
+    );
+
+    const outstanding = unpaid.reduce((sum, item) =>
+      sum + Math.max(
+        0,
+        Number(item.total_due || 0) - Number(item.paid_amount || 0)
+      ), 0);
+
+    const overdue = unpaid.filter(item =>
+      item.due_date && item.due_date < today
+    ).length;
+
+    const pending = pendingResult.count || 0;
+    const drafts = draftResult.count || 0;
+    const warnings = overdue + drafts;
+
+    outstandingElement.textContent = formatRupiah(outstanding);
+    outstandingCountElement.textContent =
+      unpaid.length + " angsuran masih memiliki sisa tagihan";
+
+    pendingElement.textContent = pending;
+
+    warningElement.textContent = warnings;
+    detailElement.textContent =
+      drafts + " jurnal draft • " + overdue + " angsuran terlambat";
+
+    if (messageElement) {
+      messageElement.textContent =
+        "Monitoring berhasil diperbarui.";
+      messageElement.style.color = "#18743b";
+    }
+
+  } catch (error) {
+    console.error("Monitoring dashboard:", error);
+
+    outstandingElement.textContent = "Gagal";
+    pendingElement.textContent = "Gagal";
+    warningElement.textContent = "Gagal";
+
+    outstandingCountElement.textContent =
+      "Data tagihan belum dapat dibaca";
+
+    detailElement.textContent =
+      "Data pembukuan belum dapat dibaca";
+
+    if (messageElement) {
+      messageElement.textContent =
+        "Monitoring gagal dimuat: " + (error.message || "Periksa koneksi database.");
+      messageElement.style.color = "#b91c2c";
+    }
+  }
+}
+
+// Hubungkan monitoring dengan navigasi dashboard.
+const previousManagerDashboardShowPage = window.showPage;
+
+window.showPage = function(page, button) {
+  previousManagerDashboardShowPage(page, button);
+
+  if (page === "dashboard") {
+    loadManagerDashboardCards();
+  }
+};
