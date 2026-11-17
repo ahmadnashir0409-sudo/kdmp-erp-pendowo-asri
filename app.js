@@ -3756,3 +3756,452 @@ window.showPage = function(page,button){
     loadMembers();
   }
 };
+
+// ==========================================
+// MODUL TRANSAKSI SIMPANAN ANGGOTA
+// Tetap di dalam menu Simpanan & Pinjaman
+// ==========================================
+
+const savingsStyle = document.createElement("style");
+savingsStyle.textContent = `
+.sav-wrap{display:grid;gap:17px;margin-top:24px}
+.sav-panel{background:white;border:1px solid #e9e9e9;border-radius:12px;padding:20px}
+.sav-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.sav-field{margin-bottom:13px}
+.sav-field label{display:block;font-size:13px;font-weight:600;margin-bottom:7px;color:#555}
+.sav-field input,.sav-field select,.sav-field textarea{
+ width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;
+ border-radius:7px;font:inherit;background:white
+}
+.sav-btn{border:0;border-radius:7px;padding:10px 15px;background:#a71925;color:white;font-weight:600;cursor:pointer}
+.sav-btn.gray{background:#eee;color:#333}
+.sav-btn:disabled{opacity:.6;cursor:not-allowed}
+.sav-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.sav-card{background:white;border:1px solid #e9e9e9;border-radius:12px;padding:17px}
+.sav-card small{display:block;color:#777;margin-bottom:8px}
+.sav-card strong{font-size:19px}
+.sav-table-wrap{overflow-x:auto;border:1px solid #eee;border-radius:10px}
+.sav-table{width:100%;min-width:750px;border-collapse:collapse}
+.sav-table th,.sav-table td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.sav-table th{background:#fafafa;color:#666}
+.sav-message{font-size:13px;margin:10px 0}
+.sav-positive{color:#16834e;font-weight:600}
+.sav-negative{color:#b91c1c;font-weight:600}
+@media(max-width:650px){
+ .sav-grid,.sav-stats{grid-template-columns:1fr}
+ .sav-panel{padding:14px}
+}
+`;
+document.head.appendChild(savingsStyle);
+
+let savingsTransactionsCache = [];
+
+function setupSavingsManagement(){
+  const parent=document.getElementById("memberContent");
+  if(!parent || document.getElementById("savingsContent"))return;
+
+  const section=document.createElement("div");
+  section.id="savingsContent";
+  section.className="sav-wrap";
+
+  section.innerHTML=`
+    <div>
+      <h2>Transaksi Simpanan</h2>
+      <p class="erp-muted">Pencatatan simpanan pokok, wajib, dan sukarela anggota.</p>
+    </div>
+
+    <div class="sav-stats">
+      <div class="sav-card">
+        <small>Total Simpanan Pokok</small>
+        <strong id="savTotalPokok">Rp0</strong>
+      </div>
+      <div class="sav-card">
+        <small>Total Simpanan Wajib</small>
+        <strong id="savTotalWajib">Rp0</strong>
+      </div>
+      <div class="sav-card">
+        <small>Total Simpanan Sukarela</small>
+        <strong id="savTotalSukarela">Rp0</strong>
+      </div>
+    </div>
+
+    <div class="sav-panel">
+      <h3>Catat Transaksi Simpanan</h3>
+      <form id="savingsForm">
+        <div class="sav-grid">
+          <div class="sav-field">
+            <label>Anggota</label>
+            <select id="savMember" required>
+              <option value="">Pilih anggota</option>
+            </select>
+          </div>
+          <div class="sav-field">
+            <label>Jenis Simpanan</label>
+            <select id="savType" required>
+              <option value="pokok">Simpanan Pokok</option>
+              <option value="wajib">Simpanan Wajib</option>
+              <option value="sukarela">Simpanan Sukarela</option>
+            </select>
+          </div>
+          <div class="sav-field">
+            <label>Jenis Transaksi</label>
+            <select id="savTransactionType" required>
+              <option value="setoran">Setoran</option>
+              <option value="penarikan">Penarikan</option>
+            </select>
+          </div>
+          <div class="sav-field">
+            <label>Nominal (Rp)</label>
+            <input id="savAmount" type="number" min="1" step="1" required placeholder="Masukkan nominal">
+          </div>
+          <div class="sav-field">
+            <label>Tanggal Transaksi</label>
+            <input id="savDate" type="date" required>
+          </div>
+          <div class="sav-field">
+            <label>Metode Pembayaran</label>
+            <select id="savPaymentMethod">
+              <option value="tunai">Tunai</option>
+              <option value="transfer">Transfer</option>
+              <option value="qris">QRIS</option>
+            </select>
+          </div>
+        </div>
+        <div class="sav-field">
+          <label>Keterangan (Opsional)</label>
+          <input id="savNotes" placeholder="Contoh: Setoran simpanan bulan November">
+        </div>
+        <div id="savFormMessage" class="sav-message"></div>
+        <button type="submit" class="sav-btn" id="savSaveButton">Simpan Transaksi</button>
+      </form>
+    </div>
+
+    <div class="sav-panel">
+      <h3>Saldo Simpanan Anggota</h3>
+      <div class="sav-message" id="savBalanceMessage">Memuat saldo...</div>
+      <div class="sav-table-wrap">
+        <table class="sav-table">
+          <thead>
+            <tr>
+              <th>Nomor Anggota</th>
+              <th>Nama Anggota</th>
+              <th>Simpanan Pokok</th>
+              <th>Simpanan Wajib</th>
+              <th>Simpanan Sukarela</th>
+              <th>Total Saldo</th>
+            </tr>
+          </thead>
+          <tbody id="savBalanceBody">
+            <tr><td colspan="6">Memuat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sav-panel">
+      <h3>Riwayat Transaksi Simpanan</h3>
+      <div class="sav-message" id="savHistoryMessage">Memuat riwayat...</div>
+      <div class="sav-table-wrap">
+        <table class="sav-table">
+          <thead>
+            <tr>
+              <th>Nomor Transaksi</th>
+              <th>Tanggal</th>
+              <th>Anggota</th>
+              <th>Jenis Simpanan</th>
+              <th>Transaksi</th>
+              <th>Nominal</th>
+              <th>Metode</th>
+            </tr>
+          </thead>
+          <tbody id="savHistoryBody">
+            <tr><td colspan="7">Memuat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  parent.appendChild(section);
+
+  document.getElementById("savDate").value=
+    new Date().toISOString().slice(0,10);
+
+  document.getElementById("savingsForm").onsubmit=
+    saveSavingsTransaction;
+
+  loadSavingsMembers();
+  loadSavingsTransactions();
+}
+
+async function loadSavingsMembers(){
+  const select=document.getElementById("savMember");
+  if(!select)return;
+
+  const {data,error}=await supabaseClient
+    .from("cooperative_members")
+    .select("id,member_number,full_name,status")
+    .eq("status","aktif")
+    .order("full_name");
+
+  if(error){
+    document.getElementById("savFormMessage").textContent=
+      "Gagal memuat anggota: "+error.message;
+    return;
+  }
+
+  select.innerHTML='<option value="">Pilih anggota</option>';
+
+  (data||[]).forEach(member=>{
+    const option=document.createElement("option");
+    option.value=member.id;
+    option.textContent=member.member_number+" - "+member.full_name;
+    select.appendChild(option);
+  });
+
+  if(!data?.length){
+    document.getElementById("savFormMessage").textContent=
+      "Belum ada anggota aktif. Tambahkan anggota terlebih dahulu.";
+  }
+}
+
+async function saveSavingsTransaction(event){
+  event.preventDefault();
+
+  const button=document.getElementById("savSaveButton");
+  const message=document.getElementById("savFormMessage");
+
+  const memberId=document.getElementById("savMember").value;
+  const savingsType=document.getElementById("savType").value;
+  const transactionType=document.getElementById("savTransactionType").value;
+  const amount=Number(document.getElementById("savAmount").value);
+  const date=document.getElementById("savDate").value;
+
+  if(!memberId){
+    message.textContent="Pilih anggota terlebih dahulu.";
+    return;
+  }
+
+  if(!Number.isFinite(amount)||amount<=0){
+    message.textContent="Nominal harus lebih besar dari nol.";
+    return;
+  }
+
+  if(!date){
+    message.textContent="Tanggal transaksi wajib diisi.";
+    return;
+  }
+
+  button.disabled=true;
+  button.textContent="Menyimpan...";
+
+  try{
+    // Ambil seluruh transaksi anggota untuk menghitung saldo jenis simpanan.
+    const {data:existing,error:balanceError}=await supabaseClient
+      .from("member_savings_transactions")
+      .select("transaction_type,amount")
+      .eq("member_id",memberId)
+      .eq("savings_type",savingsType);
+
+    if(balanceError)throw balanceError;
+
+    const currentBalance=(existing||[]).reduce((sum,item)=>{
+      const value=Number(item.amount)||0;
+      return sum+(item.transaction_type==="setoran"?value:-value);
+    },0);
+
+    if(transactionType==="penarikan"&&amount>currentBalance){
+      throw new Error(
+        "Saldo "+savingsType+" tidak mencukupi. Saldo tersedia: "+
+        formatRupiah(currentBalance)
+      );
+    }
+
+    const transactionNumber=
+      "SMP-"+Date.now()+"-"+Math.floor(Math.random()*1000);
+
+    const record={
+      transaction_number:transactionNumber,
+      member_id:memberId,
+      savings_type:savingsType,
+      transaction_type:transactionType,
+      amount:amount,
+      transaction_date:new Date(date+"T12:00:00").toISOString(),
+      payment_method:document.getElementById("savPaymentMethod").value,
+      notes:document.getElementById("savNotes").value.trim()||null,
+      created_by:window.currentUser?.id||null
+    };
+
+    const {error}=await supabaseClient
+      .from("member_savings_transactions")
+      .insert(record);
+
+    if(error)throw error;
+
+    document.getElementById("savingsForm").reset();
+    document.getElementById("savDate").value=
+      new Date().toISOString().slice(0,10);
+
+    message.textContent="Transaksi berhasil disimpan. Nomor: "+transactionNumber;
+    message.style.color="#16834e";
+
+    await loadSavingsTransactions();
+
+    alert("Transaksi simpanan berhasil disimpan.");
+
+  }catch(error){
+    message.textContent="Gagal menyimpan: "+error.message;
+    message.style.color="#b91c1c";
+  }finally{
+    button.disabled=false;
+    button.textContent="Simpan Transaksi";
+  }
+}
+
+async function loadSavingsTransactions(){
+  const historyBody=document.getElementById("savHistoryBody");
+  if(!historyBody)return;
+
+  historyBody.innerHTML='<tr><td colspan="7">Memuat...</td></tr>';
+
+  const {data,error}=await supabaseClient
+    .from("member_savings_transactions")
+    .select("*, cooperative_members(member_number,full_name)")
+    .order("transaction_date",{ascending:false})
+    .limit(500);
+
+  if(error){
+    historyBody.innerHTML=
+      `<tr><td colspan="7">${escapeHTML(error.message)}</td></tr>`;
+    document.getElementById("savHistoryMessage").textContent=
+      "Gagal memuat riwayat transaksi.";
+    return;
+  }
+
+  savingsTransactionsCache=data||[];
+
+  renderSavingsHistory();
+  renderSavingsBalances();
+}
+
+function renderSavingsHistory(){
+  const body=document.getElementById("savHistoryBody");
+  if(!body)return;
+
+  if(!savingsTransactionsCache.length){
+    body.innerHTML=
+      '<tr><td colspan="7" style="text-align:center;padding:20px">Belum ada transaksi simpanan.</td></tr>';
+  }else{
+    const types={
+      pokok:"Simpanan Pokok",
+      wajib:"Simpanan Wajib",
+      sukarela:"Simpanan Sukarela"
+    };
+
+    body.innerHTML=savingsTransactionsCache.map(item=>{
+      const member=item.cooperative_members||{};
+      const deposit=item.transaction_type==="setoran";
+
+      return `
+        <tr>
+          <td>${escapeHTML(item.transaction_number)}</td>
+          <td>${new Date(item.transaction_date).toLocaleDateString("id-ID")}</td>
+          <td>${escapeHTML(member.full_name||"-")}<br><small>${escapeHTML(member.member_number||"")}</small></td>
+          <td>${types[item.savings_type]||item.savings_type}</td>
+          <td class="${deposit?"sav-positive":"sav-negative"}">${deposit?"Setoran":"Penarikan"}</td>
+          <td>${formatRupiah(item.amount)}</td>
+          <td>${escapeHTML(item.payment_method||"-")}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("savHistoryMessage").textContent=
+    savingsTransactionsCache.length+" transaksi terakhir ditampilkan.";
+}
+
+function renderSavingsBalances(){
+  const body=document.getElementById("savBalanceBody");
+  if(!body)return;
+
+  const members=memberCache||[];
+  const balances={pokok:0,wajib:0,sukarela:0};
+  const memberBalances={};
+
+  members.forEach(member=>{
+    memberBalances[member.id]={
+      member,
+      pokok:0,
+      wajib:0,
+      sukarela:0
+    };
+  });
+
+  savingsTransactionsCache.forEach(item=>{
+    const value=Number(item.amount)||0;
+    const signed=item.transaction_type==="setoran"?value:-value;
+
+    if(balances[item.savings_type]!==undefined){
+      balances[item.savings_type]+=signed;
+    }
+
+    if(memberBalances[item.member_id]&&
+       memberBalances[item.member_id][item.savings_type]!==undefined){
+      memberBalances[item.member_id][item.savings_type]+=signed;
+    }
+  });
+
+  document.getElementById("savTotalPokok").textContent=
+    formatRupiah(balances.pokok);
+  document.getElementById("savTotalWajib").textContent=
+    formatRupiah(balances.wajib);
+  document.getElementById("savTotalSukarela").textContent=
+    formatRupiah(balances.sukarela);
+
+  const rows=Object.values(memberBalances);
+
+  if(!rows.length){
+    body.innerHTML=
+      '<tr><td colspan="6" style="text-align:center;padding:20px">Belum ada data anggota.</td></tr>';
+  }else{
+    body.innerHTML=rows.map(row=>{
+      const total=row.pokok+row.wajib+row.sukarela;
+      return `
+        <tr>
+          <td>${escapeHTML(row.member.member_number)}</td>
+          <td>${escapeHTML(row.member.full_name)}</td>
+          <td>${formatRupiah(row.pokok)}</td>
+          <td>${formatRupiah(row.wajib)}</td>
+          <td>${formatRupiah(row.sukarela)}</td>
+          <td><strong>${formatRupiah(total)}</strong></td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("savBalanceMessage").textContent=
+    rows.length+" anggota ditampilkan. Saldo dihitung dari riwayat transaksi.";
+}
+
+// Perbarui saldo setelah data anggota dimuat.
+const previousMemberLoaderForSavings=loadMembers;
+
+loadMembers=async function(){
+  await previousMemberLoaderForSavings();
+  if(document.getElementById("savingsContent")){
+    renderSavingsBalances();
+  }
+};
+
+// Sambungkan bagian simpanan ke halaman yang sama.
+const previousSavingsShowPage=window.showPage;
+
+window.showPage=function(page,button){
+  previousSavingsShowPage(page,button);
+
+  if(page==="simpanan"){
+    setupSavingsManagement();
+    loadSavingsMembers();
+    loadSavingsTransactions();
+  }
+};
