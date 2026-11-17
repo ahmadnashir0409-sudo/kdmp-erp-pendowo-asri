@@ -7516,3 +7516,128 @@ window.showPage=function(page,button){
     loadInventoryMovements();
   }
 };
+
+// =============================================
+// MODUL UTANG & PIUTANG TERINTEGRASI DENGAN INVOICE
+// =============================================
+const debtReceivableStyle = document.createElement("style");
+debtReceivableStyle.textContent = `
+.debt-wrap{display:grid;gap:18px;margin-top:22px}
+.debt-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.debt-card{background:#fff;border:1px solid #eee;border-radius:12px;padding:18px}
+.debt-card small{display:block;color:#777;margin-bottom:8px}
+.debt-card strong{font-size:20px;color:#222}
+.debt-panel{background:#fff;border:1px solid #eee;border-radius:12px;padding:18px}
+.debt-panel h3{margin:0 0 14px}
+.debt-table-wrap{overflow-x:auto}
+.debt-table{width:100%;min-width:900px;border-collapse:collapse}
+.debt-table th,.debt-table td{padding:11px;border-bottom:1px solid #eee;text-align:left;font-size:12px;white-space:nowrap}
+.debt-table th{background:#fafafa;color:#555}
+.debt-status{display:inline-block;padding:5px 9px;border-radius:20px;background:#fff0e6;color:#a34b12;font-size:11px;font-weight:700}
+.debt-status.partial{background:#fff4d8;color:#8a5a00}
+.debt-status.overdue{background:#fee;color:#a71925}
+.debt-status.paid{background:#e8f7ed;color:#18743b}
+.debt-btn{border:0;border-radius:7px;padding:8px 11px;background:#a71925;color:#fff;font-weight:600;cursor:pointer}
+.debt-muted{color:#777;font-size:13px}
+@media(max-width:700px){.debt-summary{grid-template-columns:1fr}.debt-panel{padding:13px}}
+`;
+document.head.appendChild(debtReceivableStyle);
+
+function setupDebtReceivable(){
+ const parent=document.getElementById("modulePage");
+ if(!parent)return;
+ let section=document.getElementById("debtReceivableContent");
+ if(!section){
+  section=document.createElement("section");
+  section.id="debtReceivableContent";
+  section.className="erp-content debt-wrap";
+  section.innerHTML=`
+   <div class="debt-summary">
+    <div class="debt-card"><small>Total Piutang Pelanggan</small><strong id="debtReceivableTotal">Rp0</strong></div>
+    <div class="debt-card"><small>Total Utang Pemasok</small><strong id="debtPayableTotal">Rp0</strong></div>
+    <div class="debt-card"><small>Total Tagihan Terlambat</small><strong id="debtOverdueTotal">Rp0</strong></div>
+   </div>
+   <div class="debt-panel">
+    <div class="erp-toolbar">
+     <div><h3>💳 Ringkasan Utang & Piutang</h3><p class="debt-muted">Data otomatis diambil dari Invoice Penjualan dan Invoice Pembelian.</p></div>
+     <button type="button" class="debt-btn" id="debtRefreshButton">Muat Ulang</button>
+    </div>
+    <div id="debtMessage" class="debt-muted">Memuat data tagihan...</div>
+   </div>
+   <div class="debt-panel">
+    <h3>Piutang Pelanggan</h3>
+    <div class="debt-table-wrap"><table class="debt-table"><thead><tr><th>Nomor Invoice</th><th>Pelanggan</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Total</th><th>Dibayar</th><th>Sisa Piutang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="debtReceivableBody"><tr><td colspan="9">Memuat...</td></tr></tbody></table></div>
+   </div>
+   <div class="debt-panel">
+    <h3>Utang Pemasok</h3>
+    <div class="debt-table-wrap"><table class="debt-table"><thead><tr><th>Nomor Invoice</th><th>Pemasok</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Total</th><th>Dibayar</th><th>Sisa Utang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="debtPayableBody"><tr><td colspan="9">Memuat...</td></tr></tbody></table></div>
+   </div>`;
+  parent.appendChild(section);
+  document.getElementById("debtRefreshButton").addEventListener("click",loadDebtReceivable);
+ }
+ section.style.display="block";
+ loadDebtReceivable();
+}
+
+function debtStatus(invoice,remaining){
+ if(remaining<=0)return {label:"Lunas",className:"paid"};
+ if(invoice.due_date && invoice.due_date<todayDate())return {label:"Terlambat",className:"overdue"};
+ if(Number(invoice.paid_amount||0)>0)return {label:"Dibayar Sebagian",className:"partial"};
+ return {label:"Belum Dibayar",className:""};
+}
+
+function renderDebtRows(rows,bodyId,partyType){
+ const body=document.getElementById(bodyId);
+ if(!body)return;
+ if(!rows.length){body.innerHTML='<tr><td colspan="9">Belum ada tagihan terbuka.</td></tr>';return;}
+ body.replaceChildren();
+ rows.forEach(invoice=>{
+  const total=Number(invoice.total||0);
+  const paid=Number(invoice.paid_amount||0);
+  const remaining=Math.max(0,total-paid);
+  const status=debtStatus(invoice,remaining);
+  const party=partyType==="pembelian"?(invoice.supplier_name||invoice.customer_name||"-"):(invoice.customer_name||"-");
+  const values=[invoice.invoice_number||"-",party,invoice.issue_date||"-",invoice.due_date||"-",formatRupiah(total),formatRupiah(paid),formatRupiah(remaining)];
+  const row=document.createElement("tr");
+  values.forEach(value=>{const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);});
+  const statusCell=document.createElement("td");
+  const badge=document.createElement("span");badge.className="debt-status "+status.className;badge.textContent=status.label;statusCell.appendChild(badge);row.appendChild(statusCell);
+  const actionCell=document.createElement("td");
+  const action=document.createElement("button");action.type="button";action.className="debt-btn";action.textContent="Buka Invoice";
+  action.addEventListener("click",()=>{
+   window.showPage("invoice");
+   if(typeof showInvoiceDetail==="function")showInvoiceDetail(invoice.id);
+  });
+  actionCell.appendChild(action);row.appendChild(actionCell);body.appendChild(row);
+ });
+}
+
+async function loadDebtReceivable(){
+ const message=document.getElementById("debtMessage");
+ if(!message)return;
+ message.textContent="Memuat data tagihan...";
+ const {data,error}=await supabaseClient.from("invoices").select("*").order("issue_date",{ascending:false});
+ if(error){message.textContent="Gagal memuat utang & piutang: "+error.message;message.className="invoice-message erp-error";return;}
+ const invoices=data||[];
+ const receivables=invoices.filter(item=>(item.invoice_type||"penjualan")==="penjualan" && Number(item.total||0)>Number(item.paid_amount||0));
+ const payables=invoices.filter(item=>item.invoice_type==="pembelian" && Number(item.total||0)>Number(item.paid_amount||0));
+ const outstanding=item=>Math.max(0,Number(item.total||0)-Number(item.paid_amount||0));
+ const receivableTotal=receivables.reduce((sum,item)=>sum+outstanding(item),0);
+ const payableTotal=payables.reduce((sum,item)=>sum+outstanding(item),0);
+ const overdueTotal=invoices.filter(item=>item.due_date && item.due_date<todayDate()).reduce((sum,item)=>sum+outstanding(item),0);
+ document.getElementById("debtReceivableTotal").textContent=formatRupiah(receivableTotal);
+ document.getElementById("debtPayableTotal").textContent=formatRupiah(payableTotal);
+ document.getElementById("debtOverdueTotal").textContent=formatRupiah(overdueTotal);
+ renderDebtRows(receivables,"debtReceivableBody","penjualan");
+ renderDebtRows(payables,"debtPayableBody","pembelian");
+ message.textContent="Menampilkan "+receivables.length+" piutang terbuka dan "+payables.length+" utang terbuka. Pembayaran mengikuti data Invoice.";
+ message.className="debt-muted";
+}
+
+const previousDebtReceivableShowPage=window.showPage;
+window.showPage=function(page,button){
+ const debtContent=document.getElementById("debtReceivableContent");
+ if(debtContent)debtContent.style.display="none";
+ previousDebtReceivableShowPage(page,button);
+ if(page==="utang-piutang")setupDebtReceivable();
+};
