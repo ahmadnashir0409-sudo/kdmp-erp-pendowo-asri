@@ -7153,6 +7153,7 @@ window.filterInventoryProducts=function(){
   });
 };
 
+
 window.saveInventoryMovement=async function(){
   const button=document.getElementById("invSaveMovement");
   const message=document.getElementById("invMovementMessage");
@@ -7187,13 +7188,36 @@ window.saveInventoryMovement=async function(){
   button.textContent="Menyimpan...";
 
   try{
-    const {error}=await supabaseClient
+    const {data:product,error:productError}=await supabaseClient
+      .from("inventory_products")
+      .select("id,current_stock,purchase_price")
+      .eq("id",productId)
+      .single();
+
+    if(productError)throw productError;
+
+    const stockBefore=Number(product.current_stock||0);
+    let stockAfter=stockBefore;
+
+    if(type==="masuk"||type==="penyesuaian_masuk"){
+      stockAfter=stockBefore+quantity;
+    }else{
+      stockAfter=stockBefore-quantity;
+    }
+
+    if(stockAfter<0){
+      throw new Error("Stok tidak mencukupi. Stok tersedia: "+stockBefore);
+    }
+
+    const {error:movementError}=await supabaseClient
       .from("inventory_movements")
       .insert({
         movement_number:inventoryNumber("MUT"),
         product_id:productId,
         movement_type:type,
-        quantity,
+        quantity:quantity,
+        stock_before:stockBefore,
+        stock_after:stockAfter,
         unit_cost:cost,
         movement_date:date,
         reference_number:reference||null,
@@ -7201,9 +7225,29 @@ window.saveInventoryMovement=async function(){
         created_by:window.currentUser?.id||null
       });
 
-    if(error)throw error;
+    if(movementError)throw movementError;
 
-    message.textContent="Mutasi stok berhasil disimpan. Stok barang sudah diperbarui.";
+    const updateData={current_stock:stockAfter};
+
+    if(type==="masuk"&&cost>0){
+      updateData.purchase_price=cost;
+    }
+
+    const {error:updateError}=await supabaseClient
+      .from("inventory_products")
+      .update(updateData)
+      .eq("id",productId);
+
+    if(updateError){
+      throw new Error(
+        "Mutasi tercatat, tetapi pembaruan stok gagal. Perlu pemeriksaan: "+
+        updateError.message
+      );
+    }
+
+    message.textContent=
+      "Mutasi berhasil disimpan. Stok berubah dari "+
+      stockBefore+" menjadi "+stockAfter+".";
     message.className="inventory-message inventory-success";
 
     document.getElementById("invMovementQty").value="";
