@@ -68,12 +68,23 @@
 
       <!-- DASHBOARD -->
       <section id="dashboard" class="page">
+
         <div class="welcome">
-          <h1>Selamat Datang di KDMP ERP 👋</h1>
-          <p>Sistem manajemen dan akuntansi Koperasi Desa Merah Putih Pendowo Asri.</p>
+          <div>
+            <span style="font-size:12px;font-weight:700;color:#a71925;letter-spacing:1px">
+              MANAGEMENT OVERVIEW
+            </span>
+            <h1>Dashboard KDMP 👋</h1>
+            <p>
+              Pantau kondisi keuangan dan aktivitas operasional
+              Koperasi Desa Merah Putih Pendowo Asri.
+            </p>
+          </div>
         </div>
 
+        <!-- RINGKASAN KEUANGAN -->
         <div class="stats">
+
           <div class="stat-card">
             <div class="stat-head">
               <span class="stat-label">Total Pemasukan</span>
@@ -109,15 +120,19 @@
             <h3 id="dashboardTransactionCount">0</h3>
             <div class="stat-note">Transaksi keuangan tercatat</div>
           </div>
+
         </div>
 
+        <!-- GRAFIK DAN AKSES CEPAT -->
         <div class="panels">
+
           <div class="panel">
             <div class="panel-header">
               <div>
                 <h3>Ringkasan Keuangan</h3>
-                <p>Visualisasi pemasukan dan pengeluaran</p>
+                <p>Perbandingan pemasukan dan pengeluaran</p>
               </div>
+
               <select class="period" id="dashboardPeriod">
                 <option value="1">Bulan ini</option>
                 <option value="3">3 Bulan</option>
@@ -160,8 +175,8 @@
             </div>
 
             <div class="legend">
-              <span><i class="dot" style="background:#b91c2c"></i>Pemasukan</span>
-              <span><i class="dot" style="background:#f2a3aa"></i>Pengeluaran</span>
+              <span><i class="dot" style="background:#16a36a"></i> Pemasukan</span>
+              <span><i class="dot" style="background:#d34b55"></i> Pengeluaran</span>
             </div>
           </div>
 
@@ -169,25 +184,39 @@
             <div class="panel-header">
               <div>
                 <h3>Akses Cepat</h3>
-                <p>Pilih aktivitas yang ingin dilakukan</p>
+                <p>Pintasan aktivitas koperasi</p>
               </div>
             </div>
+
             <div class="quick-menu">
-              <button onclick="showPage('keuangan')"><span>💰</span>Catat Keuangan</button>
-              <button onclick="showPage('jurnal')"><span>📖</span>Jurnal Umum</button>
-              <button onclick="showPage('invoice')"><span>🧾</span>Buat Invoice</button>
-              <button onclick="showPage('toko')"><span>🛒</span>Transaksi Toko</button>
+              <button onclick="showPage('keuangan')">
+                <span>💰</span>Catat Keuangan
+              </button>
+              <button onclick="showPage('jurnal')">
+                <span>📖</span>Jurnal Umum
+              </button>
+              <button onclick="showPage('invoice')">
+                <span>🧾</span>Buat Invoice
+              </button>
+              <button onclick="showPage('toko')">
+                <span>🛒</span>Transaksi Toko
+              </button>
             </div>
           </div>
+
         </div>
 
+        <!-- TRANSAKSI TERBARU -->
         <div class="panel">
           <div class="panel-header">
             <div>
               <h3>Transaksi Terbaru</h3>
-              <p>Daftar transaksi keuangan koperasi</p>
+              <p>Lima transaksi keuangan terakhir yang tercatat</p>
             </div>
-            <button class="period" onclick="showPage('keuangan')">Lihat Semua</button>
+
+            <button class="period" onclick="showPage('keuangan')">
+              Lihat Semua →
+            </button>
           </div>
 
           <div class="table-wrap">
@@ -195,12 +224,13 @@
               <thead>
                 <tr>
                   <th>TANGGAL</th>
+                  <th>JENIS</th>
                   <th>KETERANGAN</th>
-                  <th>KATEGORI</th>
                   <th>JUMLAH</th>
                   <th>STATUS</th>
                 </tr>
               </thead>
+
               <tbody id="dashboardRecentTransactions">
                 <tr>
                   <td colspan="5" style="text-align:center;color:#999;padding:30px">
@@ -211,6 +241,7 @@
             </table>
           </div>
         </div>
+
       </section>
 
       <!-- MODULE PAGES -->
