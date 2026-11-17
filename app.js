@@ -7651,3 +7651,7 @@ window.showPage=function(page,button){
  previousDebtReceivableShowPage(page,button);
  if(page==="utang-piutang")setupDebtReceivable();
 };
+// FIX: HUBUNGKAN TOMBOL REKONSILIASI BANK
+window.calculateBankReconciliation = calculateBankReconciliation;
+window.saveBankMutation = saveBankMutation;
+window.saveBankReconciliation = saveBankReconciliation;
