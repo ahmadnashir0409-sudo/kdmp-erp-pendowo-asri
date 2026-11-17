@@ -4205,3 +4205,687 @@ window.showPage=function(page,button){
     loadSavingsTransactions();
   }
 };
+
+// ==========================================
+// MODUL PINJAMAN ANGGOTA KDMP
+// ==========================================
+
+const loanStyle = document.createElement("style");
+loanStyle.textContent = `
+.loan-wrap{display:grid;gap:17px;margin-top:25px}
+.loan-panel{background:white;border:1px solid #e9e9e9;border-radius:12px;padding:20px}
+.loan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.loan-field{margin-bottom:13px}
+.loan-field label{display:block;font-size:13px;font-weight:600;margin-bottom:7px;color:#555}
+.loan-field input,.loan-field select,.loan-field textarea{width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;border-radius:7px;font:inherit;background:white}
+.loan-btn{border:0;border-radius:7px;padding:10px 15px;background:#a71925;color:white;font-weight:600;cursor:pointer;margin:2px}
+.loan-btn.gray{background:#eee;color:#333}
+.loan-btn.green{background:#16834e}
+.loan-btn:disabled{opacity:.6;cursor:not-allowed}
+.loan-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.loan-card{background:white;border:1px solid #e9e9e9;border-radius:12px;padding:17px}
+.loan-card small{display:block;color:#777;margin-bottom:8px}
+.loan-card strong{font-size:19px}
+.loan-table-wrap{overflow-x:auto;border:1px solid #eee;border-radius:10px}
+.loan-table{width:100%;min-width:850px;border-collapse:collapse}
+.loan-table th,.loan-table td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.loan-table th{background:#fafafa;color:#666}
+.loan-message{font-size:13px;margin:10px 0}
+.loan-tag{display:inline-block;padding:5px 9px;border-radius:20px;background:#fff2d8;color:#946200;font-size:11px;font-weight:bold}
+.loan-tag.approved{background:#e8f8ef;color:#16834e}
+.loan-tag.rejected{background:#fee2e2;color:#991b1b}
+@media(max-width:650px){.loan-grid,.loan-stats{grid-template-columns:1fr}.loan-panel{padding:14px}}
+`;
+document.head.appendChild(loanStyle);
+
+let loanCache = [];
+
+function setupLoanManagement(){
+  const parent=document.getElementById("memberContent");
+  if(!parent || document.getElementById("loanContent"))return;
+
+  const section=document.createElement("div");
+  section.id="loanContent";
+  section.className="loan-wrap";
+
+  section.innerHTML=`
+    <div>
+      <h2>Pinjaman Anggota</h2>
+      <p class="erp-muted">Pengajuan, persetujuan manajer, pencairan, dan jadwal angsuran.</p>
+    </div>
+
+    <div class="loan-stats">
+      <div class="loan-card">
+        <small>Total Pengajuan</small>
+        <strong id="loanCount">0</strong>
+      </div>
+      <div class="loan-card">
+        <small>Pinjaman Disetujui / Dicairkan</small>
+        <strong id="loanApprovedCount">0</strong>
+      </div>
+      <div class="loan-card">
+        <small>Total Nilai Pinjaman Dicairkan</small>
+        <strong id="loanTotalDisbursed">Rp0</strong>
+      </div>
+    </div>
+
+    <div class="loan-panel">
+      <h3>Pengaturan Jasa Pinjaman</h3>
+      <p class="erp-muted">Pengaturan awal. Nilai jasa harus mengikuti keputusan resmi pengurus.</p>
+      <div class="loan-grid">
+        <div class="loan-field">
+          <label>Metode Perhitungan</label>
+          <select id="loanDefaultMethod">
+            <option value="menurun">Menurun berdasarkan sisa pokok</option>
+            <option value="tetap">Tetap berdasarkan pokok awal</option>
+          </select>
+        </div>
+        <div class="loan-field">
+          <label>Jasa per Bulan (%)</label>
+          <input id="loanDefaultRate" type="number" min="0" max="100" step="0.01" value="0">
+        </div>
+      </div>
+      <button class="loan-btn" id="loanSaveSettings">Simpan Pengaturan</button>
+      <div id="loanSettingsMessage" class="loan-message"></div>
+    </div>
+
+    <div class="loan-panel">
+      <h3>Pengajuan Pinjaman Baru</h3>
+      <form id="loanForm">
+        <div class="loan-grid">
+          <div class="loan-field">
+            <label>Anggota</label>
+            <select id="loanMember" required>
+              <option value="">Pilih anggota</option>
+            </select>
+          </div>
+          <div class="loan-field">
+            <label>Jumlah Pinjaman (Rp)</label>
+            <input id="loanPrincipal" type="number" min="1" step="1" required placeholder="Contoh: 5000000">
+          </div>
+          <div class="loan-field">
+            <label>Tenor (Bulan)</label>
+            <input id="loanTerm" type="number" min="1" max="120" step="1" required value="12">
+          </div>
+          <div class="loan-field">
+            <label>Metode Jasa</label>
+            <select id="loanMethod">
+              <option value="menurun">Menurun</option>
+              <option value="tetap">Tetap</option>
+            </select>
+          </div>
+          <div class="loan-field">
+            <label>Jasa per Bulan (%)</label>
+            <input id="loanRate" type="number" min="0" max="100" step="0.01" required value="0">
+          </div>
+          <div class="loan-field">
+            <label>Tanggal Pengajuan</label>
+            <input id="loanApplicationDate" type="date" required>
+          </div>
+        </div>
+        <div class="loan-field">
+          <label>Tujuan Pinjaman</label>
+          <textarea id="loanPurpose" rows="2" placeholder="Jelaskan tujuan penggunaan pinjaman"></textarea>
+        </div>
+        <div class="loan-field">
+          <label>Catatan</label>
+          <textarea id="loanNotes" rows="2" placeholder="Catatan tambahan"></textarea>
+        </div>
+        <div id="loanFormMessage" class="loan-message"></div>
+        <button type="submit" class="loan-btn" id="loanSubmitButton">Ajukan Pinjaman</button>
+      </form>
+    </div>
+
+    <div class="loan-panel">
+      <h3>Daftar Pinjaman</h3>
+      <div id="loanListMessage" class="loan-message">Memuat data pinjaman...</div>
+      <div class="loan-table-wrap">
+        <table class="loan-table">
+          <thead>
+            <tr>
+              <th>Nomor Pinjaman</th>
+              <th>Anggota</th>
+              <th>Pokok Pinjaman</th>
+              <th>Tenor</th>
+              <th>Jasa</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="loanTableBody">
+            <tr><td colspan="7">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="loan-panel">
+      <h3>Jadwal Angsuran</h3>
+      <div id="loanScheduleMessage" class="loan-message">
+        Pilih pinjaman yang sudah dicairkan untuk melihat jadwal angsuran.
+      </div>
+      <div class="loan-table-wrap">
+        <table class="loan-table">
+          <thead>
+            <tr>
+              <th>Angsuran</th>
+              <th>Jatuh Tempo</th>
+              <th>Pokok</th>
+              <th>Jasa</th>
+              <th>Total Tagihan</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="loanScheduleBody">
+            <tr><td colspan="6">Belum ada jadwal.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  parent.appendChild(section);
+
+  document.getElementById("loanApplicationDate").value=todayDate();
+  document.getElementById("loanForm").onsubmit=saveLoanApplication;
+  document.getElementById("loanSaveSettings").onclick=saveLoanSettings;
+  document.getElementById("loanDefaultMethod").onchange=()=>{
+    document.getElementById("loanMethod").value=
+      document.getElementById("loanDefaultMethod").value;
+  };
+  document.getElementById("loanDefaultRate").oninput=()=>{
+    document.getElementById("loanRate").value=
+      document.getElementById("loanDefaultRate").value;
+  };
+
+  loadLoanMembers();
+  loadLoanSettings();
+  loadLoans();
+}
+
+async function loadLoanMembers(){
+  const select=document.getElementById("loanMember");
+  if(!select)return;
+
+  const {data,error}=await supabaseClient
+    .from("cooperative_members")
+    .select("id,member_number,full_name")
+    .eq("status","aktif")
+    .order("full_name");
+
+  if(error){
+    document.getElementById("loanFormMessage").textContent=
+      "Gagal memuat anggota: "+error.message;
+    return;
+  }
+
+  select.innerHTML='<option value="">Pilih anggota</option>';
+
+  (data||[]).forEach(member=>{
+    const option=document.createElement("option");
+    option.value=member.id;
+    option.textContent=member.member_number+" - "+member.full_name;
+    select.appendChild(option);
+  });
+}
+
+async function loadLoanSettings(){
+  const {data,error}=await supabaseClient
+    .from("cooperative_finance_settings")
+    .select("*")
+    .eq("id",1)
+    .single();
+
+  if(error){
+    document.getElementById("loanSettingsMessage").textContent=
+      "Gagal memuat pengaturan: "+error.message;
+    return;
+  }
+
+  document.getElementById("loanDefaultMethod").value=
+    data.default_interest_method;
+
+  document.getElementById("loanMethod").value=
+    data.default_interest_method;
+
+  document.getElementById("loanDefaultRate").value=
+    data.default_monthly_interest_rate;
+
+  document.getElementById("loanRate").value=
+    data.default_monthly_interest_rate;
+}
+
+async function saveLoanSettings(){
+  if(window.currentUser?.role!=="manajer"){
+    alert("Hanya manajer yang dapat mengubah pengaturan jasa pinjaman.");
+    return;
+  }
+
+  const method=document.getElementById("loanDefaultMethod").value;
+  const rate=Number(document.getElementById("loanDefaultRate").value);
+
+  if(!Number.isFinite(rate)||rate<0||rate>100){
+    alert("Persentase jasa harus antara 0 sampai 100.");
+    return;
+  }
+
+  const button=document.getElementById("loanSaveSettings");
+  const message=document.getElementById("loanSettingsMessage");
+  button.disabled=true;
+  button.textContent="Menyimpan...";
+
+  try{
+    const {error}=await supabaseClient
+      .from("cooperative_finance_settings")
+      .update({
+        default_interest_method:method,
+        default_monthly_interest_rate:rate,
+        updated_by:window.currentUser.id,
+        updated_at:new Date().toISOString()
+      })
+      .eq("id",1);
+
+    if(error)throw error;
+
+    document.getElementById("loanMethod").value=method;
+    document.getElementById("loanRate").value=rate;
+    message.textContent="Pengaturan jasa berhasil disimpan.";
+    message.style.color="#16834e";
+
+  }catch(error){
+    message.textContent="Gagal menyimpan: "+error.message;
+    message.style.color="#b91c1c";
+  }finally{
+    button.disabled=false;
+    button.textContent="Simpan Pengaturan";
+  }
+}
+
+async function saveLoanApplication(event){
+  event.preventDefault();
+
+  const message=document.getElementById("loanFormMessage");
+  const button=document.getElementById("loanSubmitButton");
+
+  const memberId=document.getElementById("loanMember").value;
+  const principal=Number(document.getElementById("loanPrincipal").value);
+  const term=Number(document.getElementById("loanTerm").value);
+  const rate=Number(document.getElementById("loanRate").value);
+  const method=document.getElementById("loanMethod").value;
+  const date=document.getElementById("loanApplicationDate").value;
+
+  if(!memberId){
+    message.textContent="Pilih anggota terlebih dahulu.";
+    return;
+  }
+
+  if(!Number.isFinite(principal)||principal<=0||
+     !Number.isInteger(term)||term<1||term>120||
+     !Number.isFinite(rate)||rate<0||rate>100||!date){
+    message.textContent="Periksa kembali jumlah pinjaman, tenor, jasa, dan tanggal.";
+    return;
+  }
+
+  button.disabled=true;
+  button.textContent="Mengirim pengajuan...";
+
+  try{
+    const loanNumber="PJM-"+Date.now();
+
+    const {error}=await supabaseClient
+      .from("member_loans")
+      .insert({
+        loan_number:loanNumber,
+        member_id:memberId,
+        application_date:date,
+        principal_amount:principal,
+        term_months:term,
+        interest_method:method,
+        monthly_interest_rate:rate,
+        purpose:document.getElementById("loanPurpose").value.trim()||null,
+        notes:document.getElementById("loanNotes").value.trim()||null,
+        status:"diajukan",
+        created_by:window.currentUser?.id||null
+      });
+
+    if(error)throw error;
+
+    document.getElementById("loanForm").reset();
+    document.getElementById("loanApplicationDate").value=todayDate();
+    document.getElementById("loanTerm").value=12;
+    document.getElementById("loanMethod").value=
+      document.getElementById("loanDefaultMethod").value;
+    document.getElementById("loanRate").value=
+      document.getElementById("loanDefaultRate").value;
+
+    message.textContent="Pengajuan berhasil dibuat: "+loanNumber;
+    message.style.color="#16834e";
+
+    await loadLoans();
+    alert("Pengajuan pinjaman berhasil disimpan dan menunggu persetujuan manajer.");
+
+  }catch(error){
+    message.textContent="Gagal mengajukan pinjaman: "+error.message;
+    message.style.color="#b91c1c";
+  }finally{
+    button.disabled=false;
+    button.textContent="Ajukan Pinjaman";
+  }
+}
+
+async function loadLoans(){
+  const body=document.getElementById("loanTableBody");
+  if(!body)return;
+
+  body.innerHTML='<tr><td colspan="7">Memuat data...</td></tr>';
+
+  const {data,error}=await supabaseClient
+    .from("member_loans")
+    .select("*, cooperative_members(member_number,full_name)")
+    .order("created_at",{ascending:false});
+
+  if(error){
+    body.innerHTML=`<tr><td colspan="7">${escapeHTML(error.message)}</td></tr>`;
+    return;
+  }
+
+  loanCache=data||[];
+  renderLoans();
+}
+
+function renderLoans(){
+  const body=document.getElementById("loanTableBody");
+  if(!body)return;
+
+  const approved=loanCache.filter(x=>
+    ["disetujui","dicairkan","lunas"].includes(x.status)
+  );
+
+  document.getElementById("loanCount").textContent=loanCache.length;
+  document.getElementById("loanApprovedCount").textContent=approved.length;
+  document.getElementById("loanTotalDisbursed").textContent=
+    formatRupiah(loanCache
+      .filter(x=>["dicairkan","lunas"].includes(x.status))
+      .reduce((sum,x)=>sum+Number(x.principal_amount),0));
+
+  if(!loanCache.length){
+    body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px">Belum ada pengajuan pinjaman.</td></tr>';
+    document.getElementById("loanListMessage").textContent="Belum ada data pinjaman.";
+    return;
+  }
+
+  const statusLabels={
+    diajukan:"Menunggu Persetujuan",
+    disetujui:"Disetujui",
+    ditolak:"Ditolak",
+    dicairkan:"Sudah Dicairkan",
+    lunas:"Lunas",
+    dibatalkan:"Dibatalkan"
+  };
+
+  body.innerHTML=loanCache.map(loan=>{
+    const member=loan.cooperative_members||{};
+    const manager=window.currentUser?.role==="manajer";
+
+    let actions="";
+
+    if(loan.status==="diajukan"&&manager){
+      actions=`
+        <button class="loan-btn green" onclick="approveLoan('${loan.id}')">Setujui</button>
+        <button class="loan-btn gray" onclick="rejectLoan('${loan.id}')">Tolak</button>
+      `;
+    }else if(loan.status==="disetujui"&&manager){
+      actions=`<button class="loan-btn green" onclick="disburseLoan('${loan.id}')">Cairkan</button>`;
+    }else if(["dicairkan","lunas"].includes(loan.status)){
+      actions=`<button class="loan-btn gray" onclick="viewLoanSchedule('${loan.id}')">Jadwal</button>`;
+    }else{
+      actions="-";
+    }
+
+    const tagClass=loan.status==="disetujui"||loan.status==="dicairkan"||loan.status==="lunas"
+      ?"approved":loan.status==="ditolak"?"rejected":"";
+
+    return `
+      <tr>
+        <td><strong>${escapeHTML(loan.loan_number)}</strong></td>
+        <td>${escapeHTML(member.full_name||"-")}<br><small>${escapeHTML(member.member_number||"")}</small></td>
+        <td>${formatRupiah(loan.principal_amount)}</td>
+        <td>${loan.term_months} bulan</td>
+        <td>${Number(loan.monthly_interest_rate)}% / bulan<br><small>${loan.interest_method==="menurun"?"Menurun":"Tetap"}</small></td>
+        <td><span class="loan-tag ${tagClass}">${statusLabels[loan.status]||loan.status}</span></td>
+        <td>${actions}</td>
+      </tr>
+    `;
+  }).join("");
+
+  document.getElementById("loanListMessage").textContent=
+    loanCache.length+" pengajuan pinjaman tercatat.";
+}
+
+window.approveLoan=async function(id){
+  if(window.currentUser?.role!=="manajer"){
+    alert("Hanya manajer yang boleh menyetujui pinjaman.");
+    return;
+  }
+
+  const loan=loanCache.find(x=>x.id===id);
+  if(!loan||loan.status!=="diajukan")return;
+
+  if(!confirm("Setujui pengajuan "+loan.loan_number+"?"))return;
+
+  const {error}=await supabaseClient
+    .from("member_loans")
+    .update({
+      status:"disetujui",
+      approved_by:window.currentUser.id,
+      approved_at:new Date().toISOString(),
+      updated_at:new Date().toISOString()
+    })
+    .eq("id",id)
+    .eq("status","diajukan");
+
+  if(error){
+    alert("Gagal menyetujui: "+error.message);
+    return;
+  }
+
+  await loadLoans();
+  alert("Pinjaman berhasil disetujui. Selanjutnya dapat dicairkan.");
+};
+
+window.rejectLoan=async function(id){
+  if(window.currentUser?.role!=="manajer"){
+    alert("Hanya manajer yang boleh menolak pinjaman.");
+    return;
+  }
+
+  const reason=prompt("Masukkan alasan penolakan pinjaman:");
+  if(reason===null)return;
+
+  const {error}=await supabaseClient
+    .from("member_loans")
+    .update({
+      status:"ditolak",
+      approved_by:window.currentUser.id,
+      approved_at:new Date().toISOString(),
+      rejection_reason:reason,
+      updated_at:new Date().toISOString()
+    })
+    .eq("id",id)
+    .eq("status","diajukan");
+
+  if(error){
+    alert("Gagal menolak: "+error.message);
+    return;
+  }
+
+  await loadLoans();
+  alert("Pengajuan pinjaman ditolak.");
+};
+
+function addMonthsToDate(dateString,months){
+  const date=new Date(dateString+"T12:00:00");
+  const originalDay=date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth()+months);
+  const lastDay=new Date(date.getFullYear(),date.getMonth()+1,0).getDate();
+  date.setDate(Math.min(originalDay,lastDay));
+  return date.toISOString().slice(0,10);
+}
+
+function calculateLoanSchedule(loan){
+  const principal=Number(loan.principal_amount);
+  const term=Number(loan.term_months);
+  const rate=Number(loan.monthly_interest_rate)/100;
+  const method=loan.interest_method;
+
+  const basePrincipal=Math.floor(principal/term);
+  let remaining=principal;
+  const schedule=[];
+
+  for(let i=1;i<=term;i++){
+    const principalDue=i===term
+      ?remaining
+      :basePrincipal;
+
+    const interestDue=method==="menurun"
+      ?remaining*rate
+      :principal*rate;
+
+    const roundedPrincipal=Math.round(principalDue);
+    const roundedInterest=Math.round(interestDue);
+
+    schedule.push({
+      installment_number:i,
+      due_date:addMonthsToDate(loan.disbursed_at.slice(0,10),i),
+      principal_due:roundedPrincipal,
+      service_due:roundedInterest,
+      total_due:roundedPrincipal+roundedInterest,
+      paid_amount:0,
+      status:"belum_bayar"
+    });
+
+    remaining-=principalDue;
+  }
+
+  return schedule;
+}
+
+window.disburseLoan=async function(id){
+  if(window.currentUser?.role!=="manajer"){
+    alert("Hanya manajer yang boleh mencairkan pinjaman.");
+    return;
+  }
+
+  const loan=loanCache.find(x=>x.id===id);
+  if(!loan||loan.status!=="disetujui")return;
+
+  if(!confirm(
+    "Cairkan pinjaman "+loan.loan_number+
+    " sebesar "+formatRupiah(loan.principal_amount)+"?"
+  ))return;
+
+  try{
+    const disbursedAt=new Date().toISOString();
+
+    const {data:updated,error:updateError}=await supabaseClient
+      .from("member_loans")
+      .update({
+        status:"dicairkan",
+        disbursed_by:window.currentUser.id,
+        disbursed_at:disbursedAt,
+        updated_at:disbursedAt
+      })
+      .eq("id",id)
+      .eq("status","disetujui")
+      .select()
+      .single();
+
+    if(updateError)throw updateError;
+
+    const schedule=calculateLoanSchedule(updated);
+
+    const records=schedule.map(item=>({
+      ...item,
+      loan_id:id
+    }));
+
+    const {error:scheduleError}=await supabaseClient
+      .from("loan_installments")
+      .insert(records);
+
+    if(scheduleError){
+      // Kembalikan status jika pembuatan jadwal gagal.
+      await supabaseClient
+        .from("member_loans")
+        .update({
+          status:"disetujui",
+          disbursed_by:null,
+          disbursed_at:null,
+          updated_at:new Date().toISOString()
+        })
+        .eq("id",id);
+
+      throw scheduleError;
+    }
+
+    await loadLoans();
+    await viewLoanSchedule(id);
+
+    alert("Pinjaman berhasil dicairkan dan jadwal angsuran dibuat.");
+
+  }catch(error){
+    alert("Gagal mencairkan pinjaman: "+error.message);
+  }
+};
+
+window.viewLoanSchedule=async function(loanId){
+  const body=document.getElementById("loanScheduleBody");
+  const message=document.getElementById("loanScheduleMessage");
+
+  body.innerHTML='<tr><td colspan="6">Memuat jadwal...</td></tr>';
+
+  const {data,error}=await supabaseClient
+    .from("loan_installments")
+    .select("*")
+    .eq("loan_id",loanId)
+    .order("installment_number");
+
+  if(error){
+    message.textContent="Gagal memuat jadwal: "+error.message;
+    return;
+  }
+
+  if(!data?.length){
+    body.innerHTML='<tr><td colspan="6">Belum ada jadwal angsuran.</td></tr>';
+    message.textContent="Jadwal belum tersedia.";
+    return;
+  }
+
+  body.innerHTML=data.map(item=>`
+    <tr>
+      <td>Angsuran ke-${item.installment_number}</td>
+      <td>${escapeHTML(item.due_date)}</td>
+      <td>${formatRupiah(item.principal_due)}</td>
+      <td>${formatRupiah(item.service_due)}</td>
+      <td><strong>${formatRupiah(item.total_due)}</strong></td>
+      <td>${escapeHTML(item.status)}</td>
+    </tr>
+  `).join("");
+
+  message.textContent=data.length+" jadwal angsuran ditemukan.";
+};
+
+// Hubungkan ke halaman Simpanan & Pinjaman yang sudah ada.
+const previousLoanShowPage=window.showPage;
+
+window.showPage=function(page,button){
+  previousLoanShowPage(page,button);
+
+  if(page==="simpanan"){
+    setupLoanManagement();
+    loadLoanMembers();
+    loadLoanSettings();
+    loadLoans();
+  }
+};
