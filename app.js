@@ -5752,3 +5752,238 @@ window.showPage = function(page, button) {
     loadManagerDashboardCards();
   }
 };
+
+// ==========================================
+// NOTIFIKASI PENGAJUAN PINJAMAN - DASHBOARD
+// ==========================================
+
+const pendingLoanStyle = document.createElement("style");
+
+pendingLoanStyle.textContent = `
+.pending-loan-panel {
+  background:#fff;
+  border:1px solid #eee;
+  border-radius:13px;
+  padding:20px;
+  margin:20px 0;
+}
+.pending-loan-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-bottom:15px;
+}
+.pending-loan-header h3 {
+  margin:0;
+  color:#292929;
+  font-size:17px;
+}
+.pending-loan-count {
+  background:#fff1f2;
+  color:#b91c2c;
+  padding:6px 11px;
+  border-radius:20px;
+  font-size:12px;
+  font-weight:700;
+}
+.pending-loan-item {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:15px;
+  padding:14px 0;
+  border-top:1px solid #eee;
+}
+.pending-loan-item strong {
+  display:block;
+  color:#292929;
+  font-size:14px;
+}
+.pending-loan-item small {
+  display:block;
+  color:#888;
+  margin-top:5px;
+}
+.pending-loan-amount {
+  font-weight:700;
+  color:#b91c2c;
+  margin-bottom:8px;
+  text-align:right;
+}
+.pending-loan-button {
+  background:#b91c2c;
+  color:white;
+  border:0;
+  padding:8px 12px;
+  border-radius:7px;
+  cursor:pointer;
+  font-size:12px;
+}
+.pending-loan-empty {
+  color:#888;
+  font-size:13px;
+  padding:15px 0;
+}
+@media(max-width:550px) {
+  .pending-loan-item {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .pending-loan-amount {
+    text-align:left;
+  }
+}
+`;
+
+document.head.appendChild(pendingLoanStyle);
+
+function setupPendingLoanPanel() {
+  const dashboard = document.getElementById("dashboard");
+
+  if (!dashboard || document.getElementById("pendingLoanPanel")) return;
+
+  const panel = document.createElement("div");
+  panel.id = "pendingLoanPanel";
+  panel.className = "pending-loan-panel";
+
+  panel.innerHTML = `
+    <div class="pending-loan-header">
+      <h3>🔔 Pengajuan Pinjaman Terbaru</h3>
+      <span class="pending-loan-count" id="pendingLoanBadge">
+        Memuat...
+      </span>
+    </div>
+
+    <div id="pendingLoanList">
+      <div class="pending-loan-empty">
+        Memeriksa pengajuan pinjaman...
+      </div>
+    </div>
+  `;
+
+  const monitoring = document.getElementById("managerDashboardCards");
+
+  if (monitoring) {
+    monitoring.insertAdjacentElement("afterend", panel);
+  } else {
+    const stats = dashboard.querySelector(".stats");
+    if (stats) stats.insertAdjacentElement("afterend", panel);
+  }
+}
+
+async function loadPendingLoanNotifications() {
+  if (window.currentUser?.role !== "manajer") return;
+
+  setupPendingLoanPanel();
+
+  const list = document.getElementById("pendingLoanList");
+  const badge = document.getElementById("pendingLoanBadge");
+
+  if (!list || !badge) return;
+
+  list.innerHTML = `
+    <div class="pending-loan-empty">Memuat pengajuan...</div>
+  `;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("member_loans")
+      .select(`
+        id,
+        loan_number,
+        principal_amount,
+        application_date,
+        cooperative_members (
+          full_name,
+          member_number
+        )
+      `)
+      .eq("status", "diajukan")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const loans = data || [];
+
+    badge.textContent = loans.length + " menunggu";
+
+    if (!loans.length) {
+      list.innerHTML = `
+        <div class="pending-loan-empty">
+          <span style="color:#16834e;font-weight:600">
+            ✓ Tidak ada pengajuan pinjaman yang menunggu persetujuan.
+          </span>
+        </div>
+      `;
+      return;
+    }
+
+    list.innerHTML = loans.map(loan => {
+      const member = loan.cooperative_members || {};
+
+      return `
+        <div class="pending-loan-item">
+          <div>
+            <strong>${escapeHTML(member.full_name || "Anggota")}</strong>
+            <small>
+              ${escapeHTML(member.member_number || "-")}
+              • ${escapeHTML(loan.loan_number)}
+            </small>
+            <small>
+              Tanggal pengajuan:
+              ${escapeHTML(loan.application_date || "-")}
+            </small>
+          </div>
+
+          <div>
+            <div class="pending-loan-amount">
+              ${formatRupiah(loan.principal_amount)}
+            </div>
+            <button
+              class="pending-loan-button"
+              onclick="openPendingLoanPage()"
+            >
+              Buka Pengajuan
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+  } catch (error) {
+    console.error("Notifikasi pengajuan:", error);
+
+    badge.textContent = "Gagal memuat";
+
+    list.innerHTML = `
+      <div class="pending-loan-empty" style="color:#b91c2c">
+        Gagal membaca pengajuan: ${escapeHTML(error.message)}
+      </div>
+    `;
+  }
+}
+
+window.openPendingLoanPage = function() {
+  window.showPage("simpanan");
+};
+
+// Hubungkan dengan navigasi dashboard yang sudah ada.
+const previousPendingLoanShowPage = window.showPage;
+
+window.showPage = function(page, button) {
+  previousPendingLoanShowPage(page, button);
+
+  if (page === "dashboard") {
+    loadPendingLoanNotifications();
+  }
+};
+
+// Muat notifikasi setelah halaman siap.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    loadPendingLoanNotifications();
+  });
+} else {
+  loadPendingLoanNotifications();
+}
