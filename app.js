@@ -3305,3 +3305,4 @@ window.showPage=function(page,button){
     loadTokoHistory();
   }
 };
+document.getElementById("operationalMenuButton")?.remove();
