@@ -2224,3 +2224,490 @@ window.showPage=function(page,button){
   loadInvoiceHistory();
  }
 };
+
+// ==========================================
+// MODUL MANAJEMEN OPERASIONAL HARIAN KDMP
+// ==========================================
+
+// Tambahkan modul ke daftar navigasi ERP
+modules.operasional = [
+  "🏢",
+  "Operasional Harian",
+  "Pencatatan kegiatan dan aktivitas harian koperasi."
+];
+
+// CSS operasional
+const operationalStyle = document.createElement("style");
+operationalStyle.textContent = `
+.operational-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+  margin-bottom:20px;
+}
+.operational-card{
+  background:white;
+  border:1px solid #eee;
+  border-radius:12px;
+  padding:18px;
+}
+.operational-card small{
+  display:block;
+  color:#777;
+  margin-bottom:8px;
+}
+.operational-card strong{
+  font-size:22px;
+  color:#222;
+}
+.operational-filter{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  align-items:end;
+  background:white;
+  border:1px solid #eee;
+  border-radius:12px;
+  padding:16px;
+  margin-bottom:18px;
+}
+.operational-filter .erp-field{
+  flex:1;
+  min-width:180px;
+}
+.operational-filter input,
+.operational-filter select,
+.operational-form input,
+.operational-form select,
+.operational-form textarea{
+  box-sizing:border-box;
+  width:100%;
+  padding:11px;
+  border:1px solid #ddd;
+  border-radius:7px;
+  background:white;
+  font:inherit;
+}
+.operational-form textarea{
+  min-height:90px;
+  resize:vertical;
+}
+.operational-form{
+  display:none;
+  background:white;
+  border:1px solid #eee;
+  border-radius:12px;
+  padding:20px;
+  margin-bottom:20px;
+}
+.operational-form-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.operational-form .erp-field{
+  margin-bottom:14px;
+}
+.operational-form label{
+  display:block;
+  font-size:13px;
+  font-weight:bold;
+  margin-bottom:7px;
+  color:#555;
+}
+.operational-table-wrap{
+  overflow-x:auto;
+  background:white;
+  border:1px solid #eee;
+  border-radius:12px;
+}
+.operational-table{
+  width:100%;
+  min-width:850px;
+  border-collapse:collapse;
+}
+.operational-table th,
+.operational-table td{
+  padding:13px;
+  border-bottom:1px solid #eee;
+  text-align:left;
+  font-size:13px;
+}
+.operational-table th{
+  background:#fafafa;
+  color:#555;
+}
+.operational-type{
+  display:inline-block;
+  padding:5px 9px;
+  border-radius:20px;
+  background:#f1f1f1;
+  font-size:11px;
+  font-weight:bold;
+}
+.operational-empty{
+  padding:25px;
+  text-align:center;
+  color:#777;
+}
+@media(max-width:650px){
+  .operational-summary{grid-template-columns:1fr;}
+  .operational-form-grid{grid-template-columns:1fr;}
+  .operational-filter{display:grid;grid-template-columns:1fr;}
+}
+`;
+document.head.appendChild(operationalStyle);
+
+// Membuat tombol menu
+(function addOperationalMenu(){
+  const menu = document.querySelector(".menu");
+  if(!menu || document.getElementById("operationalMenuButton")) return;
+
+  const button = document.createElement("button");
+  button.id = "operationalMenuButton";
+  button.type = "button";
+  button.innerHTML = `
+    <span>🏢</span>
+    <span>Operasional Harian</span>
+  `;
+  button.addEventListener("click",()=>{
+    window.showPage("operasional",button);
+  });
+  menu.appendChild(button);
+})();
+
+// Membuat tampilan modul
+function setupOperational(){
+  const page = document.getElementById("modulePage");
+
+  if(!page || document.getElementById("operationalContent")) return;
+
+  const section = document.createElement("section");
+  section.id = "operationalContent";
+  section.className = "erp-content";
+
+  section.innerHTML = `
+    <div class="operational-toolbar erp-toolbar">
+      <div>
+        <h3>Manajemen Operasional Harian</h3>
+        <p class="erp-muted">
+          Catat kegiatan, pembukaan, penutupan, dan kendala koperasi.
+        </p>
+      </div>
+      <button class="erp-button" id="operationalAddButton">
+        + Tambah Kegiatan
+      </button>
+    </div>
+
+    <div class="operational-summary">
+      <div class="operational-card">
+        <small>Total Kegiatan Hari Ini</small>
+        <strong id="operationalTotal">0</strong>
+      </div>
+      <div class="operational-card">
+        <small>Kegiatan Selesai</small>
+        <strong id="operationalDone">0</strong>
+      </div>
+      <div class="operational-card">
+        <small>Kegiatan Tertunda</small>
+        <strong id="operationalPending">0</strong>
+      </div>
+    </div>
+
+    <form id="operationalForm" class="operational-form">
+      <h3 id="operationalFormTitle">Tambah Kegiatan Operasional</h3>
+
+      <div class="operational-form-grid">
+        <div class="erp-field">
+          <label>Tanggal Kegiatan</label>
+          <input type="date" id="operationalDate" required>
+        </div>
+
+        <div class="erp-field">
+          <label>Jenis Kegiatan</label>
+          <select id="operationalType" required>
+            <option value="pembukaan">Pembukaan Koperasi</option>
+            <option value="penutupan">Penutupan Koperasi</option>
+            <option value="kegiatan">Kegiatan Operasional</option>
+            <option value="kendala">Kendala Operasional</option>
+          </select>
+        </div>
+
+        <div class="erp-field">
+          <label>Nama Kegiatan</label>
+          <input type="text" id="operationalTitle"
+            placeholder="Contoh: Pemeriksaan kebersihan toko" required>
+        </div>
+
+        <div class="erp-field">
+          <label>Penanggung Jawab</label>
+          <input type="text" id="operationalResponsible"
+            placeholder="Nama petugas" required>
+        </div>
+
+        <div class="erp-field">
+          <label>Status Kegiatan</label>
+          <select id="operationalStatus" required>
+            <option value="selesai">Selesai</option>
+            <option value="proses">Dalam Proses</option>
+            <option value="tertunda">Tertunda</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="erp-field">
+        <label>Keterangan Kegiatan</label>
+        <textarea id="operationalDescription"
+          placeholder="Tuliskan rincian kegiatan atau kendala..."></textarea>
+      </div>
+
+      <div id="operationalMessage" class="erp-message"></div>
+
+      <div class="erp-actions">
+        <button type="submit" class="erp-button"
+          id="operationalSaveButton">Simpan Kegiatan</button>
+        <button type="button" class="erp-button secondary"
+          id="operationalCancelButton">Batal</button>
+      </div>
+    </form>
+
+    <div class="operational-filter">
+      <div class="erp-field">
+        <label>Filter Tanggal</label>
+        <input type="date" id="operationalFilterDate">
+      </div>
+      <div class="erp-field">
+        <label>Jenis Kegiatan</label>
+        <select id="operationalFilterType">
+          <option value="">Semua Kegiatan</option>
+          <option value="pembukaan">Pembukaan</option>
+          <option value="penutupan">Penutupan</option>
+          <option value="kegiatan">Kegiatan Operasional</option>
+          <option value="kendala">Kendala</option>
+        </select>
+      </div>
+      <button class="erp-button" id="operationalFilterButton">
+        Tampilkan
+      </button>
+      <button class="erp-button secondary" id="operationalResetButton">
+        Reset
+      </button>
+    </div>
+
+    <h3>Riwayat Kegiatan Operasional</h3>
+
+    <div id="operationalHistoryMessage"
+      class="erp-message erp-muted">Memuat riwayat...</div>
+
+    <div class="operational-table-wrap">
+      <table class="operational-table">
+        <thead>
+          <tr>
+            <th>Tanggal</th>
+            <th>Jenis</th>
+            <th>Nama Kegiatan</th>
+            <th>Penanggung Jawab</th>
+            <th>Status</th>
+            <th>Keterangan</th>
+          </tr>
+        </thead>
+        <tbody id="operationalHistoryBody">
+          <tr><td colspan="6">Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  page.appendChild(section);
+
+  document.getElementById("operationalDate").value = todayDate();
+  document.getElementById("operationalFilterDate").value = todayDate();
+
+  document.getElementById("operationalAddButton")
+    .addEventListener("click",openOperationalForm);
+
+  document.getElementById("operationalCancelButton")
+    .addEventListener("click",closeOperationalForm);
+
+  document.getElementById("operationalForm")
+    .addEventListener("submit",saveOperational);
+
+  document.getElementById("operationalFilterButton")
+    .addEventListener("click",loadOperationalHistory);
+
+  document.getElementById("operationalResetButton")
+    .addEventListener("click",()=>{
+      document.getElementById("operationalFilterDate").value="";
+      document.getElementById("operationalFilterType").value="";
+      loadOperationalHistory();
+    });
+}
+
+function openOperationalForm(){
+  const form = document.getElementById("operationalForm");
+  document.getElementById("operationalForm").reset();
+  document.getElementById("operationalDate").value=todayDate();
+  document.getElementById("operationalFormTitle").textContent =
+    "Tambah Kegiatan Operasional";
+  document.getElementById("operationalMessage").textContent="";
+  form.style.display="block";
+  form.scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function closeOperationalForm(){
+  document.getElementById("operationalForm").style.display="none";
+}
+
+async function saveOperational(event){
+  event.preventDefault();
+
+  const button=document.getElementById("operationalSaveButton");
+  const message=document.getElementById("operationalMessage");
+
+  if(!window.currentUser?.id){
+    message.textContent="Sesi pengguna tidak ditemukan. Silakan login ulang.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  const record={
+    activity_date:document.getElementById("operationalDate").value,
+    activity_type:document.getElementById("operationalType").value,
+    title:document.getElementById("operationalTitle").value.trim(),
+    responsible_name:document.getElementById("operationalResponsible").value.trim(),
+    status:document.getElementById("operationalStatus").value,
+    description:document.getElementById("operationalDescription").value.trim() || null,
+    created_by:window.currentUser.id
+  };
+
+  if(!record.activity_date || !record.title || !record.responsible_name){
+    message.textContent="Tanggal, nama kegiatan, dan penanggung jawab wajib diisi.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  button.disabled=true;
+  button.textContent="Menyimpan...";
+
+  const {error}=await supabaseClient
+    .from("operational_daily_logs")
+    .insert(record);
+
+  button.disabled=false;
+  button.textContent="Simpan Kegiatan";
+
+  if(error){
+    message.textContent="Gagal menyimpan: "+error.message;
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  message.textContent="Kegiatan berhasil disimpan.";
+  message.className="erp-message erp-success";
+
+  document.getElementById("operationalForm").reset();
+  document.getElementById("operationalDate").value=todayDate();
+
+  closeOperationalForm();
+  await loadOperationalHistory();
+}
+
+async function loadOperationalHistory(){
+  const body=document.getElementById("operationalHistoryBody");
+  const message=document.getElementById("operationalHistoryMessage");
+
+  if(!body)return;
+
+  body.innerHTML='<tr><td colspan="6">Memuat data...</td></tr>';
+  message.textContent="Mengambil data operasional...";
+  message.className="erp-message erp-muted";
+
+  const date=document.getElementById("operationalFilterDate").value;
+  const type=document.getElementById("operationalFilterType").value;
+
+  let query=supabaseClient
+    .from("operational_daily_logs")
+    .select("*")
+    .order("activity_date",{ascending:false})
+    .order("created_at",{ascending:false})
+    .limit(200);
+
+  if(date)query=query.eq("activity_date",date);
+  if(type)query=query.eq("activity_type",type);
+
+  const {data,error}=await query;
+
+  if(error){
+    body.innerHTML=`<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;
+    message.textContent="Gagal memuat data operasional.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  const records=data||[];
+
+  const today=todayDate();
+  const todayRecords=records.filter(x=>x.activity_date===today);
+
+  document.getElementById("operationalTotal").textContent=todayRecords.length;
+  document.getElementById("operationalDone").textContent=
+    todayRecords.filter(x=>x.status==="selesai").length;
+  document.getElementById("operationalPending").textContent=
+    todayRecords.filter(x=>x.status==="tertunda").length;
+
+  if(!records.length){
+    body.innerHTML='<tr><td colspan="6" class="operational-empty">Belum ada kegiatan operasional.</td></tr>';
+    message.textContent="Belum ada data untuk filter yang dipilih.";
+    message.className="erp-message erp-muted";
+    return;
+  }
+
+  const labels={
+    pembukaan:"Pembukaan",
+    penutupan:"Penutupan",
+    kegiatan:"Kegiatan",
+    kendala:"Kendala"
+  };
+
+  const statuses={
+    selesai:"Selesai",
+    proses:"Dalam Proses",
+    tertunda:"Tertunda"
+  };
+
+  body.innerHTML=records.map(item=>`
+    <tr>
+      <td>${escapeHTML(item.activity_date)}</td>
+      <td><span class="operational-type">${labels[item.activity_type]||"-"}</span></td>
+      <td>${escapeHTML(item.title)}</td>
+      <td>${escapeHTML(item.responsible_name)}</td>
+      <td>${escapeHTML(statuses[item.status]||item.status)}</td>
+      <td>${escapeHTML(item.description||"-")}</td>
+    </tr>
+  `).join("");
+
+  message.textContent=`Berhasil memuat ${records.length} kegiatan.`;
+  message.className="erp-message erp-success";
+}
+
+// Hubungkan modul dengan navigasi utama ERP
+const previousOperationalShowPage=window.showPage;
+
+window.showPage=function(page,button){
+  const operationalContent=document.getElementById("operationalContent");
+
+  if(operationalContent){
+    operationalContent.style.display="none";
+  }
+
+  previousOperationalShowPage(page,button);
+
+  if(page==="operasional"){
+    setupOperational();
+
+    const content=document.getElementById("operationalContent");
+    if(content)content.style.display="block";
+
+    loadOperationalHistory();
+  }
+};
