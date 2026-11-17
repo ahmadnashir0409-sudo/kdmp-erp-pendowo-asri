@@ -1783,7 +1783,7 @@ function setupInvoice() {
      </div>
      <div>
       <label id="invCounterpartyLabel">Nama Pelanggan</label>
-      <input id="invCustomer" required maxlength="150" placeholder="Nama pelanggan atau pemasok">
+      <input id="invCustomer" maxlength="150" placeholder="Opsional - kosongkan untuk Pelanggan Umum">
      </div>
      <div>
       <label>Nomor Telepon</label>
@@ -1902,11 +1902,11 @@ function updateInvoiceType() {
  const type=document.getElementById("invType").value;
  const isPurchase=type==="pembelian";
  document.getElementById("invCounterpartyLabel").textContent=
-  isPurchase?"Nama Pemasok":"Nama Pelanggan";
+  isPurchase?"Nama Pemasok (opsional)":"Nama Pelanggan (opsional)";
  document.getElementById("invAddressLabel").textContent=
   isPurchase?"Alamat Pemasok":"Alamat Pelanggan";
  document.getElementById("invCustomer").placeholder=
-  isPurchase?"Nama pemasok":"Nama pelanggan";
+  isPurchase?"Opsional - kosongkan untuk Pemasok Umum":"Opsional - kosongkan untuk Pelanggan Umum";
  document.querySelectorAll("#invoiceItemRows tr").forEach(row=>{
   const productId=row.querySelector(".inv-product")?.value;
   if(productId){
@@ -2079,7 +2079,8 @@ async function saveInvoice(event) {
  const result=calculateInvoiceTotal();
  const date=document.getElementById("invDate").value;
  const dueDate=document.getElementById("invDueDate").value;
- const counterparty=document.getElementById("invCustomer").value.trim();
+ const enteredCounterparty=document.getElementById("invCustomer").value.trim();
+ const counterparty=enteredCounterparty||(type==="pembelian"?"Pemasok Umum":"Pelanggan Umum");
 
  if(!["penjualan","pembelian"].includes(type)){
   message.textContent="Pilih jenis invoice yang benar.";
@@ -2087,7 +2088,7 @@ async function saveInvoice(event) {
   return;
  }
 
- if(!counterparty || !date || (dueDate && dueDate<date)){
+ if(!date || (dueDate && dueDate<date)){
   message.textContent="Periksa nama pelanggan/pemasok dan tanggal invoice.";
   message.className="invoice-message erp-error";
   return;
@@ -2248,7 +2249,7 @@ async function loadInvoiceHistory() {
   const values=[
    invoice.invoice_number,
    invoice.issue_date,
-   (isPurchase?"Pemasok: ":"Pelanggan: ")+(isPurchase?(invoice.supplier_name||invoice.customer_name):invoice.customer_name),
+   (isPurchase?"Pemasok: ":"Pelanggan: ")+(isPurchase?(invoice.supplier_name||invoice.customer_name||"Pemasok Umum"):(invoice.customer_name||"Pelanggan Umum")),
    formatRupiah(invoice.total)
   ];
 
@@ -2399,7 +2400,7 @@ async function showInvoiceDetail(id) {
    </div>
    <hr>
    <h3>${invoice.invoice_type==="pembelian"?"Tagihan dari pemasok:":"Ditagihkan kepada:"}</h3>
-   <strong>${escapeHTML(invoice.invoice_type==="pembelian"?(invoice.supplier_name||invoice.customer_name):invoice.customer_name)}</strong>
+   <strong>${escapeHTML(invoice.invoice_type==="pembelian"?(invoice.supplier_name||invoice.customer_name||"Pemasok Umum"):(invoice.customer_name||"Pelanggan Umum"))}</strong>
    <p>${escapeHTML(invoice.customer_address||"-")}</p>
    <p>${escapeHTML(invoice.customer_phone||"-")}</p>
    <div style="overflow-x:auto;margin-top:20px">
