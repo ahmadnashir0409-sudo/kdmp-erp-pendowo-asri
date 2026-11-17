@@ -4889,3 +4889,381 @@ window.showPage=function(page,button){
     loadLoans();
   }
 };
+
+/* ==========================================
+   PEMBAYARAN ANGSURAN PINJAMAN KDMP
+   ========================================== */
+
+let selectedInstallmentForPayment = null;
+
+function setupLoanPaymentUI() {
+  const scheduleBody = document.getElementById("loanScheduleBody");
+  if (!scheduleBody) return;
+
+  const table = scheduleBody.closest("table");
+  if (table && table.querySelector("thead tr")) {
+    const header = table.querySelector("thead tr");
+    if (!header.querySelector(".loan-payment-header")) {
+      const th = document.createElement("th");
+      th.className = "loan-payment-header";
+      th.textContent = "Aksi";
+      header.appendChild(th);
+    }
+  }
+
+  if (document.getElementById("loanPaymentFormPanel")) return;
+
+  const schedulePanel = scheduleBody.closest(".loan-panel");
+  if (!schedulePanel) return;
+
+  const panel = document.createElement("div");
+  panel.id = "loanPaymentFormPanel";
+  panel.className = "loan-panel";
+  panel.style.display = "none";
+
+  panel.innerHTML = `
+    <h3>Bayar Angsuran</h3>
+    <p id="loanPaymentInfo" class="loan-message"></p>
+
+    <form id="loanPaymentForm">
+      <div class="loan-grid">
+        <div class="loan-field">
+          <label>Nominal Pembayaran (Rp)</label>
+          <input
+            id="loanPaymentAmount"
+            type="number"
+            min="1"
+            step="1"
+            required
+            placeholder="Masukkan nominal"
+          >
+        </div>
+
+        <div class="loan-field">
+          <label>Metode Pembayaran</label>
+          <select id="loanPaymentMethod" required>
+            <option value="tunai">Tunai</option>
+            <option value="transfer">Transfer</option>
+            <option value="qris">QRIS</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="loan-field">
+        <label>Catatan</label>
+        <textarea
+          id="loanPaymentNotes"
+          rows="2"
+          placeholder="Catatan pembayaran (opsional)"
+        ></textarea>
+      </div>
+
+      <div id="loanPaymentMessage" class="loan-message"></div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button type="submit" class="loan-btn" id="loanPaymentSubmit">
+          Simpan Pembayaran
+        </button>
+        <button
+          type="button"
+          class="loan-btn gray"
+          onclick="closeLoanPaymentForm()"
+        >
+          Batal
+        </button>
+      </div>
+    </form>
+  `;
+
+  schedulePanel.appendChild(panel);
+
+  const history = document.createElement("div");
+  history.id = "loanPaymentHistoryPanel";
+  history.className = "loan-panel";
+  history.innerHTML = `
+    <h3>Riwayat Pembayaran Angsuran</h3>
+    <div id="loanPaymentHistoryMessage" class="loan-message">
+      Pilih jadwal pinjaman untuk melihat riwayat pembayaran.
+    </div>
+    <div class="loan-table-wrap">
+      <table class="loan-table">
+        <thead>
+          <tr>
+            <th>Nomor Pembayaran</th>
+            <th>Angsuran</th>
+            <th>Tanggal</th>
+            <th>Metode</th>
+            <th>Nominal</th>
+            <th>Catatan</th>
+          </tr>
+        </thead>
+        <tbody id="loanPaymentHistoryBody">
+          <tr><td colspan="6">Belum ada riwayat.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  schedulePanel.after(history);
+
+  document.getElementById("loanPaymentForm").onsubmit =
+    saveLoanInstallmentPayment;
+}
+
+window.closeLoanPaymentForm = function () {
+  const panel = document.getElementById("loanPaymentFormPanel");
+  if (panel) panel.style.display = "none";
+
+  selectedInstallmentForPayment = null;
+};
+
+window.openLoanPaymentForm = function (
+  installmentId,
+  installmentNumber,
+  totalDue,
+  paidAmount
+) {
+  setupLoanPaymentUI();
+
+  const remaining = Number(totalDue) - Number(paidAmount);
+
+  if (remaining <= 0) {
+    alert("Angsuran ini sudah lunas.");
+    return;
+  }
+
+  selectedInstallmentForPayment = installmentId;
+
+  document.getElementById("loanPaymentInfo").innerHTML =
+    "Angsuran ke-" + installmentNumber +
+    "<br>Total tagihan: <strong>" + formatRupiah(totalDue) +
+    "</strong><br>Sudah dibayar: <strong>" + formatRupiah(paidAmount) +
+    "</strong><br>Sisa tagihan: <strong>" + formatRupiah(remaining) +
+    "</strong>";
+
+  document.getElementById("loanPaymentAmount").value = remaining;
+  document.getElementById("loanPaymentAmount").max = remaining;
+  document.getElementById("loanPaymentMethod").value = "tunai";
+  document.getElementById("loanPaymentNotes").value = "";
+  document.getElementById("loanPaymentMessage").textContent = "";
+
+  const panel = document.getElementById("loanPaymentFormPanel");
+  panel.style.display = "block";
+  panel.scrollIntoView({ behavior: "smooth", block: "center" });
+};
+
+async function saveLoanInstallmentPayment(event) {
+  event.preventDefault();
+
+  const installmentId = selectedInstallmentForPayment;
+  if (!installmentId) {
+    alert("Pilih angsuran terlebih dahulu.");
+    return;
+  }
+
+  const amount = Number(
+    document.getElementById("loanPaymentAmount").value
+  );
+
+  const method = document.getElementById("loanPaymentMethod").value;
+  const notes = document.getElementById("loanPaymentNotes").value.trim();
+  const message = document.getElementById("loanPaymentMessage");
+  const button = document.getElementById("loanPaymentSubmit");
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    message.textContent = "Nominal pembayaran harus lebih dari nol.";
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Menyimpan...";
+
+  try {
+    const paymentNumber =
+      "ANG-" + Date.now() + "-" +
+      Math.floor(Math.random() * 1000);
+
+    const { data, error } = await supabaseClient.rpc(
+      "pay_loan_installment",
+      {
+        p_payment_number: paymentNumber,
+        p_installment_id: installmentId,
+        p_amount: amount,
+        p_payment_method: method,
+        p_notes: notes || null
+      }
+    );
+
+    if (error) throw error;
+
+    message.textContent =
+      "Pembayaran berhasil disimpan. Nomor: " + paymentNumber;
+    message.style.color = "#16834e";
+
+    selectedInstallmentForPayment = null;
+
+    await loadLoans();
+
+    if (window.activeLoanScheduleId) {
+      await window.viewLoanSchedule(window.activeLoanScheduleId);
+    }
+
+    alert(
+      "Pembayaran angsuran berhasil dicatat!\n" +
+      "Nomor: " + paymentNumber +
+      "\nNominal: " + formatRupiah(amount)
+    );
+
+    document.getElementById("loanPaymentFormPanel").style.display = "none";
+
+  } catch (error) {
+    message.textContent = "Gagal menyimpan pembayaran: " + error.message;
+    message.style.color = "#b91c1c";
+  } finally {
+    button.disabled = false;
+    button.textContent = "Simpan Pembayaran";
+  }
+}
+
+window.viewLoanSchedule = async function (loanId) {
+  setupLoanPaymentUI();
+
+  window.activeLoanScheduleId = loanId;
+
+  const body = document.getElementById("loanScheduleBody");
+  const message = document.getElementById("loanScheduleMessage");
+
+  body.innerHTML =
+    '<tr><td colspan="7">Memuat jadwal...</td></tr>';
+
+  document.getElementById("loanPaymentFormPanel").style.display = "none";
+
+  const { data, error } = await supabaseClient
+    .from("loan_installments")
+    .select("*")
+    .eq("loan_id", loanId)
+    .order("installment_number");
+
+  if (error) {
+    message.textContent = "Gagal memuat jadwal: " + error.message;
+    return;
+  }
+
+  if (!data || !data.length) {
+    body.innerHTML =
+      '<tr><td colspan="7">Belum ada jadwal angsuran.</td></tr>';
+    message.textContent = "Jadwal belum tersedia.";
+    return;
+  }
+
+  let totalTagihan = 0;
+  let totalTerbayar = 0;
+  let totalSisa = 0;
+
+  body.innerHTML = data.map(item => {
+    const due = Number(item.total_due);
+    const paid = Number(item.paid_amount);
+    const remaining = Math.max(0, due - paid);
+
+    totalTagihan += due;
+    totalTerbayar += paid;
+    totalSisa += remaining;
+
+    const status = remaining <= 0
+      ? "Lunas"
+      : item.status === "terlambat"
+        ? "Terlambat"
+        : paid > 0
+          ? "Sebagian"
+          : "Belum Bayar";
+
+    const action = remaining > 0
+      ? `<button
+          class="loan-btn green"
+          onclick="openLoanPaymentForm(
+            '${item.id}',
+            ${item.installment_number},
+            ${due},
+            ${paid}
+          )"
+        >Bayar</button>`
+      : '<span class="loan-tag approved">Lunas</span>';
+
+    return `
+      <tr>
+        <td>Angsuran ke-${item.installment_number}</td>
+        <td>${escapeHTML(item.due_date)}</td>
+        <td>${formatRupiah(item.principal_due)}</td>
+        <td>${formatRupiah(item.service_due)}</td>
+        <td><strong>${formatRupiah(due)}</strong></td>
+        <td>${escapeHTML(status)}</td>
+        <td>${action}</td>
+      </tr>
+    `;
+  }).join("");
+
+  message.innerHTML = `
+    Total tagihan: <strong>${formatRupiah(totalTagihan)}</strong>
+    &nbsp; | &nbsp;
+    Sudah dibayar: <strong>${formatRupiah(totalTerbayar)}</strong>
+    &nbsp; | &nbsp;
+    Sisa tagihan: <strong>${formatRupiah(totalSisa)}</strong>
+  `;
+
+  await loadLoanPaymentHistory(data);
+};
+
+async function loadLoanPaymentHistory(installments) {
+  const body = document.getElementById("loanPaymentHistoryBody");
+  const message = document.getElementById("loanPaymentHistoryMessage");
+
+  if (!body || !message) return;
+
+  const ids = installments.map(item => item.id);
+
+  if (!ids.length) {
+    body.innerHTML =
+      '<tr><td colspan="6">Belum ada riwayat pembayaran.</td></tr>';
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("loan_installment_payments")
+    .select("*")
+    .in("installment_id", ids)
+    .order("payment_date", { ascending: false });
+
+  if (error) {
+    body.innerHTML =
+      `<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;
+    message.textContent = "Gagal memuat riwayat pembayaran.";
+    return;
+  }
+
+  if (!data || !data.length) {
+    body.innerHTML =
+      '<tr><td colspan="6">Belum ada pembayaran yang tercatat.</td></tr>';
+    message.textContent = "Belum ada riwayat pembayaran.";
+    return;
+  }
+
+  const installmentNumbers = {};
+  installments.forEach(item => {
+    installmentNumbers[item.id] = item.installment_number;
+  });
+
+  body.innerHTML = data.map(payment => `
+    <tr>
+      <td>${escapeHTML(payment.payment_number)}</td>
+      <td>Angsuran ke-${installmentNumbers[payment.installment_id] || "-"}</td>
+      <td>${escapeHTML(
+        new Date(payment.payment_date).toLocaleString("id-ID")
+      )}</td>
+      <td>${escapeHTML(payment.payment_method)}</td>
+      <td><strong>${formatRupiah(payment.amount)}</strong></td>
+      <td>${escapeHTML(payment.notes || "-")}</td>
+    </tr>
+  `).join("");
+
+  message.textContent = data.length + " transaksi pembayaran tercatat.";
+};
