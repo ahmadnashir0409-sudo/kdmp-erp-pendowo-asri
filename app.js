@@ -1747,7 +1747,7 @@ function setupInvoice() {
    <div class="erp-toolbar">
     <div>
      <h3>🧾 Daftar Invoice</h3>
-     <div class="erp-muted">Kelola faktur dan tagihan pelanggan KDMP.</div>
+     <div class="erp-muted">Kelola invoice penjualan kepada pelanggan dan pembelian dari pemasok KDMP.</div>
     </div>
     <button class="invoice-action invoice-primary" id="invoiceNewButton">
      + Buat Invoice
@@ -1769,8 +1769,8 @@ function setupInvoice() {
       </select>
      </div>
      <div>
-      <label>Nama Pelanggan</label>
-      <input id="invCustomer" required maxlength="150" placeholder="Nama pelanggan">
+      <label id="invCounterpartyLabel">Nama Pelanggan</label>
+      <input id="invCustomer" required maxlength="150" placeholder="Nama pelanggan atau pemasok">
      </div>
      <div>
       <label>Nomor Telepon</label>
@@ -1789,7 +1789,7 @@ function setupInvoice() {
       <input id="invDueDate" type="date">
      </div>
      <div class="full">
-      <label>Alamat Pelanggan</label>
+      <label id="invAddressLabel">Alamat Pelanggan</label>
       <textarea id="invAddress" rows="2" placeholder="Alamat pelanggan"></textarea>
      </div>
     </div>
@@ -1856,7 +1856,7 @@ function setupInvoice() {
       <tr>
        <th>Nomor Invoice</th>
        <th>Tanggal</th>
-       <th>Pelanggan</th>
+       <th>Pelanggan / Pemasok</th>
        <th>Total</th>
        <th>Status</th>
        <th>Aksi</th>
@@ -1884,20 +1884,26 @@ function setupInvoice() {
 
  loadInvoiceHistory();
 }
-function updateInvoiceType(){
- const type=document.getElementById("invType").value;
- const label=document.getElementById("invCustomer").previousElementSibling;
 
- label.textContent=type==="pembelian"
-   ?"Nama Pemasok"
-   :"Nama Pelanggan";
+function updateInvoiceType() {
+ const type=document.getElementById("invType").value;
+ const isPurchase=type==="pembelian";
+ document.getElementById("invCounterpartyLabel").textContent=
+  isPurchase?"Nama Pemasok":"Nama Pelanggan";
+ document.getElementById("invAddressLabel").textContent=
+  isPurchase?"Alamat Pemasok":"Alamat Pelanggan";
+ document.getElementById("invCustomer").placeholder=
+  isPurchase?"Nama pemasok":"Nama pelanggan";
 }
+
 function openInvoiceForm() {
  const form=document.getElementById("invoiceForm");
  form.reset();
  document.getElementById("invoiceFormPanel").style.display="block";
  document.getElementById("invoiceDetailPanel").style.display="none";
  document.getElementById("invDate").value=todayDate();
+ document.getElementById("invType").value="penjualan";
+ updateInvoiceType();
  document.getElementById("invoiceFormMessage").textContent="";
  document.getElementById("invoiceItemRows").replaceChildren();
  addInvoiceItem();
@@ -1979,7 +1985,6 @@ function updateInvoiceTotal() {
  document.getElementById("invoiceGrandTotal").textContent=formatRupiah(result.total);
 }
 
-
 async function saveInvoice(event) {
  event.preventDefault();
 
@@ -1996,9 +2001,15 @@ async function saveInvoice(event) {
  const result=calculateInvoiceTotal();
  const date=document.getElementById("invDate").value;
  const dueDate=document.getElementById("invDueDate").value;
- const name=document.getElementById("invCustomer").value.trim();
+ const counterparty=document.getElementById("invCustomer").value.trim();
 
- if(!name || !date || (dueDate && dueDate<date)){
+ if(!["penjualan","pembelian"].includes(type)){
+  message.textContent="Pilih jenis invoice yang benar.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ if(!counterparty || !date || (dueDate && dueDate<date)){
   message.textContent="Periksa nama pelanggan/pemasok dan tanggal invoice.";
   message.className="invoice-message erp-error";
   return;
@@ -2025,12 +2036,13 @@ async function saveInvoice(event) {
 
  try {
   const invoiceNumber="INV-"+date.replaceAll("-","")+"-"+Date.now().toString().slice(-5);
+  const isPurchase=type==="pembelian";
 
   const invoiceData={
    invoice_number:invoiceNumber,
    invoice_type:type,
-   customer_name:name,
-   supplier_name:type==="pembelian"?name:null,
+   customer_name:counterparty,
+   supplier_name:isPurchase?counterparty:null,
    customer_phone:document.getElementById("invPhone").value.trim()||null,
    customer_email:document.getElementById("invEmail").value.trim()||null,
    customer_address:document.getElementById("invAddress").value.trim()||null,
@@ -2069,7 +2081,8 @@ async function saveInvoice(event) {
    throw itemError;
   }
 
-  message.textContent="Invoice berhasil dibuat: "+invoiceNumber;
+  message.textContent=(isPurchase?"Invoice pembelian":"Invoice penjualan")+
+   " berhasil dibuat: "+invoiceNumber;
   message.className="invoice-message erp-success";
 
   closeInvoiceForm();
@@ -2084,6 +2097,7 @@ async function saveInvoice(event) {
  }
 }
 
+async function loadInvoiceHistory() {
  const body=document.getElementById("invoiceHistoryBody");
  if(!body)return;
 
@@ -2118,10 +2132,11 @@ async function saveInvoice(event) {
  invoices.forEach(invoice=>{
   const row=document.createElement("tr");
 
+  const isPurchase=invoice.invoice_type==="pembelian";
   const values=[
    invoice.invoice_number,
    invoice.issue_date,
-   invoice.customer_name,
+   (isPurchase?"Pemasok: ":"Pelanggan: ")+(isPurchase?(invoice.supplier_name||invoice.customer_name):invoice.customer_name),
    formatRupiah(invoice.total)
   ];
 
@@ -2194,8 +2209,8 @@ async function showInvoiceDetail(id) {
     </div>
    </div>
    <hr>
-   <h3>Ditagihkan kepada:</h3>
-   <strong>${escapeHTML(invoice.customer_name)}</strong>
+   <h3>${invoice.invoice_type==="pembelian"?"Tagihan dari pemasok:":"Ditagihkan kepada:"}</h3>
+   <strong>${escapeHTML(invoice.invoice_type==="pembelian"?(invoice.supplier_name||invoice.customer_name):invoice.customer_name)}</strong>
    <p>${escapeHTML(invoice.customer_address||"-")}</p>
    <p>${escapeHTML(invoice.customer_phone||"-")}</p>
    <div style="overflow-x:auto;margin-top:20px">
@@ -3054,105 +3069,137 @@ async function saveTokoSale(){
   const button=document.getElementById("tokoSave");
   const message=document.getElementById("tokoMessage");
   const totals=calculateTokoTotal();
-
-  const items=tokoItems.filter(item=>
-    item.name.trim() && item.quantity>0 && item.price>=0
-  );
+  const items=tokoItems.filter(item=>item.name.trim() && item.quantity>0 && item.price>=0);
 
   if(!window.currentUser?.id){
     message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
-    message.className="erp-message erp-error";
-    return;
+    message.className="erp-message erp-error"; return;
   }
-
   if(!items.length){
     message.textContent="Masukkan minimal satu barang dengan nama dan jumlah.";
-    message.className="erp-message erp-error";
-    return;
+    message.className="erp-message erp-error"; return;
+  }
+  if(totals.discount>totals.subtotal || totals.paid<totals.total || totals.total<=0){
+    message.textContent=totals.discount>totals.subtotal
+      ? "Diskon tidak boleh lebih besar dari subtotal."
+      : totals.paid<totals.total
+        ? "Uang diterima belum mencukupi total belanja."
+        : "Total transaksi harus lebih dari nol.";
+    message.className="erp-message erp-error"; return;
   }
 
-  if(totals.discount>totals.subtotal){
-    message.textContent="Diskon tidak boleh lebih besar dari subtotal.";
-    message.className="erp-message erp-error";
-    return;
-  }
-
-  if(totals.paid<totals.total){
-    message.textContent="Uang diterima belum mencukupi total belanja.";
-    message.className="erp-message erp-error";
-    return;
-  }
-
-  if(totals.total<=0){
-    message.textContent="Total transaksi harus lebih dari nol.";
-    message.className="erp-message erp-error";
-    return;
-  }
-
-  const saleNumber=makeTokoSaleNumber();
-
-  const sale={
-    sale_number:saleNumber,
-    customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
-    payment_method:document.getElementById("tokoPayment").value,
-    subtotal:totals.subtotal,
-    discount:totals.discount,
-    total:totals.total,
-    paid_amount:totals.paid,
-    change_amount:totals.change,
-    status:"selesai",
-    notes:document.getElementById("tokoNotes").value.trim()||null,
-    created_by:window.currentUser.id
-  };
-
-  button.disabled=true;
-  button.textContent="Menyimpan...";
-
+  button.disabled=true; button.textContent="Memeriksa stok...";
+  let createdSaleId=null;
+  const stockChanges=[];
+  let movementIds=[];
   try{
+    // Cocokkan nama barang kasir dengan master persediaan.
+    const {data:products,error:productError}=await supabaseClient
+      .from("inventory_products")
+      .select("id,product_code,product_name,unit,current_stock,purchase_price,selling_price")
+      .eq("is_active",true);
+    if(productError)throw productError;
+
+    const productByName=new Map((products||[]).map(p=>[
+      String(p.product_name||"").trim().toLocaleLowerCase("id-ID"),p
+    ]));
+    const grouped=new Map();
+    const resolvedItems=items.map(item=>{
+      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
+      if(!product)throw new Error('Barang "'+item.name+'" belum terdaftar di menu Persediaan Barang. Gunakan nama yang sama dengan master barang.');
+      if(item.unit.trim() && product.unit && item.unit.trim().toLowerCase()!==String(product.unit).toLowerCase())
+        throw new Error('Satuan barang "'+item.name+'" harus '+product.unit+'.');
+      const qty=Number(item.quantity);
+      const entry=grouped.get(product.id)||{product,quantity:0};
+      entry.quantity+=qty; grouped.set(product.id,entry);
+      return {...item,product};
+    });
+
+    for(const {product,quantity} of grouped.values()){
+      const available=Number(product.current_stock||0);
+      if(quantity>available)throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
+    }
+
+    // Simpan header dan rincian transaksi terlebih dahulu.
+    const saleNumber=makeTokoSaleNumber();
+    const sale={
+      sale_number:saleNumber,
+      customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
+      payment_method:document.getElementById("tokoPayment").value,
+      subtotal:totals.subtotal, discount:totals.discount, total:totals.total,
+      paid_amount:totals.paid, change_amount:totals.change, status:"selesai",
+      notes:document.getElementById("tokoNotes").value.trim()||null,
+      created_by:window.currentUser.id
+    };
+    button.textContent="Menyimpan transaksi...";
     const {data:createdSale,error:saleError}=await supabaseClient
-      .from("store_sales")
-      .insert(sale)
-      .select()
-      .single();
-
+      .from("store_sales").insert(sale).select().single();
     if(saleError)throw saleError;
+    createdSaleId=createdSale.id;
 
-    const detailItems=items.map(item=>({
+    const detailItems=resolvedItems.map(item=>({
       sale_id:createdSale.id,
-      product_name:item.name.trim(),
+      product_name:item.product.product_name,
       quantity:item.quantity,
-      unit:item.unit.trim()||"pcs",
+      unit:item.product.unit||item.unit||"pcs",
       unit_price:item.price,
       line_total:item.quantity*item.price
     }));
+    const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
+    if(itemError)throw itemError;
 
-    const {error:itemError}=await supabaseClient
-      .from("store_sale_items")
-      .insert(detailItems);
+    // Kurangi stok dan buat jejak mutasi untuk setiap barang.
+    button.textContent="Memperbarui persediaan...";
+    for(const {product,quantity} of grouped.values()){
+      const before=Number(product.current_stock||0);
+      const after=before-quantity;
+      const {error:updateError}=await supabaseClient
+        .from("inventory_products").update({current_stock:after}).eq("id",product.id);
+      if(updateError)throw updateError;
+      stockChanges.push({product,before,after});
 
-    if(itemError){
-      // Hindari transaksi tanpa rincian barang.
-      await supabaseClient
-        .from("store_sales")
-        .delete()
-        .eq("id",createdSale.id);
-
-      throw itemError;
+      const {data:movement,error:movementError}=await supabaseClient
+        .from("inventory_movements")
+        .insert({
+          movement_number:inventoryNumber("JUAL"), product_id:product.id,
+          movement_type:"keluar", quantity, stock_before:before, stock_after:after,
+          unit_cost:Number(product.purchase_price||0),
+          movement_date:todayDate(), reference_number:saleNumber,
+          notes:"Pengeluaran stok otomatis dari transaksi penjualan toko",
+          created_by:window.currentUser.id
+        }).select("id").single();
+      if(movementError)throw movementError;
+      movementIds.push(movement.id);
     }
 
-    message.textContent="Transaksi berhasil disimpan: "+saleNumber;
+    message.textContent="Transaksi berhasil disimpan dan stok persediaan otomatis diperbarui: "+saleNumber;
     message.className="erp-message erp-success";
-
     resetTokoForm();
     await loadTokoHistory();
-    printTokoReceipt(createdSale,items);
-
+    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
+    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
+    printTokoReceipt(createdSale,resolvedItems.map(item=>({
+      product_name:item.product.product_name,quantity:item.quantity,
+      unit:item.product.unit||item.unit||"pcs",unit_price:item.price,
+      line_total:item.quantity*item.price
+    })));
   }catch(error){
-    message.textContent="Gagal menyimpan transaksi: "+error.message;
+    // Upaya membatalkan perubahan stok bila salah satu tahap gagal.
+    for(const change of stockChanges.reverse()){
+      await supabaseClient.from("inventory_products")
+        .update({current_stock:change.before}).eq("id",change.product.id);
+    }
+    if(movementIds.length){
+      await supabaseClient.from("inventory_movements").delete().in("id",movementIds);
+    }
+    if(createdSaleId){
+      await supabaseClient.from("store_sale_items").delete().eq("sale_id",createdSaleId);
+      await supabaseClient.from("store_sales").delete().eq("id",createdSaleId);
+    }
+    message.textContent="Transaksi dibatalkan: "+(error.message||"Terjadi kesalahan");
     message.className="erp-message erp-error";
   }finally{
-    button.disabled=false;
-    button.textContent="Simpan Transaksi";
+    button.disabled=false; button.textContent="Simpan Transaksi";
   }
 }
 
