@@ -7655,3 +7655,18 @@ window.showPage=function(page,button){
 window.calculateBankReconciliation = calculateBankReconciliation;
 window.saveBankMutation = saveBankMutation;
 window.saveBankReconciliation = saveBankReconciliation;
+// FIX FINAL: TAMPILKAN ERROR SIMPAN REKONSILIASI
+const simpanRekonsiliasiAsli = window.saveBankReconciliation;
+
+window.saveBankReconciliation = async function(...args) {
+  try {
+    if (typeof simpanRekonsiliasiAsli !== "function") {
+      throw new Error("Fungsi simpan rekonsiliasi tidak ditemukan.");
+    }
+
+    await simpanRekonsiliasiAsli(...args);
+  } catch (error) {
+    console.error("Error rekonsiliasi:", error);
+    alert("Gagal menyimpan rekonsiliasi: " + error.message);
+  }
+};
