@@ -6313,215 +6313,193 @@ function filterExportDate(rows, fields, start, end) {
 }
 
 async function buildKDMPReport(type,start,end) {
+  const emptySheet = (name, rows, message) => ({
+    name,
+    rows: rows.length ? rows : [{ Informasi: message || "Tidak ada data pada periode yang dipilih." }]
+  });
 
   if (type === "laba" || type === "hpp") {
     const {data,error} = await supabaseClient
       .from("journal_lines")
       .select(`
-        debit,
-        kredit,
-        keterangan,
+        debit,kredit,keterangan,
         accounts(kode_akun,nama_akun,kategori),
-        journal_entries!inner(
-          tanggal,
-          nomor_jurnal,
-          keterangan,
-          status
-        )
+        journal_entries!inner(tanggal,nomor_jurnal,keterangan,status)
       `)
       .gte("journal_entries.tanggal",start)
       .lte("journal_entries.tanggal",end);
-
     if (error) throw error;
 
-    let rows = (data || []).filter(line =>
-      line.journal_entries?.status === "posted"
-    );
-
+    let rows = (data || []).filter(line => line.journal_entries?.status === "posted");
     if (type === "hpp") {
-      rows = rows.filter(line =>
-        /harga pokok|hpp/i.test(
-          (line.accounts?.nama_akun || "") + " " +
-          (line.accounts?.kode_akun || "")
-        )
-      );
-
-      if (!rows.length) {
-        throw new Error(
-          "Belum ditemukan akun HPP pada jurnal terposting di periode ini. " +
-          "Periksa pencatatan akun HPP terlebih dahulu."
-        );
-      }
+      rows = rows.filter(line => /harga pokok|hpp/i.test(
+        (line.accounts?.nama_akun || "") + " " + (line.accounts?.kode_akun || "")
+      ));
     } else {
-      rows = rows.filter(line =>
-        ["pendapatan","beban","penghasilan"].includes(
-          String(line.accounts?.kategori || "").toLowerCase()
-        )
-      );
-
-      if (!rows.length) {
-        throw new Error(
-          "Belum ditemukan akun pendapatan atau beban pada jurnal terposting."
-        );
-      }
+      rows = rows.filter(line => ["pendapatan","beban","penghasilan"].includes(
+        String(line.accounts?.kategori || "").toLowerCase()
+      ));
     }
-
     const detail = rows.map(line => ({
       Tanggal:line.journal_entries.tanggal,
-      "Nomor Jurnal":line.journal_entries.nomor_jurnal,
+      Nomor_Jurnal:line.journal_entries.nomor_jurnal,
       Kode_Akun:line.accounts?.kode_akun || "",
       Nama_Akun:line.accounts?.nama_akun || "",
       Kategori:line.accounts?.kategori || "",
       Keterangan:line.keterangan || line.journal_entries.keterangan || "",
-      Debit:Number(line.debit || 0),
-      Kredit:Number(line.kredit || 0)
+      Debit:Number(line.debit || 0), Kredit:Number(line.kredit || 0)
     }));
-
-    return [{
-      name:type === "hpp" ? "Laporan HPP" : "Laba Rugi - Rincian",
-      rows:detail
-    }];
+    return [emptySheet(type === "hpp" ? "Rincian HPP" : "Rincian Laba Rugi", detail,
+      type === "hpp" ? "Tidak ditemukan akun HPP pada jurnal terposting di periode ini." : "Tidak ditemukan akun pendapatan/beban pada jurnal terposting di periode ini.")];
   }
 
   if (type === "kas") {
-    const data = await fetchExportTable(
-      "financial_transactions",
-      "tanggal,jenis,nominal,keterangan,akun_kas_id,akun_lawan_id,journal_id"
+    const [transactions,reconciliations] = await Promise.all([
+      fetchExportTable("financial_transactions", "tanggal,jenis,nominal,keterangan,akun_kas_id,akun_lawan_id,journal_id"),
+      fetchExportTable("bank_reconciliations", "*")
+    ]);
+    const tx = filterExportDate(transactions,["tanggal"],start,end).map(x => ({
+      Tanggal:x.tanggal, Jenis:x.jenis, Keterangan:x.keterangan || "",
+      Nominal:Number(x.nominal || 0), ID_Akun_Kas:x.akun_kas_id || "",
+      ID_Akun_Lawan:x.akun_lawan_id || "", ID_Jurnal:x.journal_id || ""
+    }));
+    const rec = (reconciliations || []).filter(x =>
+      String(x.period_start || "") <= end && String(x.period_end || "") >= start
     );
-
-    const rows = filterExportDate(data,["tanggal"],start,end);
-
-    return [{
-      name:"Arus Kas",
-      rows:rows.map(item => ({
-        Tanggal:item.tanggal,
-        Jenis:item.jenis,
-        Keterangan:item.keterangan,
-        Nominal:Number(item.nominal || 0),
-        ID_Akun_Kas:item.akun_kas_id,
-        ID_Akun_Lawan:item.akun_lawan_id,
-        ID_Jurnal:item.journal_id
-      }))
-    }];
+    const recIds = rec.map(x => x.id);
+    let items = [];
+    if (recIds.length) {
+      const {data,error} = await supabaseClient.from("bank_reconciliation_items")
+        .select("*").in("reconciliation_id",recIds);
+      if (error) throw error;
+      items = (data || []).filter(x => x.transaction_date >= start && x.transaction_date <= end);
+    }
+    return [
+      emptySheet("Transaksi Kas",tx),
+      emptySheet("Rekonsiliasi Bank",rec.map(x => ({
+        Periode_Mulai:x.period_start, Periode_Selesai:x.period_end,
+        Saldo_Rekening:Number(x.statement_ending_balance || 0),
+        Saldo_Buku:Number(x.book_balance || 0), Selisih:Number(x.difference || 0), Status:x.status || ""
+      }))),
+      emptySheet("Mutasi Rekonsiliasi",items.map(x => ({
+        Tanggal:x.transaction_date, Jenis:x.item_type, Keterangan:x.description || "",
+        Nominal:Number(x.amount || 0), Cocok:x.matched ? "Ya" : "Belum", ID_Rekonsiliasi:x.reconciliation_id
+      })))
+    ];
   }
 
   if (type === "invoice") {
-    const data = await fetchExportTable("invoices");
-    const rows = filterExportDate(
-      data,["issue_date","tanggal","created_at"],start,end
-    );
-
-    if (!rows.length) {
-      throw new Error("Tidak ada invoice pada periode yang dipilih.");
+    const invoices = await fetchExportTable("invoices", "*");
+    const rows = filterExportDate(invoices,["issue_date"],start,end);
+    const ids = rows.map(x => x.id);
+    let items = [];
+    if (ids.length) {
+      const {data,error} = await supabaseClient.from("invoice_items").select("*").in("invoice_id",ids);
+      if (error) throw error;
+      items = data || [];
     }
-
-    return [{
-      name:"Invoice",
-      rows:rows.map(item => ({
-        ...item
-      }))
-    }];
+    return [
+      emptySheet("Invoice",rows.map(x => ({
+        Nomor_Invoice:x.invoice_number, Tanggal:x.issue_date, Jatuh_Tempo:x.due_date || "",
+        Pelanggan:x.customer_name, Telepon:x.customer_phone || "", Email:x.customer_email || "",
+        Alamat:x.customer_address || "", Subtotal:Number(x.subtotal || 0),
+        Diskon:Number(x.discount || 0), Pajak:Number(x.tax || 0), Total:Number(x.total || 0),
+        Terbayar:Number(x.paid_amount || 0), Sisa:Math.max(0,Number(x.total || 0)-Number(x.paid_amount || 0)),
+        Status:x.status || "", Catatan:x.notes || ""
+      }))),
+      emptySheet("Rincian Invoice",items.map(x => ({
+        ID_Invoice:x.invoice_id, Deskripsi:x.description || "", Jumlah:Number(x.quantity || 0),
+        Satuan:x.unit || "", Harga_Satuan:Number(x.unit_price || 0), Total_Baris:Number(x.line_total || 0)
+      })))
+    ];
   }
 
   if (type === "utang") {
-    const data = await fetchExportTable(
-      "ar_ap_documents",
-      "nomor,jenis,tanggal,jatuh_tempo,keterangan,total,terbayar,status"
-    );
-
-    const rows = filterExportDate(data,["tanggal"],start,end);
-
-    return [{
-      name:"Utang dan Piutang",
-      rows:rows.map(item => ({
-        Nomor:item.nomor,
-        Jenis:item.jenis,
-        Tanggal:item.tanggal,
-        Jatuh_Tempo:item.jatuh_tempo,
-        Keterangan:item.keterangan,
-        Total:Number(item.total || 0),
-        Terbayar:Number(item.terbayar || 0),
-        Sisa:Number(item.total || 0)-Number(item.terbayar || 0),
-        Status:item.status
-      }))
-    }];
+    const [documents,partners] = await Promise.all([
+      fetchExportTable("ar_ap_documents", "id,nomor,jenis,partner_id,tanggal,jatuh_tempo,keterangan,total,terbayar,status"),
+      fetchExportTable("business_partners", "id,nama,jenis,telepon,alamat")
+    ]);
+    const rows = filterExportDate(documents,["tanggal"],start,end);
+    const partnerMap = new Map(partners.map(x => [x.id,x]));
+    const ids = rows.map(x => x.id);
+    let payments = [];
+    if (ids.length) {
+      const {data,error} = await supabaseClient.from("ar_ap_payments")
+        .select("document_id,tanggal,nominal,metode,keterangan").in("document_id",ids)
+        .gte("tanggal",start).lte("tanggal",end);
+      if (error) throw error;
+      payments = data || [];
+    }
+    const docMap = new Map(rows.map(x => [x.id,x]));
+    return [
+      emptySheet("Daftar Tagihan",rows.map(x => {
+        const partner = partnerMap.get(x.partner_id) || {};
+        return { Nomor:x.nomor, Jenis:x.jenis, Pihak_Terkait:partner.nama || "",
+          Telepon:partner.telepon || "", Tanggal:x.tanggal, Jatuh_Tempo:x.jatuh_tempo || "",
+          Keterangan:x.keterangan || "", Total:Number(x.total || 0), Terbayar:Number(x.terbayar || 0),
+          Sisa:Math.max(0,Number(x.total || 0)-Number(x.terbayar || 0)), Status:x.status || "" };
+      })),
+      emptySheet("Riwayat Pembayaran",payments.map(x => ({
+        Tanggal:x.tanggal, Nomor_Tagihan:docMap.get(x.document_id)?.nomor || "",
+        Jenis:docMap.get(x.document_id)?.jenis || "", Nominal:Number(x.nominal || 0),
+        Metode:x.metode || "", Keterangan:x.keterangan || ""
+      })))
+    ];
   }
 
   if (type === "simpanan") {
-    const [savings,loans,installments] = await Promise.all([
-      fetchExportTable(
-        "member_savings_transactions",
-        "transaction_number,transaction_date,savings_type,transaction_type,amount,payment_method,notes"
-      ),
-      fetchExportTable(
-        "member_loans",
-        "loan_number,member_id,application_date,principal_amount,term_months,monthly_interest_rate,status"
-      ),
-      fetchExportTable(
-        "loan_installments",
-        "loan_id,installment_number,due_date,principal_due,service_due,total_due,paid_amount,status"
-      )
+    const [savings,loans,installments,payments] = await Promise.all([
+      fetchExportTable("member_savings_transactions", "transaction_number,member_id,transaction_date,savings_type,transaction_type,amount,payment_method,notes"),
+      fetchExportTable("member_loans", "loan_number,member_id,application_date,principal_amount,term_months,monthly_interest_rate,status"),
+      fetchExportTable("loan_installments", "loan_id,installment_number,due_date,principal_due,service_due,total_due,paid_amount,status"),
+      fetchExportTable("loan_installment_payments", "payment_number,installment_id,amount,payment_date,payment_method,notes")
     ]);
-
-    const filteredSavings = filterExportDate(
-      savings,["transaction_date"],start,end
-    );
-
-    const filteredLoans = filterExportDate(
-      loans,["application_date"],start,end
-    );
-
-    const filteredInstallments = filterExportDate(
-      installments,["due_date"],start,end
-    );
-
+    const fs = filterExportDate(savings,["transaction_date"],start,end);
+    const fl = filterExportDate(loans,["application_date"],start,end);
+    const fi = filterExportDate(installments,["due_date"],start,end);
+    const installmentIds = new Set(fi.map(x => x.id));
+    const fp = filterExportDate(payments,["payment_date"],start,end);
     return [
-      {
-        name:"Transaksi Simpanan",
-        rows:filteredSavings.map(x => ({
-          Nomor:x.transaction_number,
-          Tanggal:x.transaction_date,
-          Jenis_Simpanan:x.savings_type,
-          Transaksi:x.transaction_type,
-          Nominal:Number(x.amount || 0),
-          Metode:x.payment_method,
-          Catatan:x.notes
-        }))
-      },
-      {
-        name:"Pinjaman",
-        rows:filteredLoans.map(x => ({
-          Nomor:x.loan_number,
-          ID_Anggota:x.member_id,
-          Tanggal:x.application_date,
-          Pokok:Number(x.principal_amount || 0),
-          Tenor_Bulan:x.term_months,
-          Jasa_Bulanan:x.monthly_interest_rate,
-          Status:x.status
-        }))
-      },
-      {
-        name:"Angsuran",
-        rows:filteredInstallments.map(x => ({
-          ID_Pinjaman:x.loan_id,
-          Angsuran_Ke:x.installment_number,
-          Jatuh_Tempo:x.due_date,
-          Pokok:Number(x.principal_due || 0),
-          Jasa:Number(x.service_due || 0),
-          Total:Number(x.total_due || 0),
-          Terbayar:Number(x.paid_amount || 0),
-          Status:x.status
-        }))
-      }
+      emptySheet("Transaksi Simpanan",fs.map(x => ({ Nomor:x.transaction_number, ID_Anggota:x.member_id,
+        Tanggal:x.transaction_date, Jenis_Simpanan:x.savings_type, Transaksi:x.transaction_type,
+        Nominal:Number(x.amount || 0), Metode:x.payment_method || "", Catatan:x.notes || "" }))),
+      emptySheet("Pinjaman",fl.map(x => ({ Nomor:x.loan_number, ID_Anggota:x.member_id,
+        Tanggal:x.application_date, Pokok:Number(x.principal_amount || 0), Tenor_Bulan:x.term_months,
+        Jasa_Bulanan:Number(x.monthly_interest_rate || 0), Status:x.status || "" }))),
+      emptySheet("Jadwal Angsuran",fi.map(x => ({ ID_Pinjaman:x.loan_id,
+        Angsuran_Ke:x.installment_number, Jatuh_Tempo:x.due_date, Pokok:Number(x.principal_due || 0),
+        Jasa:Number(x.service_due || 0), Total:Number(x.total_due || 0),
+        Terbayar:Number(x.paid_amount || 0), Status:x.status || "" }))),
+      emptySheet("Pembayaran Angsuran",fp.map(x => ({ Nomor_Pembayaran:x.payment_number,
+        ID_Angsuran:x.installment_id, Tanggal:x.payment_date, Nominal:Number(x.amount || 0),
+        Metode:x.payment_method || "", Catatan:x.notes || "" })))
     ];
   }
 
   if (type === "persediaan") {
-    throw new Error(
-      "Ekspor persediaan belum diaktifkan karena struktur tabel stok " +
-      "belum terverifikasi. Data penjualan tidak akan dianggap sebagai " +
-      "data stok agar laporan tidak menyesatkan."
-    );
+    const [products,movements] = await Promise.all([
+      fetchExportTable("inventory_products", "id,product_code,product_name,category,unit,current_stock,purchase_price,selling_price,minimum_stock,is_active"),
+      fetchExportTable("inventory_movements", "movement_number,product_id,movement_type,quantity,stock_before,stock_after,unit_cost,movement_date,reference_number,notes")
+    ]);
+    const activeProducts = products.filter(x => x.is_active !== false);
+    const productMap = new Map(activeProducts.map(x => [x.id,x]));
+    const periodMovements = filterExportDate(movements,["movement_date"],start,end);
+    return [
+      emptySheet("Mutasi Persediaan",periodMovements.map(x => {
+        const product = productMap.get(x.product_id) || {};
+        return { Nomor_Mutasi:x.movement_number, Tanggal:x.movement_date,
+          Kode_Barang:product.product_code || "", Nama_Barang:product.product_name || "",
+          Jenis_Mutasi:x.movement_type, Jumlah:Number(x.quantity || 0),
+          Stok_Sebelum:Number(x.stock_before || 0), Stok_Sesudah:Number(x.stock_after || 0),
+          Harga_Pokok_Satuan:Number(x.unit_cost || 0), Referensi:x.reference_number || "", Catatan:x.notes || "" };
+      })),
+      emptySheet("Snapshot Stok Saat Ini",activeProducts.map(x => ({
+        Kode_Barang:x.product_code || "", Nama_Barang:x.product_name || "", Kategori:x.category || "",
+        Stok_Saat_Ini:Number(x.current_stock || 0), Satuan:x.unit || "",
+        Harga_Beli:Number(x.purchase_price || 0), Nilai_Stok:Number(x.current_stock || 0)*Number(x.purchase_price || 0),
+        Harga_Jual:Number(x.selling_price || 0), Stok_Minimum:Number(x.minimum_stock || 0)
+      })))
+    ];
   }
 
   throw new Error("Jenis laporan tidak dikenal.");
