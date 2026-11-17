@@ -5267,3 +5267,242 @@ async function loadLoanPaymentHistory(installments) {
 
   message.textContent = data.length + " transaksi pembayaran tercatat.";
 };
+
+/* ==========================================
+   NAVIGASI KOTAK SIMPANAN & PINJAMAN
+   ========================================== */
+
+const savingsMenuStyle = document.createElement("style");
+
+savingsMenuStyle.textContent = `
+.simpanan-menu{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:16px;
+  margin:24px 0;
+}
+.simpanan-menu-card{
+  border:1px solid #e8e8e8;
+  background:#fff;
+  border-radius:14px;
+  padding:22px 16px;
+  min-height:125px;
+  text-align:left;
+  cursor:pointer;
+  transition:.2s;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:9px;
+  box-shadow:0 2px 8px rgba(0,0,0,.035);
+}
+.simpanan-menu-card:hover{
+  border-color:#a71925;
+  transform:translateY(-2px);
+  box-shadow:0 5px 15px rgba(167,25,37,.10);
+}
+.simpanan-menu-icon{
+  font-size:29px;
+}
+.simpanan-menu-title{
+  font-size:15px;
+  font-weight:700;
+  color:#252525;
+}
+.simpanan-menu-desc{
+  font-size:12px;
+  color:#777;
+  line-height:1.5;
+}
+.simpanan-back-button{
+  border:0;
+  background:#f3f3f3;
+  color:#333;
+  border-radius:8px;
+  padding:10px 15px;
+  font-weight:600;
+  cursor:pointer;
+  margin-bottom:16px;
+}
+.simpanan-menu-heading{
+  margin:5px 0 5px;
+  color:#222;
+  font-size:19px;
+}
+.simpanan-menu-subtitle{
+  color:#777;
+  font-size:13px;
+  margin:0 0 18px;
+}
+@media(max-width:420px){
+  .simpanan-menu{gap:10px}
+  .simpanan-menu-card{padding:17px 12px;min-height:115px}
+  .simpanan-menu-title{font-size:13px}
+  .simpanan-menu-desc{font-size:11px}
+}
+`;
+
+document.head.appendChild(savingsMenuStyle);
+
+function setupSavingsMainMenu() {
+  const parent = document.getElementById("memberContent");
+  if (!parent) return;
+
+  if (document.getElementById("savingsMainMenu")) return;
+
+  const menu = document.createElement("div");
+  menu.id = "savingsMainMenu";
+
+  menu.innerHTML = `
+    <h2 class="simpanan-menu-heading">Simpanan & Pinjaman</h2>
+    <p class="simpanan-menu-subtitle">
+      Pilih pekerjaan yang ingin dilakukan.
+    </p>
+
+    <div class="simpanan-menu">
+
+      <button class="simpanan-menu-card"
+        onclick="openSavingsSection('tambah')">
+        <span class="simpanan-menu-icon">➕</span>
+        <span class="simpanan-menu-title">Tambah Anggota</span>
+        <span class="simpanan-menu-desc">
+          Daftarkan anggota koperasi baru.
+        </span>
+      </button>
+
+      <button class="simpanan-menu-card"
+        onclick="openSavingsSection('anggota')">
+        <span class="simpanan-menu-icon">👥</span>
+        <span class="simpanan-menu-title">Data Anggota</span>
+        <span class="simpanan-menu-desc">
+          Lihat, cari, dan kelola data anggota.
+        </span>
+      </button>
+
+      <button class="simpanan-menu-card"
+        onclick="openSavingsSection('simpanan')">
+        <span class="simpanan-menu-icon">💰</span>
+        <span class="simpanan-menu-title">Transaksi Simpanan</span>
+        <span class="simpanan-menu-desc">
+          Setoran, penarikan, saldo, dan riwayat simpanan.
+        </span>
+      </button>
+
+      <button class="simpanan-menu-card"
+        onclick="openSavingsSection('pinjaman')">
+        <span class="simpanan-menu-icon">🤝</span>
+        <span class="simpanan-menu-title">Pinjaman Anggota</span>
+        <span class="simpanan-menu-desc">
+          Pengajuan, persetujuan, pencairan, angsuran, dan riwayat pinjaman.
+        </span>
+      </button>
+
+    </div>
+  `;
+
+  parent.prepend(menu);
+
+  // Tombol kembali ke menu utama
+  const memberWrap = parent.querySelector(".member-wrap");
+  if (memberWrap) {
+    addSavingsBackButton(memberWrap);
+  }
+
+  const savingsContent = document.getElementById("savingsContent");
+  if (savingsContent) {
+    addSavingsBackButton(savingsContent);
+  }
+
+  const loanContent = document.getElementById("loanContent");
+  if (loanContent) {
+    addSavingsBackButton(loanContent);
+  }
+
+  showSavingsMainMenu();
+}
+
+function addSavingsBackButton(section) {
+  if (!section || section.querySelector(".simpanan-back-button")) return;
+
+  const button = document.createElement("button");
+  button.className = "simpanan-back-button";
+  button.type = "button";
+  button.textContent = "← Kembali ke Menu Simpanan & Pinjaman";
+  button.onclick = showSavingsMainMenu;
+
+  section.prepend(button);
+}
+
+window.showSavingsMainMenu = function() {
+  const menu = document.getElementById("savingsMainMenu");
+  const memberWrap = document.querySelector("#memberContent .member-wrap");
+  const savings = document.getElementById("savingsContent");
+  const loan = document.getElementById("loanContent");
+
+  if (menu) menu.style.display = "block";
+  if (memberWrap) memberWrap.style.display = "none";
+  if (savings) savings.style.display = "none";
+  if (loan) loan.style.display = "none";
+
+  const form = document.getElementById("memberFormPanel");
+  if (form) form.style.display = "none";
+
+  window.scrollTo(0, 0);
+};
+
+window.openSavingsSection = function(section) {
+  const menu = document.getElementById("savingsMainMenu");
+  const memberWrap = document.querySelector("#memberContent .member-wrap");
+  const savings = document.getElementById("savingsContent");
+  const loan = document.getElementById("loanContent");
+
+  if (menu) menu.style.display = "none";
+  if (memberWrap) memberWrap.style.display = "none";
+  if (savings) savings.style.display = "none";
+  if (loan) loan.style.display = "none";
+
+  if (section === "tambah" || section === "anggota") {
+    if (memberWrap) memberWrap.style.display = "block";
+
+    const form = document.getElementById("memberFormPanel");
+
+    if (section === "tambah") {
+      if (typeof openMemberForm === "function") {
+        openMemberForm();
+      } else {
+        document.getElementById("memberAddButton")?.click();
+      }
+    } else if (form) {
+      form.style.display = "none";
+    }
+
+    loadMembers();
+  }
+
+  if (section === "simpanan") {
+    if (savings) savings.style.display = "grid";
+    loadSavingsMembers();
+    loadSavingsTransactions();
+  }
+
+  if (section === "pinjaman") {
+    if (loan) loan.style.display = "grid";
+    loadLoanMembers();
+    loadLoanSettings();
+    loadLoans();
+  }
+
+  window.scrollTo(0, 0);
+};
+
+// Jalankan menu setelah seluruh modul lama selesai dimuat.
+const previousFinalSavingsShowPage = window.showPage;
+
+window.showPage = function(page, button) {
+  previousFinalSavingsShowPage(page, button);
+
+  if (page === "simpanan") {
+    setupSavingsMainMenu();
+    showSavingsMainMenu();
+  }
+};
