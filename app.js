@@ -2917,34 +2917,12 @@ function setupToko(){
     loadTokoHistory();
   };
 
-    addTokoItem();
-  loadTokoProducts();
+  addTokoItem();
   loadTokoHistory();
-}
-
-
-let tokoProducts = [];
-
-async function loadTokoProducts(){
-  const {data,error}=await supabaseClient
-    .from("inventory_products")
-    .select("id,product_code,product_name,unit,selling_price,current_stock")
-    .eq("is_active",true)
-    .order("product_name");
-
-  if(error){
-    document.getElementById("tokoMessage").textContent=
-      "Gagal memuat barang: "+error.message;
-    return;
-  }
-
-  tokoProducts=data||[];
-  renderTokoItems();
 }
 
 function addTokoItem(){
   tokoItems.push({
-    productId:"",
     name:"",
     quantity:1,
     unit:"pcs",
@@ -2960,29 +2938,25 @@ function renderTokoItems(){
   body.innerHTML=tokoItems.map((item,index)=>`
     <tr>
       <td>
-        <select onchange="updateTokoItem(${index},'productId',this.value)">
-          <option value="">Pilih barang</option>
-          ${tokoProducts.map(p=>`
-            <option value="${p.id}" ${item.productId===p.id?"selected":""}>
-              ${escapeHTML(p.product_name)} (Stok: ${p.current_stock})
-            </option>
-          `).join("")}
-        </select>
+        <input type="text" placeholder="Nama barang"
+          value="${escapeHTML(item.name)}"
+          oninput="updateTokoItem(${index},'name',this.value)">
       </td>
       <td>
         <input type="number" min="0.001" step="0.001"
           value="${item.quantity}"
           oninput="updateTokoItem(${index},'quantity',this.value)">
       </td>
-      <td>${escapeHTML(item.unit)}</td>
+      <td>
+        <input type="text" value="${escapeHTML(item.unit)}"
+          oninput="updateTokoItem(${index},'unit',this.value)">
+      </td>
       <td>
         <input type="number" min="0" step="1"
           value="${item.price}"
           oninput="updateTokoItem(${index},'price',this.value)">
       </td>
-      <td id="tokoLine${index}">
-        ${formatRupiah(item.quantity*item.price)}
-      </td>
+      <td id="tokoLine${index}">${formatRupiah(item.quantity*item.price)}</td>
       <td>
         <button class="toko-btn danger" type="button"
           onclick="removeTokoItem(${index})">X</button>
@@ -2996,19 +2970,9 @@ function renderTokoItems(){
 window.updateTokoItem=function(index,field,value){
   if(!tokoItems[index])return;
 
-  if(field==="productId"){
-    const product=tokoProducts.find(p=>p.id===value);
-    if(!product)return;
-
-    tokoItems[index].productId=product.id;
-    tokoItems[index].name=product.product_name;
-    tokoItems[index].unit=product.unit||"pcs";
-    tokoItems[index].price=Number(product.selling_price)||0;
-    renderTokoItems();
-    return;
-  }
-
-  if(field==="quantity"||field==="price"){
+  if(field==="name" || field==="unit"){
+    tokoItems[index][field]=value;
+  }else{
     tokoItems[index][field]=Math.max(0,Number(value)||0);
   }
 
@@ -3018,7 +2982,6 @@ window.updateTokoItem=function(index,field,value){
       tokoItems[index].quantity*tokoItems[index].price
     );
   }
-
   calculateTokoTotal();
 };
 
@@ -3027,6 +2990,7 @@ window.removeTokoItem=function(index){
   renderTokoItems();
 };
 
+function calculateTokoTotal(){
   const subtotal=tokoItems.reduce(
     (sum,item)=>sum+(item.quantity*item.price),0
   );
@@ -3066,14 +3030,13 @@ function makeTokoSaleNumber(){
   return "TRX-"+date+"-"+time;
 }
 
-
 async function saveTokoSale(){
   const button=document.getElementById("tokoSave");
   const message=document.getElementById("tokoMessage");
   const totals=calculateTokoTotal();
 
   const items=tokoItems.filter(item=>
-    item.productId && item.quantity>0 && item.price>=0
+    item.name.trim() && item.quantity>0 && item.price>=0
   );
 
   if(!window.currentUser?.id){
@@ -3083,19 +3046,25 @@ async function saveTokoSale(){
   }
 
   if(!items.length){
-    message.textContent="Pilih minimal satu barang dari persediaan.";
+    message.textContent="Masukkan minimal satu barang dengan nama dan jumlah.";
     message.className="erp-message erp-error";
     return;
   }
 
   if(totals.discount>totals.subtotal){
-    message.textContent="Diskon tidak boleh melebihi subtotal.";
+    message.textContent="Diskon tidak boleh lebih besar dari subtotal.";
     message.className="erp-message erp-error";
     return;
   }
 
-  if(totals.paid<totals.total||totals.total<=0){
-    message.textContent="Periksa total dan uang pembayaran.";
+  if(totals.paid<totals.total){
+    message.textContent="Uang diterima belum mencukupi total belanja.";
+    message.className="erp-message erp-error";
+    return;
+  }
+
+  if(totals.total<=0){
+    message.textContent="Total transaksi harus lebih dari nol.";
     message.className="erp-message erp-error";
     return;
   }
@@ -3111,6 +3080,7 @@ async function saveTokoSale(){
     total:totals.total,
     paid_amount:totals.paid,
     change_amount:totals.change,
+    status:"selesai",
     notes:document.getElementById("tokoNotes").value.trim()||null,
     created_by:window.currentUser.id
   };
@@ -3119,50 +3089,43 @@ async function saveTokoSale(){
   button.textContent="Menyimpan...";
 
   try{
-    const {data,error}=await supabaseClient.rpc(
-      "save_toko_sale_with_stock",
-      {
-        p_sale:sale,
-        p_items:items.map(item=>({
-          product_id:item.productId,
-          quantity:item.quantity,
-          price:item.price
-        }))
-      }
-    );
-
-    if(error)throw error;
-
     const {data:createdSale,error:saleError}=await supabaseClient
       .from("store_sales")
-      .select("*")
-      .eq("id",data.sale_id)
+      .insert(sale)
+      .select()
       .single();
 
     if(saleError)throw saleError;
 
-    message.textContent="Transaksi dan pengurangan stok berhasil disimpan: "+saleNumber;
-    message.className="erp-message erp-success";
-
-    const receiptItems=items.map(item=>({
-      product_name:item.name,
+    const detailItems=items.map(item=>({
+      sale_id:createdSale.id,
+      product_name:item.name.trim(),
       quantity:item.quantity,
-      unit:item.unit,
+      unit:item.unit.trim()||"pcs",
       unit_price:item.price,
       line_total:item.quantity*item.price
     }));
 
-    resetTokoForm();
-    await loadTokoHistory();
-    await loadTokoProducts();
-    if(typeof loadInventoryProducts==="function"){
-      await loadInventoryProducts();
-    }
-    if(typeof loadInventoryMovements==="function"){
-      await loadInventoryMovements();
+    const {error:itemError}=await supabaseClient
+      .from("store_sale_items")
+      .insert(detailItems);
+
+    if(itemError){
+      // Hindari transaksi tanpa rincian barang.
+      await supabaseClient
+        .from("store_sales")
+        .delete()
+        .eq("id",createdSale.id);
+
+      throw itemError;
     }
 
-    printTokoReceipt(createdSale,receiptItems);
+    message.textContent="Transaksi berhasil disimpan: "+saleNumber;
+    message.className="erp-message erp-success";
+
+    resetTokoForm();
+    await loadTokoHistory();
+    printTokoReceipt(createdSale,items);
 
   }catch(error){
     message.textContent="Gagal menyimpan transaksi: "+error.message;
@@ -3173,6 +3136,7 @@ async function saveTokoSale(){
   }
 }
 
+async function loadTokoHistory(){
   const body=document.getElementById("tokoHistoryBody");
   const message=document.getElementById("tokoHistoryMessage");
   if(!body)return;
