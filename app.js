@@ -6600,3 +6600,719 @@ window.showPage = function(page,button) {
     if (section) section.style.display = "none";
   }
 };
+
+/* =====================================================
+   MODUL PERSEDIAAN BARANG
+   KDMP PENDOWO ASRI
+===================================================== */
+
+const inventoryStyle = document.createElement("style");
+
+inventoryStyle.textContent = `
+.inventory-wrap{display:grid;gap:18px;margin-top:20px}
+.inventory-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.inventory-card{background:#fff;border:1px solid #eee;border-radius:12px;padding:17px}
+.inventory-card small{display:block;color:#777;margin-bottom:9px}
+.inventory-card strong{font-size:20px;color:#292929;overflow-wrap:anywhere}
+.inventory-panel{background:#fff;border:1px solid #e9e9e9;border-radius:12px;padding:20px}
+.inventory-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.inventory-toolbar h3{margin:0}
+.inventory-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.inventory-field{margin-bottom:13px}
+.inventory-field label{display:block;font-size:13px;font-weight:650;color:#555;margin-bottom:7px}
+.inventory-field input,.inventory-field select,.inventory-field textarea{
+ width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;
+ border-radius:7px;background:white;font:inherit
+}
+.inventory-field textarea{min-height:65px}
+.inventory-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.inventory-btn{border:0;border-radius:8px;padding:10px 15px;background:#a71925;color:white;font-weight:650;cursor:pointer}
+.inventory-btn.gray{background:#eee;color:#333}
+.inventory-btn:disabled{opacity:.6;cursor:wait}
+.inventory-search{max-width:350px;width:100%;padding:11px;border:1px solid #ddd;border-radius:7px}
+.inventory-table-wrap{overflow-x:auto;border:1px solid #eee;border-radius:9px}
+.inventory-table{width:100%;min-width:950px;border-collapse:collapse}
+.inventory-table th,.inventory-table td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.inventory-table th{background:#fafafa;color:#666;white-space:nowrap}
+.inventory-badge{padding:5px 9px;border-radius:20px;background:#e8f8ef;color:#16834e;font-size:11px;font-weight:700}
+.inventory-badge.low{background:#fff0d9;color:#a45b00}
+.inventory-message{font-size:13px;margin-top:12px;line-height:1.5}
+.inventory-error{color:#b91c2c}
+.inventory-success{color:#16834e}
+.inventory-hidden{display:none!important}
+@media(max-width:900px){
+ .inventory-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .inventory-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:550px){
+ .inventory-grid{grid-template-columns:1fr}
+ .inventory-panel{padding:14px}
+}
+`;
+
+document.head.appendChild(inventoryStyle);
+
+let inventoryEditId = null;
+
+function inventoryMoney(value){
+  return new Intl.NumberFormat("id-ID",{
+    style:"currency",
+    currency:"IDR",
+    maximumFractionDigits:0
+  }).format(Number(value||0));
+}
+
+function inventoryEscape(value){
+  return String(value??"").replace(/[&<>"']/g,char=>({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#039;"
+  })[char]);
+}
+
+function inventoryNumber(prefix){
+  const date=new Date().toISOString().slice(0,10).replace(/-/g,"");
+  return prefix+"-"+date+"-"+Date.now().toString().slice(-6);
+}
+
+function setupInventoryManagement(){
+  const parent=document.getElementById("modulePage");
+  if(!parent)return;
+
+  if(document.getElementById("inventoryContent"))return;
+
+  const oldPanel=parent.querySelector(".panel");
+  if(oldPanel)oldPanel.classList.add("inventory-original-panel");
+
+  const section=document.createElement("div");
+  section.id="inventoryContent";
+  section.className="inventory-wrap";
+
+  section.innerHTML=`
+    <div class="inventory-stats">
+      <div class="inventory-card">
+        <small>Total Jenis Barang</small>
+        <strong id="invTotalProducts">0</strong>
+      </div>
+      <div class="inventory-card">
+        <small>Total Stok Tersedia</small>
+        <strong id="invTotalStock">0</strong>
+      </div>
+      <div class="inventory-card">
+        <small>Nilai Persediaan</small>
+        <strong id="invStockValue">Rp0</strong>
+      </div>
+      <div class="inventory-card">
+        <small>Barang Stok Menipis</small>
+        <strong id="invLowStock">0</strong>
+      </div>
+    </div>
+
+    <div class="inventory-panel">
+      <div class="inventory-toolbar">
+        <div>
+          <h3>📦 Data Barang</h3>
+          <small style="color:#777">Master data persediaan KDMP</small>
+        </div>
+        <button class="inventory-btn" onclick="showInventoryForm()">
+          + Tambah Barang
+        </button>
+      </div>
+
+      <div id="inventoryProductForm" class="inventory-hidden">
+        <hr style="border:0;border-top:1px solid #eee;margin:18px 0">
+        <h3 id="inventoryFormTitle">Tambah Barang Baru</h3>
+
+        <div class="inventory-grid">
+          <div class="inventory-field">
+            <label>Kode Barang</label>
+            <input id="invCode" placeholder="Contoh: BRG-001">
+          </div>
+          <div class="inventory-field">
+            <label>Nama Barang</label>
+            <input id="invName" placeholder="Nama barang">
+          </div>
+          <div class="inventory-field">
+            <label>Kategori</label>
+            <input id="invCategory" placeholder="Contoh: Sembako">
+          </div>
+          <div class="inventory-field">
+            <label>Satuan</label>
+            <input id="invUnit" placeholder="pcs, kg, liter, dus">
+          </div>
+          <div class="inventory-field">
+            <label>Harga Beli per Satuan</label>
+            <input id="invPurchase" type="number" min="0" step="0.01" value="0">
+          </div>
+          <div class="inventory-field">
+            <label>Harga Jual per Satuan</label>
+            <input id="invSelling" type="number" min="0" step="0.01" value="0">
+          </div>
+          <div class="inventory-field">
+            <label>Stok Minimum</label>
+            <input id="invMinimum" type="number" min="0" step="0.001" value="0">
+          </div>
+          <div class="inventory-field" id="invInitialStockWrap">
+            <label>Stok Awal</label>
+            <input id="invInitialStock" type="number" min="0" step="0.001" value="0">
+          </div>
+          <div class="inventory-field">
+            <label>Catatan</label>
+            <input id="invNotes" placeholder="Catatan barang">
+          </div>
+        </div>
+
+        <div class="inventory-actions">
+          <button class="inventory-btn" id="invSaveProduct" onclick="saveInventoryProduct()">
+            Simpan Barang
+          </button>
+          <button class="inventory-btn gray" onclick="hideInventoryForm()">
+            Batal
+          </button>
+        </div>
+        <div id="invProductMessage" class="inventory-message"></div>
+      </div>
+    </div>
+
+    <div class="inventory-panel">
+      <div class="inventory-toolbar">
+        <h3>Daftar Persediaan</h3>
+        <input id="invSearch" class="inventory-search"
+          placeholder="Cari kode atau nama barang..."
+          oninput="filterInventoryProducts()">
+      </div>
+
+      <div class="inventory-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>KODE</th>
+              <th>NAMA BARANG</th>
+              <th>KATEGORI</th>
+              <th>STOK</th>
+              <th>SATUAN</th>
+              <th>HARGA BELI</th>
+              <th>NILAI STOK</th>
+              <th>STATUS</th>
+              <th>AKSI</th>
+            </tr>
+          </thead>
+          <tbody id="invProductBody">
+            <tr><td colspan="9">Memuat data barang...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="invProductListMessage" class="inventory-message"></div>
+    </div>
+
+    <div class="inventory-panel">
+      <div class="inventory-toolbar">
+        <div>
+          <h3>🔄 Pencatatan Mutasi Stok</h3>
+          <small style="color:#777">Catat barang masuk atau keluar</small>
+        </div>
+      </div>
+
+      <div class="inventory-grid">
+        <div class="inventory-field">
+          <label>Jenis Mutasi</label>
+          <select id="invMovementType">
+            <option value="masuk">Barang Masuk</option>
+            <option value="keluar">Barang Keluar</option>
+            <option value="penyesuaian_masuk">Penyesuaian Stok Masuk</option>
+            <option value="penyesuaian_keluar">Penyesuaian Stok Keluar</option>
+          </select>
+        </div>
+
+        <div class="inventory-field">
+          <label>Pilih Barang</label>
+          <select id="invMovementProduct">
+            <option value="">Pilih barang</option>
+          </select>
+        </div>
+
+        <div class="inventory-field">
+          <label>Jumlah</label>
+          <input id="invMovementQty" type="number" min="0.001" step="0.001">
+        </div>
+
+        <div class="inventory-field">
+          <label>Harga Beli per Satuan (untuk barang masuk)</label>
+          <input id="invMovementCost" type="number" min="0" step="0.01" value="0">
+        </div>
+
+        <div class="inventory-field">
+          <label>Tanggal Mutasi</label>
+          <input id="invMovementDate" type="date">
+        </div>
+
+        <div class="inventory-field">
+          <label>Nomor Referensi</label>
+          <input id="invMovementReference" placeholder="Nomor nota / bukti">
+        </div>
+      </div>
+
+      <div class="inventory-field">
+        <label>Keterangan</label>
+        <textarea id="invMovementNotes" placeholder="Keterangan mutasi barang"></textarea>
+      </div>
+
+      <div class="inventory-actions">
+        <button class="inventory-btn" id="invSaveMovement" onclick="saveInventoryMovement()">
+          Simpan Mutasi Stok
+        </button>
+      </div>
+
+      <div id="invMovementMessage" class="inventory-message"></div>
+    </div>
+
+    <div class="inventory-panel">
+      <div class="inventory-toolbar">
+        <h3>📋 Riwayat Mutasi Stok</h3>
+        <button class="inventory-btn gray" onclick="loadInventoryMovements()">
+          ↻ Muat Ulang
+        </button>
+      </div>
+
+      <div class="inventory-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>NOMOR</th>
+              <th>TANGGAL</th>
+              <th>BARANG</th>
+              <th>JENIS</th>
+              <th>JUMLAH</th>
+              <th>HARGA SATUAN</th>
+              <th>REFERENSI</th>
+              <th>KETERANGAN</th>
+            </tr>
+          </thead>
+          <tbody id="invMovementBody">
+            <tr><td colspan="8">Memuat riwayat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="invMovementListMessage" class="inventory-message"></div>
+    </div>
+  `;
+
+  parent.appendChild(section);
+
+  document.getElementById("invMovementDate").value =
+    new Date().toISOString().slice(0,10);
+
+  loadInventoryProducts();
+  loadInventoryMovements();
+}
+
+window.showInventoryForm=function(){
+  inventoryEditId=null;
+  document.getElementById("inventoryFormTitle").textContent="Tambah Barang Baru";
+  document.getElementById("invInitialStockWrap").style.display="block";
+
+  [
+    "invCode","invName","invCategory","invUnit","invNotes"
+  ].forEach(id=>document.getElementById(id).value="");
+
+  [
+    "invPurchase","invSelling","invMinimum","invInitialStock"
+  ].forEach(id=>document.getElementById(id).value=0);
+
+  document.getElementById("invProductMessage").textContent="";
+  document.getElementById("inventoryProductForm").classList.remove("inventory-hidden");
+  document.getElementById("invCode").focus();
+};
+
+window.hideInventoryForm=function(){
+  document.getElementById("inventoryProductForm").classList.add("inventory-hidden");
+};
+
+window.saveInventoryProduct=async function(){
+  const button=document.getElementById("invSaveProduct");
+  const message=document.getElementById("invProductMessage");
+
+  const code=document.getElementById("invCode").value.trim();
+  const name=document.getElementById("invName").value.trim();
+  const category=document.getElementById("invCategory").value.trim();
+  const unit=document.getElementById("invUnit").value.trim()||"pcs";
+  const purchase=Number(document.getElementById("invPurchase").value)||0;
+  const selling=Number(document.getElementById("invSelling").value)||0;
+  const minimum=Number(document.getElementById("invMinimum").value)||0;
+  const initial=Number(document.getElementById("invInitialStock").value)||0;
+  const notes=document.getElementById("invNotes").value.trim();
+
+  if(!code||!name){
+    message.textContent="Kode dan nama barang wajib diisi.";
+    message.className="inventory-message inventory-error";
+    return;
+  }
+
+  if(purchase<0||selling<0||minimum<0||initial<0){
+    message.textContent="Nominal dan jumlah stok tidak boleh negatif.";
+    message.className="inventory-message inventory-error";
+    return;
+  }
+
+  const payload={
+    product_code:code,
+    product_name:name,
+    category:category||null,
+    unit,
+    purchase_price:purchase,
+    selling_price:selling,
+    minimum_stock:minimum,
+    notes:notes||null
+  };
+
+  button.disabled=true;
+  button.textContent="Menyimpan...";
+
+  try{
+    if(inventoryEditId){
+      const {error}=await supabaseClient
+        .from("inventory_products")
+        .update(payload)
+        .eq("id",inventoryEditId);
+
+      if(error)throw error;
+
+      message.textContent="Data barang berhasil diperbarui.";
+    }else{
+      payload.current_stock=0;
+      payload.created_by=window.currentUser?.id||null;
+
+      const {data:product,error}=await supabaseClient
+        .from("inventory_products")
+        .insert(payload)
+        .select()
+        .single();
+
+      if(error)throw error;
+
+      if(initial>0){
+        const {error:movementError}=await supabaseClient
+          .from("inventory_movements")
+          .insert({
+            movement_number:inventoryNumber("STOKAWAL"),
+            product_id:product.id,
+            movement_type:"stok_awal",
+            quantity:initial,
+            unit_cost:purchase,
+            movement_date:new Date().toISOString().slice(0,10),
+            notes:"Pencatatan stok awal barang",
+            created_by:window.currentUser?.id||null
+          });
+
+        if(movementError){
+          throw new Error(
+            "Barang sudah dibuat, tetapi pencatatan stok awal gagal: "+
+            movementError.message
+          );
+        }
+      }
+
+      message.textContent="Barang berhasil ditambahkan.";
+    }
+
+    message.className="inventory-message inventory-success";
+    hideInventoryForm();
+    await loadInventoryProducts();
+    await loadInventoryMovements();
+
+  }catch(error){
+    message.textContent="Gagal menyimpan barang: "+error.message;
+    message.className="inventory-message inventory-error";
+  }finally{
+    button.disabled=false;
+    button.textContent="Simpan Barang";
+  }
+};
+
+window.editInventoryProduct=function(id){
+  supabaseClient.from("inventory_products")
+    .select("*")
+    .eq("id",id)
+    .single()
+    .then(({data,error})=>{
+      if(error){
+        alert("Gagal mengambil data barang: "+error.message);
+        return;
+      }
+
+      inventoryEditId=id;
+
+      document.getElementById("inventoryFormTitle").textContent="Edit Data Barang";
+      document.getElementById("invInitialStockWrap").style.display="none";
+
+      document.getElementById("invCode").value=data.product_code||"";
+      document.getElementById("invName").value=data.product_name||"";
+      document.getElementById("invCategory").value=data.category||"";
+      document.getElementById("invUnit").value=data.unit||"pcs";
+      document.getElementById("invPurchase").value=data.purchase_price||0;
+      document.getElementById("invSelling").value=data.selling_price||0;
+      document.getElementById("invMinimum").value=data.minimum_stock||0;
+      document.getElementById("invNotes").value=data.notes||"";
+
+      document.getElementById("invProductMessage").textContent="";
+      document.getElementById("inventoryProductForm").classList.remove("inventory-hidden");
+      document.getElementById("inventoryProductForm").scrollIntoView({behavior:"smooth"});
+    });
+};
+
+async function loadInventoryProducts(){
+  const body=document.getElementById("invProductBody");
+  if(!body)return;
+
+  body.innerHTML='<tr><td colspan="9">Memuat data barang...</td></tr>';
+
+  const {data,error}=await supabaseClient
+    .from("inventory_products")
+    .select("*")
+    .eq("is_active",true)
+    .order("product_name");
+
+  if(error){
+    body.innerHTML=`<tr><td colspan="9">${inventoryEscape(error.message)}</td></tr>`;
+    document.getElementById("invProductListMessage").textContent=
+      "Gagal memuat data persediaan.";
+    return;
+  }
+
+  const products=data||[];
+
+  const totalStock=products.reduce((sum,p)=>sum+Number(p.current_stock||0),0);
+  const stockValue=products.reduce(
+    (sum,p)=>sum+(Number(p.current_stock||0)*Number(p.purchase_price||0)),0
+  );
+  const lowStock=products.filter(p=>
+    Number(p.current_stock||0)<=Number(p.minimum_stock||0)
+  ).length;
+
+  document.getElementById("invTotalProducts").textContent=products.length;
+  document.getElementById("invTotalStock").textContent=
+    totalStock.toLocaleString("id-ID");
+  document.getElementById("invStockValue").textContent=inventoryMoney(stockValue);
+  document.getElementById("invLowStock").textContent=lowStock;
+
+  const select=document.getElementById("invMovementProduct");
+  const selected=select.value;
+
+  select.innerHTML='<option value="">Pilih barang</option>'+
+    products.map(p=>`
+      <option value="${p.id}">
+        ${inventoryEscape(p.product_code)} - ${inventoryEscape(p.product_name)}
+        (Stok: ${Number(p.current_stock||0)})
+      </option>
+    `).join("");
+
+  if(products.some(p=>p.id===selected))select.value=selected;
+
+  if(!products.length){
+    body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:25px">Belum ada barang. Silakan tambah barang pertama.</td></tr>';
+  }else{
+    body.innerHTML=products.map(p=>{
+      const stock=Number(p.current_stock||0);
+      const minimum=Number(p.minimum_stock||0);
+      const low=stock<=minimum;
+
+      return `
+        <tr>
+          <td>${inventoryEscape(p.product_code)}</td>
+          <td><strong>${inventoryEscape(p.product_name)}</strong></td>
+          <td>${inventoryEscape(p.category||"-")}</td>
+          <td><strong>${stock.toLocaleString("id-ID")}</strong></td>
+          <td>${inventoryEscape(p.unit)}</td>
+          <td>${inventoryMoney(p.purchase_price)}</td>
+          <td>${inventoryMoney(stock*Number(p.purchase_price||0))}</td>
+          <td>
+            <span class="inventory-badge ${low?"low":""}">
+              ${low?"Stok Menipis":"Aman"}
+            </span>
+          </td>
+          <td>
+            <button class="inventory-btn gray"
+              onclick="editInventoryProduct('${p.id}')">Edit</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("invProductListMessage").textContent=
+    "Berhasil memuat "+products.length+" jenis barang.";
+}
+
+window.filterInventoryProducts=function(){
+  const query=document.getElementById("invSearch").value.toLowerCase();
+
+  document.querySelectorAll("#invProductBody tr").forEach(row=>{
+    row.style.display=row.textContent.toLowerCase().includes(query)?"":"none";
+  });
+};
+
+window.saveInventoryMovement=async function(){
+  const button=document.getElementById("invSaveMovement");
+  const message=document.getElementById("invMovementMessage");
+
+  const productId=document.getElementById("invMovementProduct").value;
+  const type=document.getElementById("invMovementType").value;
+  const quantity=Number(document.getElementById("invMovementQty").value);
+  const cost=Number(document.getElementById("invMovementCost").value)||0;
+  const date=document.getElementById("invMovementDate").value;
+  const reference=document.getElementById("invMovementReference").value.trim();
+  const notes=document.getElementById("invMovementNotes").value.trim();
+
+  if(!productId||!date||!quantity||quantity<=0){
+    message.textContent="Pilih barang, tanggal, dan jumlah mutasi yang benar.";
+    message.className="inventory-message inventory-error";
+    return;
+  }
+
+  if(cost<0){
+    message.textContent="Harga beli tidak boleh negatif.";
+    message.className="inventory-message inventory-error";
+    return;
+  }
+
+  if(type==="masuk"&&cost<=0){
+    message.textContent="Harga beli wajib diisi untuk barang masuk.";
+    message.className="inventory-message inventory-error";
+    return;
+  }
+
+  button.disabled=true;
+  button.textContent="Menyimpan...";
+
+  try{
+    const {error}=await supabaseClient
+      .from("inventory_movements")
+      .insert({
+        movement_number:inventoryNumber("MUT"),
+        product_id:productId,
+        movement_type:type,
+        quantity,
+        unit_cost:cost,
+        movement_date:date,
+        reference_number:reference||null,
+        notes:notes||null,
+        created_by:window.currentUser?.id||null
+      });
+
+    if(error)throw error;
+
+    message.textContent="Mutasi stok berhasil disimpan. Stok barang sudah diperbarui.";
+    message.className="inventory-message inventory-success";
+
+    document.getElementById("invMovementQty").value="";
+    document.getElementById("invMovementCost").value=0;
+    document.getElementById("invMovementReference").value="";
+    document.getElementById("invMovementNotes").value="";
+
+    await loadInventoryProducts();
+    await loadInventoryMovements();
+
+  }catch(error){
+    message.textContent="Gagal menyimpan mutasi: "+error.message;
+    message.className="inventory-message inventory-error";
+  }finally{
+    button.disabled=false;
+    button.textContent="Simpan Mutasi Stok";
+  }
+};
+
+window.loadInventoryMovements=async function(){
+  const body=document.getElementById("invMovementBody");
+  if(!body)return;
+
+  body.innerHTML='<tr><td colspan="8">Memuat riwayat...</td></tr>';
+
+  const {data,error}=await supabaseClient
+    .from("inventory_movements")
+    .select(`
+      id,
+      movement_number,
+      product_id,
+      movement_type,
+      quantity,
+      unit_cost,
+      movement_date,
+      reference_number,
+      notes,
+      inventory_products(product_code,product_name,unit)
+    `)
+    .order("movement_date",{ascending:false})
+    .order("created_at",{ascending:false})
+    .limit(200);
+
+  if(error){
+    body.innerHTML=`<tr><td colspan="8">${inventoryEscape(error.message)}</td></tr>`;
+    document.getElementById("invMovementListMessage").textContent=
+      "Gagal memuat riwayat mutasi.";
+    return;
+  }
+
+  const movements=data||[];
+
+  const labels={
+    stok_awal:"Stok Awal",
+    masuk:"Barang Masuk",
+    keluar:"Barang Keluar",
+    penyesuaian_masuk:"Penyesuaian Masuk",
+    penyesuaian_keluar:"Penyesuaian Keluar"
+  };
+
+  if(!movements.length){
+    body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:22px">Belum ada riwayat mutasi barang.</td></tr>';
+  }else{
+    body.innerHTML=movements.map(item=>`
+      <tr>
+        <td>${inventoryEscape(item.movement_number)}</td>
+        <td>${inventoryEscape(item.movement_date)}</td>
+        <td>
+          ${inventoryEscape(item.inventory_products?.product_code||"-")}
+          - ${inventoryEscape(item.inventory_products?.product_name||"-")}
+        </td>
+        <td>${labels[item.movement_type]||inventoryEscape(item.movement_type)}</td>
+        <td>${Number(item.quantity).toLocaleString("id-ID")}
+          ${inventoryEscape(item.inventory_products?.unit||"")}
+        </td>
+        <td>${inventoryMoney(item.unit_cost)}</td>
+        <td>${inventoryEscape(item.reference_number||"-")}</td>
+        <td>${inventoryEscape(item.notes||"-")}</td>
+      </tr>
+    `).join("");
+  }
+
+  document.getElementById("invMovementListMessage").textContent=
+    "Menampilkan "+movements.length+" riwayat mutasi terakhir.";
+};
+
+// Hubungkan modul ke navigasi utama.
+// Mempertahankan seluruh wrapper showPage sebelumnya.
+const previousInventoryShowPage=window.showPage;
+
+window.showPage=function(page,button){
+  const oldInventory=document.getElementById("inventoryContent");
+  const oldPanel=document.querySelector("#modulePage .inventory-original-panel");
+
+  if(oldInventory)oldInventory.style.display="none";
+  if(oldPanel)oldPanel.style.display="";
+
+  previousInventoryShowPage(page,button);
+
+  if(page==="persediaan"){
+    setupInventoryManagement();
+
+    const content=document.getElementById("inventoryContent");
+    const panel=document.querySelector("#modulePage .inventory-original-panel");
+
+    if(content)content.style.display="grid";
+    if(panel)panel.style.display="none";
+
+    loadInventoryProducts();
+    loadInventoryMovements();
+  }
+};
