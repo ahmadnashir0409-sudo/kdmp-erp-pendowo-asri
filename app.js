@@ -1446,18 +1446,32 @@ async function calculateBankReconciliation() {
         </table>
       </div>
 
-      <button class="btn-primary" onclick="saveBankReconciliation(
-        ${JSON.stringify(accountId)},
-        ${JSON.stringify(start)},
-        ${JSON.stringify(end)},
-        ${statementBalance},
-        ${bookBalance},
-        ${difference}
-      )">
+      <button type="button" class="btn-primary" id="bankSaveReconciliationButton">
         Simpan Rekonsiliasi
       </button>
     </div>
   `;
+
+  // Pasang event langsung setelah tombol dibuat agar selalu bisa diklik.
+  const saveButton = document.getElementById("bankSaveReconciliationButton");
+  if (saveButton) {
+    saveButton.addEventListener("click", async function () {
+      if (saveButton.disabled) return;
+      saveButton.disabled = true;
+      saveButton.textContent = "Menyimpan...";
+      try {
+        await saveBankReconciliation(
+          accountId, start, end, statementBalance, bookBalance, difference
+        );
+      } catch (error) {
+        console.error("Gagal menyimpan rekonsiliasi:", error);
+        alert("Gagal menyimpan rekonsiliasi: " + (error.message || error));
+      } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = "Simpan Rekonsiliasi";
+      }
+    });
+  }
 }
 
 async function saveBankMutation() {
@@ -1514,8 +1528,14 @@ async function saveBankReconciliation(
   accountId, start, end, statementBalance, bookBalance, difference
 ) {
   const client = window.kdmpSupabase;
+  if (!client) throw new Error("Koneksi database belum siap.");
+  if (!accountId || !start || !end) throw new Error("Akun dan periode wajib dipilih.");
+  if (![statementBalance, bookBalance, difference].every(Number.isFinite)) {
+    throw new Error("Nominal rekonsiliasi tidak valid.");
+  }
 
-  const { data: userData } = await client.auth.getUser();
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError) throw userError;
 
   const { data, error } = await client
     .from("bank_reconciliations")
@@ -1527,19 +1547,18 @@ async function saveBankReconciliation(
       book_balance: bookBalance,
       difference,
       status: Math.abs(difference) < 0.005 ? "balanced" : "draft",
-      created_by: userData.user?.id
+      created_by: userData.user?.id || null
     })
     .select("id")
     .single();
 
-  if (error) {
-    alert("Gagal menyimpan rekonsiliasi: " + error.message);
-    return;
-  }
+  if (error) throw error;
+  if (!data?.id) throw new Error("Data tersimpan tetapi ID rekonsiliasi tidak diterima.");
 
   alert("Rekonsiliasi berhasil disimpan.");
   await loadBankReconciliations();
   await loadBankMutations(data.id);
+  return data;
 }
 
 async function loadBankReconciliations() {
@@ -7655,18 +7674,5 @@ window.showPage=function(page,button){
 window.calculateBankReconciliation = calculateBankReconciliation;
 window.saveBankMutation = saveBankMutation;
 window.saveBankReconciliation = saveBankReconciliation;
-// FIX FINAL: TAMPILKAN ERROR SIMPAN REKONSILIASI
-const simpanRekonsiliasiAsli = window.saveBankReconciliation;
-
-window.saveBankReconciliation = async function(...args) {
-  try {
-    if (typeof simpanRekonsiliasiAsli !== "function") {
-      throw new Error("Fungsi simpan rekonsiliasi tidak ditemukan.");
-    }
-
-    await simpanRekonsiliasiAsli(...args);
-  } catch (error) {
-    console.error("Error rekonsiliasi:", error);
-    alert("Gagal menyimpan rekonsiliasi: " + error.message);
-  }
-};
+// Fungsi diekspor ke window agar dapat dipanggil dari seluruh modul.
+window.saveBankReconciliation = saveBankReconciliation;
