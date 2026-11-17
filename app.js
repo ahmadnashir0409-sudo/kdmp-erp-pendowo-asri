@@ -5987,3 +5987,616 @@ if (document.readyState === "loading") {
 } else {
   loadPendingLoanNotifications();
 }
+
+/* ==================================================
+   PUSAT PENARIKAN DATA - KDMP PENDOWO ASRI
+   Lokasi: Monitoring Manajer
+   Format: Excel XLSX
+================================================== */
+
+const exportCenterStyle = document.createElement("style");
+
+exportCenterStyle.textContent = `
+.export-center {
+  background:#fff;
+  border:1px solid #e9e9e9;
+  border-radius:14px;
+  padding:25px;
+  margin-top:22px;
+}
+.export-center h3 {
+  margin:0 0 7px;
+  color:#292929;
+}
+.export-description {
+  color:#777;
+  font-size:13px;
+  margin-bottom:22px;
+}
+.export-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:18px;
+}
+.export-field label {
+  display:block;
+  font-size:13px;
+  font-weight:650;
+  margin-bottom:8px;
+  color:#444;
+}
+.export-field select,
+.export-field input {
+  width:100%;
+  box-sizing:border-box;
+  padding:12px;
+  border:1px solid #ddd;
+  border-radius:8px;
+  background:#fff;
+  font-size:14px;
+}
+.export-format {
+  margin-top:20px;
+  background:#f5faf6;
+  border:1px solid #dcefe0;
+  border-radius:9px;
+  padding:15px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+.export-format strong {
+  color:#18743b;
+}
+.export-button {
+  margin-top:20px;
+  background:#a71925;
+  color:white;
+  border:0;
+  border-radius:8px;
+  padding:13px 20px;
+  font-weight:700;
+  cursor:pointer;
+  width:100%;
+}
+.export-button:disabled {
+  opacity:.6;
+  cursor:wait;
+}
+.export-message {
+  margin-top:15px;
+  font-size:13px;
+  color:#777;
+  line-height:1.6;
+}
+.export-message.success {color:#16834e}
+.export-message.error {color:#b91c2c}
+@media(max-width:650px) {
+  .export-grid {grid-template-columns:1fr}
+  .export-center {padding:17px}
+}
+`;
+
+document.head.appendChild(exportCenterStyle);
+
+function setupExportCenter() {
+  const parent = document.getElementById("modulePage");
+  if (!parent || document.getElementById("exportCenter")) return;
+
+  const section = document.createElement("section");
+  section.id = "exportCenter";
+  section.className = "export-center";
+
+  section.innerHTML = `
+    <h3>📥 Pusat Penarikan Data</h3>
+
+    <div class="export-description">
+      Pilih jenis laporan dan periode. Sistem akan mengambil
+      data terkait dan menyusunnya menjadi file Excel.
+    </div>
+
+    <div class="export-grid">
+
+      <div class="export-field">
+        <label>Jenis Laporan</label>
+        <select id="exportReport">
+          <option value="laba">Laporan Laba Rugi</option>
+          <option value="hpp">Laporan HPP</option>
+          <option value="invoice">Invoice</option>
+          <option value="kas">Arus Kas & Bank</option>
+          <option value="utang">Utang dan Piutang</option>
+          <option value="simpanan">Simpanan & Pinjaman</option>
+          <option value="persediaan">Persediaan Barang</option>
+        </select>
+      </div>
+
+      <div class="export-field">
+        <label>Periode Penarikan</label>
+        <select id="exportPeriod">
+          <option value="mingguan">Mingguan</option>
+          <option value="bulanan" selected>Bulanan</option>
+          <option value="tahunan">Tahunan</option>
+          <option value="khusus">Tanggal Khusus</option>
+        </select>
+      </div>
+
+    </div>
+
+    <div id="exportReferenceWrap" class="export-field"
+      style="margin-top:18px">
+      <label id="exportReferenceLabel">Pilih Bulan</label>
+      <input type="month" id="exportReference">
+    </div>
+
+    <div id="exportCustomDates" class="export-grid"
+      style="display:none;margin-top:18px">
+
+      <div class="export-field">
+        <label>Tanggal Awal</label>
+        <input type="date" id="exportStart">
+      </div>
+
+      <div class="export-field">
+        <label>Tanggal Akhir</label>
+        <input type="date" id="exportEnd">
+      </div>
+
+    </div>
+
+    <div class="export-format">
+      <div>
+        <strong>📗 Excel Workbook</strong>
+        <div style="font-size:12px;color:#777;margin-top:4px">
+          File siap dibuka dan dirapikan di Microsoft Excel.
+        </div>
+      </div>
+      <strong>.XLSX</strong>
+    </div>
+
+    <button class="export-button" id="exportDownloadButton">
+      ↓ Tarik Data Excel
+    </button>
+
+    <div id="exportMessage" class="export-message">
+      Silakan pilih laporan dan periode penarikan.
+    </div>
+  `;
+
+  parent.appendChild(section);
+
+  document.getElementById("exportPeriod").addEventListener(
+    "change",
+    updateExportPeriod
+  );
+
+  document.getElementById("exportReference").value =
+    new Date().toISOString().slice(0,7);
+
+  document.getElementById("exportDownloadButton").onclick =
+    downloadKDMPReport;
+}
+
+function updateExportPeriod() {
+  const period = document.getElementById("exportPeriod").value;
+  const referenceWrap = document.getElementById("exportReferenceWrap");
+  const customDates = document.getElementById("exportCustomDates");
+  const label = document.getElementById("exportReferenceLabel");
+  const input = document.getElementById("exportReference");
+
+  customDates.style.display = period === "khusus" ? "grid" : "none";
+  referenceWrap.style.display = period === "khusus" ? "none" : "block";
+
+  if (period === "mingguan") {
+    label.textContent = "Pilih Tanggal Acuan Minggu";
+    input.type = "date";
+    input.value = new Date().toISOString().slice(0,10);
+  } else if (period === "bulanan") {
+    label.textContent = "Pilih Bulan";
+    input.type = "month";
+    input.value = new Date().toISOString().slice(0,7);
+  } else if (period === "tahunan") {
+    label.textContent = "Pilih Tahun";
+    input.type = "number";
+    input.min = "2000";
+    input.max = "2100";
+    input.value = new Date().getFullYear();
+  }
+}
+
+function getExportDateRange() {
+  const period = document.getElementById("exportPeriod").value;
+  const reference = document.getElementById("exportReference").value;
+
+  let start, end;
+
+  if (period === "khusus") {
+    start = document.getElementById("exportStart").value;
+    end = document.getElementById("exportEnd").value;
+
+    if (!start || !end || start > end) {
+      throw new Error("Periksa tanggal awal dan tanggal akhir.");
+    }
+  } else if (period === "bulanan") {
+    if (!/^\d{4}-\d{2}$/.test(reference)) {
+      throw new Error("Pilih bulan terlebih dahulu.");
+    }
+
+    start = reference + "-01";
+    const [year, month] = reference.split("-").map(Number);
+    end = new Date(year, month, 0).toISOString().slice(0,10);
+
+  } else if (period === "tahunan") {
+    if (!reference || Number(reference) < 2000) {
+      throw new Error("Tahun laporan tidak valid.");
+    }
+
+    start = reference + "-01-01";
+    end = reference + "-12-31";
+
+  } else {
+    if (!reference) throw new Error("Pilih tanggal acuan.");
+
+    const date = new Date(reference + "T12:00:00");
+    const day = date.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+
+    date.setDate(date.getDate() + mondayOffset);
+    start = date.toISOString().slice(0,10);
+
+    date.setDate(date.getDate() + 6);
+    end = date.toISOString().slice(0,10);
+  }
+
+  return {start,end};
+}
+
+async function loadKDMPExcelLibrary() {
+  if (window.XLSX) return;
+
+  await new Promise((resolve,reject) => {
+    const script = document.createElement("script");
+    script.src =
+      "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+
+    script.onload = resolve;
+    script.onerror = () =>
+      reject(new Error("Library Excel gagal dimuat. Periksa koneksi internet."));
+
+    document.head.appendChild(script);
+  });
+}
+
+function makeKDMPWorkbook(sheets, fileName) {
+  const workbook = XLSX.utils.book_new();
+
+  sheets.forEach(sheet => {
+    const worksheet = XLSX.utils.json_to_sheet(sheet.rows);
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      sheet.name.slice(0,31)
+    );
+
+    const keys = Object.keys(sheet.rows[0] || {});
+    worksheet["!cols"] = keys.map(key => ({
+      wch: Math.max(
+        15,
+        Math.min(35,key.length + 5)
+      )
+    }));
+  });
+
+  XLSX.writeFile(workbook,fileName);
+}
+
+async function fetchExportTable(table, select="*") {
+  const {data,error} = await supabaseClient
+    .from(table)
+    .select(select)
+    .limit(5000);
+
+  if (error) throw new Error(table + ": " + error.message);
+
+  return data || [];
+}
+
+function filterExportDate(rows, fields, start, end) {
+  return rows.filter(row => {
+    const field = fields.find(name => row[name] != null);
+    if (!field) return false;
+
+    const date = String(row[field]).slice(0,10);
+    return date >= start && date <= end;
+  });
+}
+
+async function buildKDMPReport(type,start,end) {
+
+  if (type === "laba" || type === "hpp") {
+    const {data,error} = await supabaseClient
+      .from("journal_lines")
+      .select(`
+        debit,
+        kredit,
+        keterangan,
+        accounts(kode_akun,nama_akun,kategori),
+        journal_entries!inner(
+          tanggal,
+          nomor_jurnal,
+          keterangan,
+          status
+        )
+      `)
+      .gte("journal_entries.tanggal",start)
+      .lte("journal_entries.tanggal",end);
+
+    if (error) throw error;
+
+    let rows = (data || []).filter(line =>
+      line.journal_entries?.status === "posted"
+    );
+
+    if (type === "hpp") {
+      rows = rows.filter(line =>
+        /harga pokok|hpp/i.test(
+          (line.accounts?.nama_akun || "") + " " +
+          (line.accounts?.kode_akun || "")
+        )
+      );
+
+      if (!rows.length) {
+        throw new Error(
+          "Belum ditemukan akun HPP pada jurnal terposting di periode ini. " +
+          "Periksa pencatatan akun HPP terlebih dahulu."
+        );
+      }
+    } else {
+      rows = rows.filter(line =>
+        ["pendapatan","beban","penghasilan"].includes(
+          String(line.accounts?.kategori || "").toLowerCase()
+        )
+      );
+
+      if (!rows.length) {
+        throw new Error(
+          "Belum ditemukan akun pendapatan atau beban pada jurnal terposting."
+        );
+      }
+    }
+
+    const detail = rows.map(line => ({
+      Tanggal:line.journal_entries.tanggal,
+      "Nomor Jurnal":line.journal_entries.nomor_jurnal,
+      Kode_Akun:line.accounts?.kode_akun || "",
+      Nama_Akun:line.accounts?.nama_akun || "",
+      Kategori:line.accounts?.kategori || "",
+      Keterangan:line.keterangan || line.journal_entries.keterangan || "",
+      Debit:Number(line.debit || 0),
+      Kredit:Number(line.kredit || 0)
+    }));
+
+    return [{
+      name:type === "hpp" ? "Laporan HPP" : "Laba Rugi - Rincian",
+      rows:detail
+    }];
+  }
+
+  if (type === "kas") {
+    const data = await fetchExportTable(
+      "financial_transactions",
+      "tanggal,jenis,nominal,keterangan,akun_kas_id,akun_lawan_id,journal_id"
+    );
+
+    const rows = filterExportDate(data,["tanggal"],start,end);
+
+    return [{
+      name:"Arus Kas",
+      rows:rows.map(item => ({
+        Tanggal:item.tanggal,
+        Jenis:item.jenis,
+        Keterangan:item.keterangan,
+        Nominal:Number(item.nominal || 0),
+        ID_Akun_Kas:item.akun_kas_id,
+        ID_Akun_Lawan:item.akun_lawan_id,
+        ID_Jurnal:item.journal_id
+      }))
+    }];
+  }
+
+  if (type === "invoice") {
+    const data = await fetchExportTable("invoices");
+    const rows = filterExportDate(
+      data,["issue_date","tanggal","created_at"],start,end
+    );
+
+    if (!rows.length) {
+      throw new Error("Tidak ada invoice pada periode yang dipilih.");
+    }
+
+    return [{
+      name:"Invoice",
+      rows:rows.map(item => ({
+        ...item
+      }))
+    }];
+  }
+
+  if (type === "utang") {
+    const data = await fetchExportTable(
+      "ar_ap_documents",
+      "nomor,jenis,tanggal,jatuh_tempo,keterangan,total,terbayar,status"
+    );
+
+    const rows = filterExportDate(data,["tanggal"],start,end);
+
+    return [{
+      name:"Utang dan Piutang",
+      rows:rows.map(item => ({
+        Nomor:item.nomor,
+        Jenis:item.jenis,
+        Tanggal:item.tanggal,
+        Jatuh_Tempo:item.jatuh_tempo,
+        Keterangan:item.keterangan,
+        Total:Number(item.total || 0),
+        Terbayar:Number(item.terbayar || 0),
+        Sisa:Number(item.total || 0)-Number(item.terbayar || 0),
+        Status:item.status
+      }))
+    }];
+  }
+
+  if (type === "simpanan") {
+    const [savings,loans,installments] = await Promise.all([
+      fetchExportTable(
+        "member_savings_transactions",
+        "transaction_number,transaction_date,savings_type,transaction_type,amount,payment_method,notes"
+      ),
+      fetchExportTable(
+        "member_loans",
+        "loan_number,member_id,application_date,principal_amount,term_months,monthly_interest_rate,status"
+      ),
+      fetchExportTable(
+        "loan_installments",
+        "loan_id,installment_number,due_date,principal_due,service_due,total_due,paid_amount,status"
+      )
+    ]);
+
+    const filteredSavings = filterExportDate(
+      savings,["transaction_date"],start,end
+    );
+
+    const filteredLoans = filterExportDate(
+      loans,["application_date"],start,end
+    );
+
+    const filteredInstallments = filterExportDate(
+      installments,["due_date"],start,end
+    );
+
+    return [
+      {
+        name:"Transaksi Simpanan",
+        rows:filteredSavings.map(x => ({
+          Nomor:x.transaction_number,
+          Tanggal:x.transaction_date,
+          Jenis_Simpanan:x.savings_type,
+          Transaksi:x.transaction_type,
+          Nominal:Number(x.amount || 0),
+          Metode:x.payment_method,
+          Catatan:x.notes
+        }))
+      },
+      {
+        name:"Pinjaman",
+        rows:filteredLoans.map(x => ({
+          Nomor:x.loan_number,
+          ID_Anggota:x.member_id,
+          Tanggal:x.application_date,
+          Pokok:Number(x.principal_amount || 0),
+          Tenor_Bulan:x.term_months,
+          Jasa_Bulanan:x.monthly_interest_rate,
+          Status:x.status
+        }))
+      },
+      {
+        name:"Angsuran",
+        rows:filteredInstallments.map(x => ({
+          ID_Pinjaman:x.loan_id,
+          Angsuran_Ke:x.installment_number,
+          Jatuh_Tempo:x.due_date,
+          Pokok:Number(x.principal_due || 0),
+          Jasa:Number(x.service_due || 0),
+          Total:Number(x.total_due || 0),
+          Terbayar:Number(x.paid_amount || 0),
+          Status:x.status
+        }))
+      }
+    ];
+  }
+
+  if (type === "persediaan") {
+    throw new Error(
+      "Ekspor persediaan belum diaktifkan karena struktur tabel stok " +
+      "belum terverifikasi. Data penjualan tidak akan dianggap sebagai " +
+      "data stok agar laporan tidak menyesatkan."
+    );
+  }
+
+  throw new Error("Jenis laporan tidak dikenal.");
+}
+
+async function downloadKDMPReport() {
+  const button = document.getElementById("exportDownloadButton");
+  const message = document.getElementById("exportMessage");
+
+  try {
+    if (window.currentUser?.role !== "manajer") {
+      throw new Error("Fitur penarikan laporan hanya untuk manajer.");
+    }
+
+    const type = document.getElementById("exportReport").value;
+    const period = document.getElementById("exportPeriod").value;
+    const range = getExportDateRange();
+
+    button.disabled = true;
+    button.textContent = "Menyiapkan data...";
+    message.className = "export-message";
+    message.textContent = "Mengambil data dari database...";
+
+    const sheets = await buildKDMPReport(
+      type,range.start,range.end
+    );
+
+    await loadKDMPExcelLibrary();
+
+    const reportNames = {
+      laba:"Laporan_Laba_Rugi",
+      hpp:"Laporan_HPP",
+      invoice:"Invoice",
+      kas:"Arus_Kas_Bank",
+      utang:"Utang_Piutang",
+      simpanan:"Simpanan_Pinjaman",
+      persediaan:"Persediaan_Barang"
+    };
+
+    const fileName =
+      "KDMP_" + reportNames[type] + "_" +
+      range.start + "_sampai_" + range.end + ".xlsx";
+
+    makeKDMPWorkbook(sheets,fileName);
+
+    message.className = "export-message success";
+    message.textContent =
+      "Berhasil! File Excel " + fileName +
+      " sudah disiapkan. Periode " +
+      range.start + " sampai " + range.end + ".";
+
+  } catch(error) {
+    console.error("Ekspor KDMP:",error);
+    message.className = "export-message error";
+    message.textContent = "Gagal menarik data: " + error.message;
+
+  } finally {
+    button.disabled = false;
+    button.textContent = "↓ Tarik Data Excel";
+  }
+}
+
+// Hubungkan ke halaman Monitoring Manajer.
+const previousExportCenterShowPage = window.showPage;
+
+window.showPage = function(page,button) {
+  previousExportCenterShowPage(page,button);
+
+  if (page === "monitoring") {
+    setupExportCenter();
+
+    const section = document.getElementById("exportCenter");
+    if (section) section.style.display = "block";
+  } else {
+    const section = document.getElementById("exportCenter");
+    if (section) section.style.display = "none";
+  }
+};
