@@ -3229,15 +3229,7 @@ async function saveTokoSale(){
     for(const {product,quantity} of grouped.values()){
       const available=Number(product.current_stock||0);
       if(quantity>available)throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
-      const purchasePrice=Number(product.purchase_price||0);
-      if(!Number.isFinite(purchasePrice)||purchasePrice<0)
-        throw new Error('Harga beli barang '+product.product_name+' tidak valid. Periksa master persediaan.');
     }
-
-    // Hitung HPP berdasarkan harga beli di master persediaan.
-    const totalHPP=[...grouped.values()].reduce((sum,entry)=>
-      sum+(Number(entry.product.purchase_price||0)*entry.quantity),0
-    );
 
     // Simpan header dan rincian transaksi terlebih dahulu.
     const saleNumber=makeTokoSaleNumber();
@@ -3291,40 +3283,17 @@ async function saveTokoSale(){
       movementIds.push(movement.id);
     }
 
-    // Buat jurnal otomatis setelah transaksi, rincian, stok, dan mutasi tersimpan.
-    button.textContent="Membuat jurnal otomatis...";
-    const {data:journalId,error:journalError}=await supabaseClient.rpc(
-      "catat_jurnal_penjualan_toko",
-      {
-        p_nomor_transaksi:saleNumber,
-        p_tanggal:todayDate(),
-        p_metode_pembayaran:sale.payment_method,
-        p_total_penjualan:totals.total,
-        p_total_hpp:totalHPP,
-        p_keterangan:"Penjualan Transaksi Toko "+saleNumber
-      }
-    );
-    if(journalError)throw journalError;
-    if(!journalId)throw new Error("Jurnal otomatis tidak mengembalikan ID jurnal.");
-
-    // Setelah RPC sukses, jangan gagalkan transaksi hanya karena penyegaran tampilan.
-    message.textContent="Transaksi dan jurnal berhasil disimpan: "+saleNumber;
+    message.textContent="Transaksi berhasil disimpan dan stok persediaan otomatis diperbarui: "+saleNumber;
     message.className="erp-message erp-success";
     resetTokoForm();
-    try{await loadTokoHistory();}catch(refreshError){console.error("Refresh riwayat toko:",refreshError);}
-    if(typeof loadInventoryProducts==="function"){
-      try{await loadInventoryProducts();}catch(refreshError){console.error("Refresh persediaan:",refreshError);}
-    }
-    if(typeof loadInventoryMovements==="function"){
-      try{await loadInventoryMovements();}catch(refreshError){console.error("Refresh mutasi:",refreshError);}
-    }
-    try{
-      printTokoReceipt(createdSale,resolvedItems.map(item=>({
-        product_name:item.product.product_name,quantity:item.quantity,
-        unit:item.product.unit||item.unit||"pcs",unit_price:item.price,
-        line_total:item.quantity*item.price
-      })));
-    }catch(printError){console.error("Cetak struk:",printError);}
+    await loadTokoHistory();
+    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
+    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
+    printTokoReceipt(createdSale,resolvedItems.map(item=>({
+      product_name:item.product.product_name,quantity:item.quantity,
+      unit:item.product.unit||item.unit||"pcs",unit_price:item.price,
+      line_total:item.quantity*item.price
+    })));
   }catch(error){
     // Upaya membatalkan perubahan stok bila salah satu tahap gagal.
     for(const change of stockChanges.reverse()){
@@ -7187,6 +7156,8 @@ window.saveInventoryProduct=async function(){
             product_id:product.id,
             movement_type:"stok_awal",
             quantity:initial,
+            stock_before:0,
+            stock_after:initial,
             unit_cost:purchase,
             movement_date:new Date().toISOString().slice(0,10),
             notes:"Pencatatan stok awal barang",
@@ -7197,6 +7168,18 @@ window.saveInventoryProduct=async function(){
           throw new Error(
             "Barang sudah dibuat, tetapi pencatatan stok awal gagal: "+
             movementError.message
+          );
+        }
+
+        const {error:stockUpdateError}=await supabaseClient
+          .from("inventory_products")
+          .update({current_stock:initial})
+          .eq("id",product.id);
+
+        if(stockUpdateError){
+          throw new Error(
+            "Mutasi stok awal tercatat, tetapi saldo stok gagal diperbarui: "+
+            stockUpdateError.message
           );
         }
       }
