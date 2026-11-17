@@ -3201,6 +3201,7 @@ async function saveTokoSale(){
 
   button.disabled=true; button.textContent="Memeriksa stok...";
   let createdSaleId=null;
+  let createdJournalId=null;
   const stockChanges=[];
   let movementIds=[];
   try{
@@ -3261,9 +3262,13 @@ async function saveTokoSale(){
 
     // Kurangi stok dan buat jejak mutasi untuk setiap barang.
     button.textContent="Memperbarui persediaan...";
+    let totalCOGS=0;
     for(const {product,quantity} of grouped.values()){
       const before=Number(product.current_stock||0);
       const after=before-quantity;
+      const unitCost=Number(product.purchase_price||0);
+      totalCOGS+=quantity*unitCost;
+
       const {error:updateError}=await supabaseClient
         .from("inventory_products").update({current_stock:after}).eq("id",product.id);
       if(updateError)throw updateError;
@@ -3274,7 +3279,7 @@ async function saveTokoSale(){
         .insert({
           movement_number:inventoryNumber("JUAL"), product_id:product.id,
           movement_type:"keluar", quantity, stock_before:before, stock_after:after,
-          unit_cost:Number(product.purchase_price||0),
+          unit_cost:unitCost,
           movement_date:todayDate(), reference_number:saleNumber,
           notes:"Pengeluaran stok otomatis dari transaksi penjualan toko",
           created_by:window.currentUser.id
@@ -3283,10 +3288,69 @@ async function saveTokoSale(){
       movementIds.push(movement.id);
     }
 
-    message.textContent="Transaksi berhasil disimpan dan stok persediaan otomatis diperbarui: "+saleNumber;
+    // Buat jurnal otomatis: debit Kas/Bank, kredit Penjualan,
+    // serta jurnal HPP dan pengurangan Persediaan bila ada nilai HPP.
+    button.textContent="Membuat jurnal otomatis...";
+    const requiredCodes=totalCOGS>0?["1101","1102","1104","4101","5104"]:["1101","1102","4101"];
+    const {data:journalAccounts,error:accountError}=await supabaseClient
+      .from("accounts")
+      .select("id,kode_akun,nama_akun")
+      .in("kode_akun",requiredCodes)
+      .eq("aktif",true);
+    if(accountError)throw accountError;
+
+    const accountByCode=new Map((journalAccounts||[]).map(a=>[String(a.kode_akun),a]));
+    const paymentMethod=document.getElementById("tokoPayment").value;
+    const cashCode=paymentMethod==="tunai"?"1101":"1102";
+    const cashAccount=accountByCode.get(cashCode);
+    const salesAccount=accountByCode.get("4101");
+    const inventoryAccount=accountByCode.get("1104");
+    const cogsAccount=accountByCode.get("5104");
+
+    if(!cashAccount||!salesAccount) {
+      throw new Error("Akun Kas/Bank dan Pendapatan Penjualan (1101/1102/4101) harus aktif di Chart of Accounts.");
+    }
+    if(totalCOGS>0&&(!inventoryAccount||!cogsAccount)) {
+      throw new Error("Akun Persediaan Barang (1104) dan HPP (5104) harus aktif untuk membuat jurnal HPP.");
+    }
+
+    const journalDate=todayDate();
+    const journalNumber="JU-"+journalDate.replaceAll("-","")+"-"+Date.now().toString().slice(-6);
+    const journalLines=[
+      {account_id:cashAccount.id,keterangan:"Penerimaan penjualan "+saleNumber,debit:totals.total,kredit:0},
+      {account_id:salesAccount.id,keterangan:"Pendapatan penjualan "+saleNumber,debit:0,kredit:totals.total}
+    ];
+    if(totalCOGS>0) {
+      journalLines.push(
+        {account_id:cogsAccount.id,keterangan:"Harga pokok penjualan "+saleNumber,debit:totalCOGS,kredit:0},
+        {account_id:inventoryAccount.id,keterangan:"Pengurangan persediaan "+saleNumber,debit:0,kredit:totalCOGS}
+      );
+    }
+
+    const {data:journalHeader,error:journalHeaderError}=await supabaseClient
+      .from("journal_entries")
+      .insert({
+        nomor_jurnal:journalNumber,tanggal:journalDate,
+        keterangan:"Penjualan toko "+saleNumber,status:"draft",
+        created_by:window.currentUser.id
+      }).select("id").single();
+    if(journalHeaderError)throw journalHeaderError;
+    createdJournalId=journalHeader.id;
+
+    const {error:journalLineError}=await supabaseClient
+      .from("journal_lines")
+      .insert(journalLines.map(line=>({...line,journal_id:createdJournalId})));
+    if(journalLineError)throw journalLineError;
+
+    const {error:journalPostError}=await supabaseClient
+      .from("journal_entries").update({status:"posted"}).eq("id",createdJournalId);
+    if(journalPostError)throw journalPostError;
+
+    message.textContent="Transaksi berhasil disimpan, stok diperbarui, dan jurnal "+journalNumber+" berhasil diposting: "+saleNumber;
     message.className="erp-message erp-success";
     resetTokoForm();
     await loadTokoHistory();
+    if(typeof loadJournalHistory==="function")await loadJournalHistory();
     if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
     if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
     printTokoReceipt(createdSale,resolvedItems.map(item=>({
@@ -3302,6 +3366,10 @@ async function saveTokoSale(){
     }
     if(movementIds.length){
       await supabaseClient.from("inventory_movements").delete().in("id",movementIds);
+    }
+    if(createdJournalId){
+      await supabaseClient.from("journal_lines").delete().eq("journal_id",createdJournalId);
+      await supabaseClient.from("journal_entries").delete().eq("id",createdJournalId);
     }
     if(createdSaleId){
       await supabaseClient.from("store_sale_items").delete().eq("sale_id",createdSaleId);
