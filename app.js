@@ -3030,219 +3030,113 @@ function makeTokoSaleNumber(){
   return "TRX-"+date+"-"+time;
 }
 
-async function saveTokoSale() {
-  const saveButton = document.querySelector("#tokoSaleSaveBtn");
-  if (saveButton) saveButton.disabled = true;
+async function saveTokoSale(){
+  const button=document.getElementById("tokoSave");
+  const message=document.getElementById("tokoMessage");
+  const totals=calculateTokoTotal();
 
-  let saleId = null;
-  let saleNumber = null;
-  const insertedMovements = [];
-  const stockChanges = [];
+  const items=tokoItems.filter(item=>
+    item.name.trim() && item.quantity>0 && item.price>=0
+  );
 
-  try {
-    const items = Array.isArray(tokoSaleItems) ? tokoSaleItems : [];
+  if(!window.currentUser?.id){
+    message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
+    message.className="erp-message erp-error";
+    return;
+  }
 
-    if (!items.length) {
-      throw new Error("Belum ada barang yang dimasukkan.");
-    }
+  if(!items.length){
+    message.textContent="Masukkan minimal satu barang dengan nama dan jumlah.";
+    message.className="erp-message erp-error";
+    return;
+  }
 
-    const { data: products, error: productError } = await supabaseClient
-      .from("inventory_products")
-      .select("*")
-      .eq("is_active", true);
+  if(totals.discount>totals.subtotal){
+    message.textContent="Diskon tidak boleh lebih besar dari subtotal.";
+    message.className="erp-message erp-error";
+    return;
+  }
 
-    if (productError) throw productError;
+  if(totals.paid<totals.total){
+    message.textContent="Uang diterima belum mencukupi total belanja.";
+    message.className="erp-message erp-error";
+    return;
+  }
 
-    const groupedItems = new Map();
+  if(totals.total<=0){
+    message.textContent="Total transaksi harus lebih dari nol.";
+    message.className="erp-message erp-error";
+    return;
+  }
 
-    for (const item of items) {
-      const productName = String(item.name || "").trim();
-      const quantity = Number(item.qty);
-      const price = Number(item.price);
+  const saleNumber=makeTokoSaleNumber();
 
-      if (!productName || !Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error("Nama barang atau jumlah barang tidak valid.");
-      }
+  const sale={
+    sale_number:saleNumber,
+    customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
+    payment_method:document.getElementById("tokoPayment").value,
+    subtotal:totals.subtotal,
+    discount:totals.discount,
+    total:totals.total,
+    paid_amount:totals.paid,
+    change_amount:totals.change,
+    status:"selesai",
+    notes:document.getElementById("tokoNotes").value.trim()||null,
+    created_by:window.currentUser.id
+  };
 
-      if (!Number.isFinite(price) || price < 0) {
-        throw new Error("Harga barang tidak valid.");
-      }
+  button.disabled=true;
+  button.textContent="Menyimpan...";
 
-      const product = (products || []).find(
-        p => String(p.product_name || "").trim().toLowerCase() === productName.toLowerCase()
-      );
-
-      if (!product) {
-        throw new Error(`Barang "${productName}" belum terdaftar di inventaris.`);
-      }
-
-      if (
-        String(item.unit || "").trim().toLowerCase() !==
-        String(product.unit || "").trim().toLowerCase()
-      ) {
-        throw new Error(`Satuan barang "${productName}" tidak sesuai inventaris.`);
-      }
-
-      const existing = groupedItems.get(product.id);
-
-      if (existing) {
-        existing.quantity += quantity;
-        existing.subtotal += quantity * price;
-      } else {
-        groupedItems.set(product.id, {
-          product,
-          quantity,
-          price,
-          subtotal: quantity * price
-        });
-      }
-    }
-
-    for (const entry of groupedItems.values()) {
-      const stock = Number(entry.product.current_stock || 0);
-
-      if (stock < entry.quantity) {
-        throw new Error(
-          `Stok ${entry.product.product_name} tidak cukup. Stok tersedia: ${stock}.`
-        );
-      }
-    }
-
-    const total = items.reduce(
-      (sum, item) => sum + Number(item.qty) * Number(item.price),
-      0
-    );
-
-    const saleDate = new Date().toISOString();
-
-    saleNumber =
-      "PJ-" +
-      new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
-
-    const { data: sale, error: saleError } = await supabaseClient
+  try{
+    const {data:createdSale,error:saleError}=await supabaseClient
       .from("store_sales")
-      .insert({
-        sale_number: saleNumber,
-        sale_date: saleDate,
-        total_amount: total,
-        created_by: currentUser?.id || null
-      })
+      .insert(sale)
       .select()
       .single();
 
-    if (saleError) throw saleError;
-    saleId = sale.id;
+    if(saleError)throw saleError;
 
-    const saleDetails = items.map(item => ({
-      sale_id: saleId,
-      product_name: String(item.name).trim(),
-      quantity: Number(item.qty),
-      unit: item.unit,
-      unit_price: Number(item.price),
-      subtotal: Number(item.qty) * Number(item.price)
+    const detailItems=items.map(item=>({
+      sale_id:createdSale.id,
+      product_name:item.name.trim(),
+      quantity:item.quantity,
+      unit:item.unit.trim()||"pcs",
+      unit_price:item.price,
+      line_total:item.quantity*item.price
     }));
 
-    const { error: detailError } = await supabaseClient
+    const {error:itemError}=await supabaseClient
       .from("store_sale_items")
-      .insert(saleDetails);
+      .insert(detailItems);
 
-    if (detailError) throw detailError;
-
-    for (const entry of groupedItems.values()) {
-      const product = entry.product;
-      const before = Number(product.current_stock || 0);
-      const after = before - entry.quantity;
-
-      const { error: updateError } = await supabaseClient
-        .from("inventory_products")
-        .update({ current_stock: after })
-        .eq("id", product.id);
-
-      if (updateError) throw updateError;
-
-      stockChanges.push({
-        productId: product.id,
-        before,
-        after
-      });
-
-      const { data: movement, error: movementError } = await supabaseClient
-        .from("inventory_movements")
-        .insert({
-          movement_number:
-            "KEL-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
-          product_id: product.id,
-          movement_type: "keluar",
-          quantity: entry.quantity,
-          stock_before: before,
-          stock_after: after,
-          unit_cost: Number(product.purchase_price || 0),
-          movement_date: saleDate,
-          reference_number: saleNumber,
-          notes: "Pengeluaran stok dari penjualan toko",
-          created_by: currentUser?.id || null
-        })
-        .select()
-        .single();
-
-      if (movementError) throw movementError;
-      insertedMovements.push(movement.id);
-    }
-
-    alert("Penjualan berhasil disimpan dan stok inventaris otomatis berkurang.");
-
-    if (typeof loadTokoSales === "function") {
-      await loadTokoSales();
-    }
-
-    if (typeof loadInventory === "function") {
-      await loadInventory();
-    }
-
-    if (typeof renderInventory === "function") {
-      renderInventory();
-    }
-
-    if (typeof printTokoReceipt === "function") {
-      printTokoReceipt(sale);
-    }
-
-  } catch (error) {
-    console.error("Gagal menyimpan penjualan:", error);
-
-    // Pemulihan jika proses penyimpanan gagal
-    for (const change of stockChanges.reverse()) {
-      await supabaseClient
-        .from("inventory_products")
-        .update({ current_stock: change.before })
-        .eq("id", change.productId);
-    }
-
-    if (insertedMovements.length) {
-      await supabaseClient
-        .from("inventory_movements")
-        .delete()
-        .in("id", insertedMovements);
-    }
-
-    if (saleId) {
-      await supabaseClient
-        .from("store_sale_items")
-        .delete()
-        .eq("sale_id", saleId);
-
+    if(itemError){
+      // Hindari transaksi tanpa rincian barang.
       await supabaseClient
         .from("store_sales")
         .delete()
-        .eq("id", saleId);
+        .eq("id",createdSale.id);
+
+      throw itemError;
     }
 
-    alert("Penjualan gagal disimpan: " + (error.message || error));
+    message.textContent="Transaksi berhasil disimpan: "+saleNumber;
+    message.className="erp-message erp-success";
 
-  } finally {
-    if (saveButton) saveButton.disabled = false;
+    resetTokoForm();
+    await loadTokoHistory();
+    printTokoReceipt(createdSale,items);
+
+  }catch(error){
+    message.textContent="Gagal menyimpan transaksi: "+error.message;
+    message.className="erp-message erp-error";
+  }finally{
+    button.disabled=false;
+    button.textContent="Simpan Transaksi";
   }
 }
+
+async function loadTokoHistory(){
   const body=document.getElementById("tokoHistoryBody");
   const message=document.getElementById("tokoHistoryMessage");
   if(!body)return;
