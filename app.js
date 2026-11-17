@@ -1761,6 +1761,13 @@ function setupInvoice() {
 
    <form id="invoiceForm">
     <div class="invoice-form-grid">
+     <div class="full">
+      <label>Jenis Invoice</label>
+      <select id="invType">
+       <option value="penjualan">Invoice Penjualan</option>
+       <option value="pembelian">Invoice Pembelian</option>
+      </select>
+     </div>
      <div>
       <label>Nama Pelanggan</label>
       <input id="invCustomer" required maxlength="150" placeholder="Nama pelanggan">
@@ -1871,12 +1878,20 @@ function setupInvoice() {
  document.getElementById("invoiceAddItem").addEventListener("click",addInvoiceItem);
  document.getElementById("invoiceCancelButton").addEventListener("click",closeInvoiceForm);
  document.getElementById("invoiceForm").addEventListener("submit",saveInvoice);
+ document.getElementById("invType").addEventListener("change",updateInvoiceType);
  document.getElementById("invDiscount").addEventListener("input",updateInvoiceTotal);
  document.getElementById("invTax").addEventListener("input",updateInvoiceTotal);
 
  loadInvoiceHistory();
 }
+function updateInvoiceType(){
+ const type=document.getElementById("invType").value;
+ const label=document.getElementById("invCustomer").previousElementSibling;
 
+ label.textContent=type==="pembelian"
+   ?"Nama Pemasok"
+   :"Nama Pelanggan";
+}
 function openInvoiceForm() {
  const form=document.getElementById("invoiceForm");
  form.reset();
@@ -1964,11 +1979,13 @@ function updateInvoiceTotal() {
  document.getElementById("invoiceGrandTotal").textContent=formatRupiah(result.total);
 }
 
+
 async function saveInvoice(event) {
  event.preventDefault();
 
  const message=document.getElementById("invoiceFormMessage");
  const button=document.getElementById("invoiceSaveButton");
+ const type=document.getElementById("invType").value;
 
  if(!["manajer","admin_keuangan"].includes(window.currentUser?.role)){
   message.textContent="Akses tidak diizinkan.";
@@ -1979,9 +1996,10 @@ async function saveInvoice(event) {
  const result=calculateInvoiceTotal();
  const date=document.getElementById("invDate").value;
  const dueDate=document.getElementById("invDueDate").value;
+ const name=document.getElementById("invCustomer").value.trim();
 
- if(!date || (dueDate && dueDate<date)){
-  message.textContent="Periksa tanggal invoice dan jatuh tempo.";
+ if(!name || !date || (dueDate && dueDate<date)){
+  message.textContent="Periksa nama pelanggan/pemasok dan tanggal invoice.";
   message.className="invoice-message erp-error";
   return;
  }
@@ -2010,7 +2028,9 @@ async function saveInvoice(event) {
 
   const invoiceData={
    invoice_number:invoiceNumber,
-   customer_name:document.getElementById("invCustomer").value.trim(),
+   invoice_type:type,
+   customer_name:name,
+   supplier_name:type==="pembelian"?name:null,
    customer_phone:document.getElementById("invPhone").value.trim()||null,
    customer_email:document.getElementById("invEmail").value.trim()||null,
    customer_address:document.getElementById("invAddress").value.trim()||null,
@@ -2021,6 +2041,7 @@ async function saveInvoice(event) {
    tax:result.tax,
    total:result.total,
    paid_amount:0,
+   payment_status:"belum_dibayar",
    status:"sent",
    notes:document.getElementById("invNotes").value.trim()||null,
    created_by:window.currentUser.id
@@ -2063,7 +2084,6 @@ async function saveInvoice(event) {
  }
 }
 
-async function loadInvoiceHistory() {
  const body=document.getElementById("invoiceHistoryBody");
  if(!body)return;
 
