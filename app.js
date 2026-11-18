@@ -1922,6 +1922,11 @@ function updateInvoiceType() {
   isPurchase?"Alamat Pemasok":"Alamat Pelanggan";
  document.getElementById("invCustomer").placeholder=
   isPurchase?"Nama pemasok":"Nama pelanggan";
+ document.querySelectorAll("#invoiceItemRows tr").forEach(row=>{
+  const product=invoiceInventoryProducts.find(item=>item.id===row.querySelector(".inv-product")?.value);
+  if(product) row.querySelector(".inv-price").value=invoicePriceForProduct(product);
+ });
+ updateInvoiceTotal();
 }
 
 function openInvoiceForm() {
@@ -1934,6 +1939,7 @@ function openInvoiceForm() {
  updateInvoiceType();
  document.getElementById("invoiceFormMessage").textContent="";
  document.getElementById("invoiceItemRows").replaceChildren();
+ invoiceInventoryProducts=[];
  addInvoiceItem();
  document.getElementById("invoiceFormPanel").scrollIntoView({behavior:"smooth"});
 }
@@ -1942,22 +1948,59 @@ function closeInvoiceForm() {
  document.getElementById("invoiceFormPanel").style.display="none";
 }
 
-function addInvoiceItem() {
+let invoiceInventoryProducts=[];
+
+async function loadInvoiceInventoryProducts(force=false) {
+ if(invoiceInventoryProducts.length && !force) return invoiceInventoryProducts;
+ const {data,error}=await supabaseClient
+  .from("inventory_products")
+  .select("id,product_code,product_name,unit,current_stock,selling_price,purchase_price,is_active")
+  .eq("is_active",true)
+  .order("product_name",{ascending:true});
+ if(error) throw error;
+ invoiceInventoryProducts=data||[];
+ return invoiceInventoryProducts;
+}
+
+function invoicePriceForProduct(product) {
+ const type=document.getElementById("invType").value;
+ return Number(type==="pembelian"?product.purchase_price:product.selling_price)||0;
+}
+
+async function addInvoiceItem() {
  const body=document.getElementById("invoiceItemRows");
  const row=document.createElement("tr");
-
  row.innerHTML=`
-  <td><input class="inv-description" required placeholder="Nama barang / jasa"></td>
-  <td><input class="inv-quantity" type="number" min="0.01" step="0.01" value="1"></td>
-  <td><input class="inv-unit" value="pcs"></td>
-  <td><input class="inv-price" type="number" min="0" step="1" value="0"></td>
+  <td><select class="inv-product" required><option value="">Memuat daftar barang...</option></select></td>
+  <td><input class="inv-quantity" type="number" min="0.01" step="0.01" value="1" required></td>
+  <td><input class="inv-unit" readonly></td>
+  <td><input class="inv-price" type="number" min="0" step="1" readonly></td>
   <td class="inv-line-total">Rp0</td>
   <td><button type="button" class="invoice-action invoice-danger">×</button></td>
  `;
-
- row.querySelectorAll("input").forEach(input=>{
-  input.addEventListener("input",updateInvoiceTotal);
+ const select=row.querySelector(".inv-product");
+ try {
+  const products=await loadInvoiceInventoryProducts();
+  select.replaceChildren(new Option("-- Pilih barang persediaan --",""));
+  products.forEach(product=>{
+   const option=new Option(
+    `${product.product_name} (${product.current_stock} ${product.unit||"pcs"} tersedia)`,
+    product.id
+   );
+   select.add(option);
+  });
+  if(!products.length) select.replaceChildren(new Option("Belum ada barang aktif di persediaan",""));
+ } catch(error) {
+  select.replaceChildren(new Option("Gagal memuat barang persediaan",""));
+  console.error("Gagal memuat barang invoice:",error);
+ }
+ select.addEventListener("change",()=>{
+  const product=invoiceInventoryProducts.find(item=>item.id===select.value);
+  row.querySelector(".inv-unit").value=product?.unit||"";
+  row.querySelector(".inv-price").value=product?invoicePriceForProduct(product):"";
+  updateInvoiceTotal();
  });
+ row.querySelector(".inv-quantity").addEventListener("input",updateInvoiceTotal);
  row.querySelector("button").addEventListener("click",()=>{
   if(body.children.length<=1){
    alert("Invoice minimal harus memiliki satu barang.");
@@ -1966,24 +2009,25 @@ function addInvoiceItem() {
   row.remove();
   updateInvoiceTotal();
  });
-
  body.appendChild(row);
  updateInvoiceTotal();
 }
 
 function getInvoiceItems() {
  return [...document.querySelectorAll("#invoiceItemRows tr")].map(row=>{
-  const description=row.querySelector(".inv-description").value.trim();
+  const productId=row.querySelector(".inv-product").value;
+  const product=invoiceInventoryProducts.find(item=>item.id===productId);
   const quantity=Number(row.querySelector(".inv-quantity").value);
-  const unit=row.querySelector(".inv-unit").value.trim()||"pcs";
+  const unit=product?.unit||"";
   const price=Number(row.querySelector(".inv-price").value);
-
   return {
-   description,
+   product_id:productId||null,
+   description:product?.product_name||"",
    quantity,
    unit,
    unit_price:price,
-   line_total:quantity*price
+   line_total:quantity*price,
+   available_stock:Number(product?.current_stock||0)
   };
  });
 }
@@ -2044,13 +2088,35 @@ async function saveInvoice(event) {
  }
 
  if(!result.items.length || result.items.some(item=>
-  !item.description || !Number.isFinite(item.quantity) ||
+  !item.product_id || !item.description || !Number.isFinite(item.quantity) ||
   item.quantity<=0 || !Number.isFinite(item.unit_price) ||
   item.unit_price<0
  )){
-  message.textContent="Periksa rincian barang dan harga.";
+  message.textContent="Pilih barang dari master Persediaan Barang dan periksa jumlahnya.";
   message.className="invoice-message erp-error";
   return;
+ }
+
+ if(type==="penjualan"){
+  const grouped=new Map();
+  result.items.forEach(item=>grouped.set(item.product_id,(grouped.get(item.product_id)||0)+item.quantity));
+  const {data:latestProducts,error:stockError}=await supabaseClient
+   .from("inventory_products")
+   .select("id,product_name,unit,current_stock")
+   .in("id",[...grouped.keys()]);
+  if(stockError){
+   message.textContent="Gagal memeriksa stok terbaru: "+stockError.message;
+   message.className="invoice-message erp-error";
+   return;
+  }
+  for(const [productId,quantity] of grouped){
+   const product=(latestProducts||[]).find(item=>item.id===productId);
+   if(!product || quantity>Number(product.current_stock||0)){
+    message.textContent=`Stok ${product?.product_name||"barang"} tidak cukup. Tersedia ${Number(product?.current_stock||0)} ${product?.unit||""}.`;
+    message.className="invoice-message erp-error";
+    return;
+   }
+  }
  }
 
  if(result.discount<0 || result.tax<0 || result.discount>result.subtotal){
@@ -2097,7 +2163,12 @@ async function saveInvoice(event) {
 
   const itemRows=result.items.map(item=>({
    invoice_id:invoice.id,
-   ...item
+   product_id:item.product_id,
+   description:item.description,
+   quantity:item.quantity,
+   unit:item.unit,
+   unit_price:item.unit_price,
+   line_total:item.line_total
   }));
 
   const {error:itemError}=await supabaseClient
@@ -3324,17 +3395,25 @@ async function saveTokoSale(){
     const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
     if(itemError)throw itemError;
 
-    // Stok diubah SATU KALI oleh trigger database process_inventory_movement()
-    // ketika baris inventory_movements dimasukkan. Jangan update current_stock
-    // secara manual di sini karena akan membuat stok terpotong dua kali.
-    button.textContent="Mencatat mutasi dan memperbarui stok...";
+    // Kurangi stok secara atomik: update hanya jika stok masih sama dengan
+    // angka yang tadi dibaca. Dua kasir tidak bisa menjual stok terakhir bersamaan.
+    button.textContent="Mengunci dan memperbarui stok...";
     for(const {product,quantity} of grouped.values()){
       const before=Number(product.current_stock||0);
       const after=before-quantity;
+      const {data:updatedProduct,error:updateError}=await supabaseClient
+        .from("inventory_products")
+        .update({current_stock:after})
+        .eq("id",product.id)
+        .eq("current_stock",before)
+        .select("id")
+        .maybeSingle();
 
-      if(after<0){
-        throw new Error('Stok '+product.product_name+' tidak mencukupi. Stok tersedia '+before+' '+product.unit+'.');
+      if(updateError)throw updateError;
+      if(!updatedProduct){
+        throw new Error('Stok '+product.product_name+' baru saja berubah karena transaksi lain. Silakan muat ulang persediaan lalu coba lagi.');
       }
+      stockChanges.push({product,before,after});
 
       const {data:movement,error:movementError}=await supabaseClient
         .from("inventory_movements")
@@ -3347,10 +3426,6 @@ async function saveTokoSale(){
           created_by:window.currentUser.id
         }).select("id").single();
       if(movementError)throw movementError;
-
-      // Catat untuk rollback jika tahap transaksi berikutnya gagal.
-      // Trigger sudah mengurangi stok saat INSERT berhasil.
-      stockChanges.push({product,before,after});
       movementIds.push(movement.id);
     }
 
