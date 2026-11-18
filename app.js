@@ -973,6 +973,23 @@ function setupReports() {
       </table>
     </div>
     <div id="balanceSheetCheck" class="financial-note" style="margin-top:14px;font-weight:bold"></div>
+
+    <h3 class="report-section-title" style="margin-top:32px">Laporan Arus Kas</h3>
+    <div class="financial-note">Arus kas dihitung dari perubahan akun Kas dan Bank (akun 1101 dan 1102 atau nama akun yang mengandung Kas/Bank) pada jurnal berstatus Posted.</div>
+    <div id="cashFlowMessage" class="erp-message erp-muted">Arus kas akan dimuat bersama laporan keuangan.</div>
+    <div class="report-summary">
+      <div class="report-card"><small>Saldo Kas Awal</small><strong id="cashFlowOpening">Rp0</strong></div>
+      <div class="report-card"><small>Kas Bersih Periode</small><strong id="cashFlowNet">Rp0</strong></div>
+      <div class="report-card profit"><small>Saldo Kas Akhir</small><strong id="cashFlowClosing">Rp0</strong></div>
+    </div>
+    <div class="erp-table-wrap">
+      <table class="erp-table">
+        <thead><tr><th>Aktivitas</th><th>Penerimaan</th><th>Pengeluaran</th><th>Arus Bersih</th></tr></thead>
+        <tbody id="cashFlowBody"><tr><td colspan="4">Belum ada data.</td></tr></tbody>
+        <tfoot id="cashFlowFoot"></tfoot>
+      </table>
+    </div>
+    <div class="financial-note" style="margin-top:12px">Catatan: pengelompokan aktivitas menggunakan akun lawan dalam jurnal. Akun aset tetap (kode 12xx) diklasifikasikan sebagai investasi; kewajiban dan ekuitas sebagai pendanaan; akun lainnya sebagai operasional. Transfer antar Kas/Bank tidak dihitung sebagai arus kas bersih.</div>
   `;
 
   page.appendChild(section);
@@ -983,6 +1000,7 @@ function setupReports() {
   document.getElementById("reportSearchButton").addEventListener("click",async()=>{
     await loadIncomeStatement();
     await loadBalanceSheet();
+    await loadCashFlow();
   });
 }
 
@@ -1076,6 +1094,118 @@ async function loadBalanceSheet() {
     console.error("Neraca error:",error);
     body.innerHTML='<tr><td colspan="4">Gagal mengambil data Neraca.</td></tr>';
     message.textContent="Gagal memuat Neraca: "+(error.message||"Kesalahan tidak diketahui");
+    message.className="erp-message erp-error";
+  }
+}
+
+async function loadCashFlow() {
+  const start=document.getElementById("reportStart")?.value;
+  const end=document.getElementById("reportEnd")?.value;
+  const message=document.getElementById("cashFlowMessage");
+  const body=document.getElementById("cashFlowBody");
+  const foot=document.getElementById("cashFlowFoot");
+  if(!message||!body||!foot)return;
+  if(!start||!end||start>end){
+    message.textContent="Periksa tanggal laporan Arus Kas.";
+    message.className="erp-message erp-error";
+    return;
+  }
+  message.textContent="Menghitung arus kas dari jurnal Posted...";
+  message.className="erp-message erp-muted";
+  body.innerHTML='<tr><td colspan="4">Memuat data...</td></tr>';
+  try {
+    const {data:accounts,error:accountError}=await supabaseClient
+      .from("accounts")
+      .select("id,kode_akun,nama_akun,kategori,saldo_normal");
+    if(accountError)throw accountError;
+    const accountMap=new Map((accounts||[]).map(a=>[a.id,a]));
+    const cashAccounts=(accounts||[]).filter(a=>
+      a.kategori==="aset" && (/^(1101|1102)$/.test(String(a.kode_akun||"")) || /(kas|bank)/i.test(String(a.nama_akun||"")))
+    );
+    const cashIds=new Set(cashAccounts.map(a=>a.id));
+    if(!cashIds.size)throw new Error("Akun Kas/Bank tidak ditemukan. Periksa akun 1101 dan 1102.");
+
+    const allLines=[];
+    let from=0;
+    const pageSize=500;
+    while(true){
+      const {data,error}=await supabaseClient
+        .from("journal_lines")
+        .select("account_id,journal_id,debit,kredit,journal_entries!inner(tanggal,status)")
+        .eq("journal_entries.status","posted")
+        .lte("journal_entries.tanggal",end)
+        .range(from,from+pageSize-1);
+      if(error)throw error;
+      allLines.push(...(data||[]));
+      if(!data||data.length<pageSize)break;
+      from+=pageSize;
+    }
+
+    const journals=new Map();
+    allLines.forEach(line=>{
+      const journalId=line.journal_id;
+      if(!journalId)return;
+      const date=line.journal_entries?.tanggal;
+      if(!date)return;
+      if(!journals.has(journalId))journals.set(journalId,{date,lines:[]});
+      journals.get(journalId).lines.push(line);
+    });
+
+    let opening=0;
+    const buckets={
+      operasional:{label:"Operasional",inflow:0,outflow:0},
+      investasi:{label:"Investasi",inflow:0,outflow:0},
+      pendanaan:{label:"Pendanaan",inflow:0,outflow:0}
+    };
+    journals.forEach(journal=>{
+      let cashDelta=0;
+      const counterparts=[];
+      journal.lines.forEach(line=>{
+        const debit=Number(line.debit||0),credit=Number(line.kredit||0);
+        if(cashIds.has(line.account_id))cashDelta+=debit-credit;
+        else {
+          const account=accountMap.get(line.account_id);
+          if(account)counterparts.push({account,amount:Math.abs(debit-credit)});
+        }
+      });
+      if(journal.date<start){opening+=cashDelta;return;}
+      if(journal.date>end||Math.abs(cashDelta)<0.005)return;
+      // Pick the strongest non-cash counterpart to classify the journal.
+      counterparts.sort((a,b)=>b.amount-a.amount);
+      const counterpart=counterparts[0]?.account;
+      let type="operasional";
+      if(counterpart){
+        const code=String(counterpart.kode_akun||"");
+        const category=String(counterpart.kategori||"").toLowerCase();
+        if(/^12/.test(code))type="investasi";
+        else if(category==="kewajiban"||category==="ekuitas")type="pendanaan";
+      }
+      if(cashDelta>0) buckets[type].inflow+=cashDelta;
+      else buckets[type].outflow+=Math.abs(cashDelta);
+    });
+
+    const totalIn=Object.values(buckets).reduce((n,b)=>n+b.inflow,0);
+    const totalOut=Object.values(buckets).reduce((n,b)=>n+b.outflow,0);
+    const net=totalIn-totalOut;
+    const closing=opening+net;
+    document.getElementById("cashFlowOpening").textContent=formatRupiah(opening);
+    document.getElementById("cashFlowNet").textContent=formatRupiah(net);
+    document.getElementById("cashFlowClosing").textContent=formatRupiah(closing);
+    body.replaceChildren();
+    Object.values(buckets).forEach(bucket=>{
+      const row=document.createElement("tr");
+      [bucket.label,formatRupiah(bucket.inflow),formatRupiah(bucket.outflow),formatRupiah(bucket.inflow-bucket.outflow)].forEach(value=>{
+        const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
+    foot.innerHTML=`<tr class="report-total-row"><td>TOTAL ARUS KAS</td><td>${formatRupiah(totalIn)}</td><td>${formatRupiah(totalOut)}</td><td>${formatRupiah(net)}</td></tr>`;
+    message.textContent=`Arus Kas berhasil dimuat untuk periode ${start} sampai ${end}.`;
+    message.className="erp-message erp-success";
+  } catch(error){
+    console.error("Laporan Arus Kas error:",error);
+    body.innerHTML='<tr><td colspan="4">Gagal mengambil data Arus Kas.</td></tr>';
+    message.textContent="Gagal memuat Arus Kas: "+(error.message||"Kesalahan tidak diketahui");
     message.className="erp-message erp-error";
   }
 }
@@ -1280,7 +1410,7 @@ function showPage(page,button) {
     if(page==="coa")loadCOA();
     if(page==="jurnal"){setupJournal();loadJournalHistory();}
     if(page==="buku-besar"){setupLedger();if(document.getElementById("ledgerAccount")?.value)loadLedger();}
-    if(page==="laporan"){setupReports();loadIncomeStatement();}
+    if(page==="laporan"){setupReports();loadIncomeStatement();loadBalanceSheet();loadCashFlow();}
   }
 
   document.querySelectorAll(".menu button").forEach(element=>element.classList.remove("active"));
