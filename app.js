@@ -82,6 +82,11 @@ style.textContent = `
 .report-empty{padding:18px;text-align:center;color:#777}
 .journal-detail-button{border:1px solid #a71925;background:#fff;color:#a71925;padding:7px 10px;border-radius:7px;cursor:pointer;font-weight:600;font-size:12px}
 .journal-detail-button:hover{background:#fff4f4}
+.ledger-clickable-row{cursor:pointer}
+.ledger-clickable-row:hover{background:#fff7f7}
+.ledger-clickable-row:focus{outline:2px solid #a71925;outline-offset:-2px}
+.ledger-clickable-row td:last-child{white-space:nowrap}
+
 .journal-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px}
 .journal-detail-dialog{width:min(850px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:14px;padding:22px;box-shadow:0 15px 50px rgba(0,0,0,.2)}
 .journal-detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
@@ -886,7 +891,7 @@ function setupLedger() {
     </div>
     <div class="ledger-opening" id="ledgerAccountInfo">Pilih akun untuk melihat rincian mutasinya.</div>
     <div class="erp-table-wrap"><table class="erp-table" style="min-width:850px">
-      <thead><tr><th>Tanggal</th><th>Nomor Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th></tr></thead>
+      <thead><tr><th>Tanggal</th><th>Nomor Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th><th>Aksi</th></tr></thead>
       <tbody id="ledgerTableBody"><tr><td colspan="6">Belum ada data yang ditampilkan.</td></tr></tbody>
     </table></div>`;
   page.appendChild(section);
@@ -958,6 +963,21 @@ async function loadLedger() {
     else periodLines.forEach(m=>{
       running+=signedLedgerAmount(m.debit,m.credit,account.saldo_normal);
       const row=document.createElement("tr");
+      row.className="ledger-clickable-row";
+      row.title="Klik untuk membuka detail jurnal";
+      row.tabIndex=0;
+      row.setAttribute("role","button");
+      row.setAttribute("aria-label","Buka detail jurnal "+(m.number||""));
+      row.addEventListener("click",event=>{
+        if(event.target.closest("button"))return;
+        openJournalDetail(m.journalId);
+      });
+      row.addEventListener("keydown",event=>{
+        if(event.key==="Enter"||event.key===" "){
+          event.preventDefault();
+          openJournalDetail(m.journalId);
+        }
+      });
       [m.date,m.number,m.description,formatRupiah(m.debit),formatRupiah(m.credit),displayLedgerBalance(running,account.saldo_normal)].forEach(value=>{
         const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);
       });
