@@ -3312,8 +3312,28 @@ async function saveTokoSale(){
       movementIds.push(movement.id);
     }
 
-    message.textContent="Transaksi berhasil disimpan dan stok persediaan otomatis diperbarui: "+saleNumber;
-    message.className="erp-message erp-success";
+    // Jurnal otomatis penjualan toko: kas/bank, pendapatan, HPP, dan persediaan.
+    // Kegagalan jurnal tidak membatalkan transaksi toko yang sudah tersimpan.
+    const totalHpp = Array.from(grouped.values()).reduce(
+      (sum, entry) => sum + Number(entry.quantity || 0) * Number(entry.product.purchase_price || 0),
+      0
+    );
+    let journalNotice = "";
+    const { error: journalError } = await supabaseClient.rpc("catat_jurnal_penjualan_toko", {
+      p_nomor_transaksi: saleNumber,
+      p_tanggal: todayDate(),
+      p_metode_pembayaran: sale.payment_method,
+      p_total_penjualan: Number(totals.total || 0),
+      p_total_hpp: totalHpp,
+      p_keterangan: "Penjualan toko KDMP " + saleNumber
+    });
+    if (journalError) {
+      console.error("Jurnal otomatis penjualan toko gagal:", journalError);
+      journalNotice = " Namun jurnal otomatis belum terbentuk: " + journalError.message;
+    }
+
+    message.textContent="Transaksi berhasil disimpan dan stok persediaan otomatis diperbarui: "+saleNumber+journalNotice;
+    message.className="erp-message "+(journalNotice ? "erp-error" : "erp-success");
     resetTokoForm();
     await loadTokoHistory();
     if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
@@ -7185,6 +7205,8 @@ window.saveInventoryProduct=async function(){
             product_id:product.id,
             movement_type:"stok_awal",
             quantity:initial,
+            stock_before:0,
+            stock_after:initial,
             unit_cost:purchase,
             movement_date:new Date().toISOString().slice(0,10),
             notes:"Pencatatan stok awal barang",
@@ -7394,7 +7416,7 @@ window.saveInventoryMovement=async function(){
       throw new Error("Stok tidak mencukupi. Stok tersedia: "+stockBefore);
     }
 
-    const {error:movementError}=await supabaseClient
+    const {data:movement,error:movementError}=await supabaseClient
       .from("inventory_movements")
       .insert({
         movement_number:inventoryNumber("MUT"),
@@ -7408,7 +7430,9 @@ window.saveInventoryMovement=async function(){
         reference_number:reference||null,
         notes:notes||null,
         created_by:window.currentUser?.id||null
-      });
+      })
+      .select("id")
+      .single();
 
     if(movementError)throw movementError;
 
@@ -7424,8 +7448,11 @@ window.saveInventoryMovement=async function(){
       .eq("id",productId);
 
     if(updateError){
+      if(movement?.id){
+        await supabaseClient.from("inventory_movements").delete().eq("id",movement.id);
+      }
       throw new Error(
-        "Mutasi tercatat, tetapi pembaruan stok gagal. Perlu pemeriksaan: "+
+        "Pembaruan stok gagal dan catatan mutasi dibatalkan: "+
         updateError.message
       );
     }
@@ -7673,6 +7700,4 @@ window.showPage=function(page,button){
 // FIX: HUBUNGKAN TOMBOL REKONSILIASI BANK
 window.calculateBankReconciliation = calculateBankReconciliation;
 window.saveBankMutation = saveBankMutation;
-window.saveBankReconciliation = saveBankReconciliation;
-// Fungsi diekspor ke window agar dapat dipanggil dari seluruh modul.
 window.saveBankReconciliation = saveBankReconciliation;
