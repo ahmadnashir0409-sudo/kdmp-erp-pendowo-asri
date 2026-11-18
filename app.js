@@ -3237,6 +3237,7 @@ async function saveTokoSale(){
   button.disabled=true;
   button.textContent="Memeriksa stok...";
   let createdSaleId=null;
+  let saleFinalized=false;
   const stockChanges=[];
   const movementIds=[];
   let grouped=new Map();
@@ -3368,6 +3369,9 @@ async function saveTokoSale(){
       .maybeSingle();
     if(completeError)throw completeError;
     if(!completedSale)throw new Error("Status transaksi tidak dapat diselesaikan. Transaksi dibatalkan.");
+    // Setelah status Selesai dikonfirmasi database, kegagalan refresh/struk
+    // tidak boleh membatalkan penjualan atau mengembalikan stok.
+    saleFinalized=true;
 
     // Jurnal otomatis. Jika jurnal gagal, transaksi penjualan tetap selesai
     // dan peringatannya ditampilkan agar bisa ditindaklanjuti.
@@ -3396,46 +3400,61 @@ async function saveTokoSale(){
     if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
     printTokoReceipt(createdSale,detailItems);
   }catch(error){
-    // Kembalikan stok hanya jika nilainya masih sesuai hasil pengurangan
-    // transaksi ini, agar tidak menimpa perubahan dari transaksi lain.
-    for(const change of stockChanges.reverse()){
-      const {data:rolledBack,error:rollbackError}=await supabaseClient
-        .from("inventory_products")
-        .update({current_stock:change.before})
-        .eq("id",change.product.id)
-        .eq("current_stock",change.after)
-        .select("id")
-        .maybeSingle();
-      if(rollbackError||!rolledBack){
-        console.error("Rollback stok perlu pemeriksaan manual:",change.product.product_name,rollbackError);
-      }
-    }
-    if(movementIds.length){
-      const {error:movementDeleteError}=await supabaseClient
-        .from("inventory_movements").delete().in("id",movementIds);
-      if(movementDeleteError)console.error("Gagal menghapus mutasi rollback:",movementDeleteError);
-    }
     let statusWarning="";
-    if(createdSaleId){
-      // Jika proses gagal setelah transaksi dibuat, pastikan status menjadi Gagal.
-      const {data:failedSale,error:failedStatusError}=await supabaseClient
-        .from("store_sales")
-        .update({status:"gagal"})
-        .eq("id",createdSaleId)
-        .select("id")
-        .maybeSingle();
-      if(failedStatusError){
-        console.error("Gagal mengubah status transaksi:",failedStatusError);
-        statusWarning=" PERHATIAN: status gagal tidak berhasil disimpan ("+failedStatusError.message+").";
-      }else if(!failedSale){
-        statusWarning=" PERHATIAN: database tidak mengonfirmasi perubahan status menjadi Gagal.";
+    if(!saleFinalized){
+      // Kembalikan stok hanya jika transaksi belum dinyatakan Selesai
+      // dan nilainya masih sesuai hasil pengurangan transaksi ini.
+      for(const change of stockChanges.reverse()){
+        const {data:rolledBack,error:rollbackError}=await supabaseClient
+          .from("inventory_products")
+          .update({current_stock:change.before})
+          .eq("id",change.product.id)
+          .eq("current_stock",change.after)
+          .select("id")
+          .maybeSingle();
+        if(rollbackError||!rolledBack){
+          console.error("Rollback stok perlu pemeriksaan manual:",change.product.product_name,rollbackError);
+          statusWarning+=" Stok "+change.product.product_name+" perlu pemeriksaan manual.";
+        }
       }
+      if(movementIds.length){
+        const {error:movementDeleteError}=await supabaseClient
+          .from("inventory_movements").delete().in("id",movementIds);
+        if(movementDeleteError){
+          console.error("Gagal menghapus mutasi rollback:",movementDeleteError);
+          statusWarning+=" Mutasi stok perlu pemeriksaan manual.";
+        }
+      }
+      if(createdSaleId){
+        // Status Gagal hanya diterapkan bila transaksi belum difinalisasi.
+        const {data:failedSale,error:failedStatusError}=await supabaseClient
+          .from("store_sales")
+          .update({status:"gagal"})
+          .eq("id",createdSaleId)
+          .neq("status","gagal")
+          .select("id")
+          .maybeSingle();
+        if(failedStatusError){
+          console.error("Gagal mengubah status transaksi:",failedStatusError);
+          statusWarning+=" Status Gagal tidak berhasil disimpan ("+failedStatusError.message+").";
+        }
+      }
+      message.textContent="Transaksi gagal dan tidak dihitung sebagai penjualan: "+(error.message||"Terjadi kesalahan")+" "+statusWarning;
+      message.className="erp-message erp-error";
+    }else{
+      // Penjualan sudah Selesai di database. Jangan rollback stok atau status
+      // hanya karena pemuatan riwayat, penyegaran persediaan, atau cetak struk gagal.
+      message.textContent="Transaksi "+saleNumber+" sudah tersimpan dengan status Selesai. Ada kendala setelah penyimpanan: "+(error.message||"pembaruan tampilan gagal")+". Muat ulang halaman untuk menyegarkan data.";
+      message.className="erp-message erp-success";
+      console.error("Transaksi sudah selesai; kendala terjadi setelah finalisasi:",error);
     }
-    message.textContent="Transaksi gagal dan tidak dihitung sebagai penjualan: "+(error.message||"Terjadi kesalahan")+statusWarning;
-    message.className="erp-message erp-error";
-    await loadTokoHistory();
-    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
-    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
+    try{ await loadTokoHistory(); }catch(refreshError){ console.error("Gagal memuat riwayat toko:",refreshError); }
+    if(typeof loadInventoryProducts==="function"){
+      try{ await loadInventoryProducts(); }catch(refreshError){ console.error("Gagal memuat persediaan:",refreshError); }
+    }
+    if(typeof loadInventoryMovements==="function"){
+      try{ await loadInventoryMovements(); }catch(refreshError){ console.error("Gagal memuat mutasi:",refreshError); }
+    }
   }finally{
     button.disabled=false;
     button.textContent="Simpan Transaksi";
