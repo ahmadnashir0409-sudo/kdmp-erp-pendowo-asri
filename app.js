@@ -1618,7 +1618,20 @@ async function loadBankMutations(reconciliationId) {
   const target = document.getElementById("bankMutations");
   if (!target) return;
 
-  const { data, error } = await client
+  target.innerHTML = "Memuat mutasi dan jurnal yang tersedia...";
+
+  const { data: header, error: headerError } = await client
+    .from("bank_reconciliations")
+    .select("id, account_id, period_start, period_end")
+    .eq("id", reconciliationId)
+    .single();
+
+  if (headerError || !header) {
+    target.innerHTML = `<p class="error">Gagal memuat periode rekonsiliasi: ${escapeHTML(headerError?.message || "Data tidak ditemukan")}</p>`;
+    return;
+  }
+
+  const { data: items, error } = await client
     .from("bank_reconciliation_items")
     .select("*")
     .eq("reconciliation_id", reconciliationId)
@@ -1629,6 +1642,29 @@ async function loadBankMutations(reconciliationId) {
     return;
   }
 
+  const { data: journalLines, error: journalError } = await client
+    .from("journal_lines")
+    .select(`
+      id, debit, kredit,
+      journal_entries!inner (tanggal, nomor_jurnal, keterangan, status)
+    `)
+    .eq("account_id", header.account_id)
+    .gte("journal_entries.tanggal", header.period_start)
+    .lte("journal_entries.tanggal", header.period_end);
+
+  if (journalError) {
+    target.innerHTML = `<p class="error">Gagal memuat jurnal: ${escapeHTML(journalError.message)}</p>`;
+    return;
+  }
+
+  const postedLines = (journalLines || []).filter(line =>
+    String(line.journal_entries?.status || "").toLowerCase() === "posted"
+  );
+  const usedJournalIds = new Set((items || [])
+    .filter(item => item.matched_journal_line_id)
+    .map(item => item.matched_journal_line_id));
+
+  const rupiah = value => formatRupiah(value);
   target.innerHTML = `
     <div class="table-responsive">
       <table class="erp-table">
@@ -1639,24 +1675,127 @@ async function loadBankMutations(reconciliationId) {
             <th>Keterangan</th>
             <th>Nominal</th>
             <th>Status</th>
+            <th>Jurnal yang Cocok</th>
+            <th>Aksi</th>
           </tr>
         </thead>
         <tbody>
-          ${(data || []).map(item => `
-            <tr>
-              <td>${escapeHTML(item.transaction_date)}</td>
-              <td>${item.item_type === "deposit" ? "Setoran" : "Penarikan"}</td>
-              <td>${escapeHTML(item.description || "-")}</td>
-              <td>${formatRupiah(item.amount)}</td>
-              <td>${item.matched ? "Cocok" : "Belum dicocokkan"}</td>
-            </tr>
-          `).join("") || `
-            <tr><td colspan="5">Belum ada mutasi rekening.</td></tr>
-          `}
+          ${(items || []).map(item => {
+            const isDeposit = item.item_type === "deposit";
+            const candidates = postedLines.filter(line => {
+              if (usedJournalIds.has(line.id) && line.id !== item.matched_journal_line_id) return false;
+              const journalAmount = Number((isDeposit ? line.debit : line.kredit) || 0);
+              const oppositeAmount = Number((isDeposit ? line.kredit : line.debit) || 0);
+              return Math.abs(journalAmount - Number(item.amount || 0)) < 0.005 && oppositeAmount < 0.005;
+            });
+            const selectId = `bankMatchSelect_${item.id}`;
+            const alreadyMatched = Boolean(item.matched && item.matched_journal_line_id);
+            return `
+              <tr>
+                <td>${escapeHTML(item.transaction_date || "")}</td>
+                <td>${isDeposit ? "Setoran" : "Penarikan"}</td>
+                <td>${escapeHTML(item.description || "-")}</td>
+                <td>${rupiah(item.amount)}</td>
+                <td>${alreadyMatched ? "✅ Cocok" : "Belum dicocokkan"}</td>
+                <td>
+                  ${alreadyMatched
+                    ? "Jurnal sudah ditautkan"
+                    : `<select id="${selectId}" class="erp-input" style="min-width:220px">
+                        <option value="">${candidates.length ? "Pilih jurnal yang sesuai" : "Tidak ada jurnal yang cocok"}</option>
+                        ${candidates.map(line => `<option value="${line.id}">${escapeHTML(line.journal_entries?.tanggal || "")} | ${escapeHTML(line.journal_entries?.nomor_jurnal || "Jurnal")} | ${rupiah(isDeposit ? line.debit : line.kredit)}</option>`).join("")}
+                      </select>`}
+                </td>
+                <td>
+                  ${alreadyMatched
+                    ? "Selesai"
+                    : `<button type="button" class="btn-secondary" ${candidates.length ? "" : "disabled"} onclick="matchBankMutation('${item.id}', '${selectId}')">Cocokkan</button>`}
+                </td>
+              </tr>
+            `;
+          }).join("") || `<tr><td colspan="7">Belum ada mutasi rekening.</td></tr>`}
         </tbody>
       </table>
     </div>
+    <p class="form-hint">Mutasi setoran harus cocok dengan debit akun bank, sedangkan penarikan harus cocok dengan kredit akun bank. Nominal dan periode harus sesuai.</p>
   `;
+}
+
+async function matchBankMutation(itemId, selectId) {
+  const client = window.kdmpSupabase;
+  const select = document.getElementById(selectId);
+  const journalLineId = select?.value;
+  if (!journalLineId) {
+    alert("Pilih jurnal yang sesuai terlebih dahulu.");
+    return;
+  }
+
+  const { data: item, error: itemError } = await client
+    .from("bank_reconciliation_items")
+    .select("id, reconciliation_id, item_type, amount, matched")
+    .eq("id", itemId)
+    .single();
+  if (itemError || !item) {
+    alert("Mutasi tidak ditemukan: " + (itemError?.message || ""));
+    return;
+  }
+  if (item.matched) {
+    alert("Mutasi ini sudah dicocokkan.");
+    return;
+  }
+
+  const { data: header, error: headerError } = await client
+    .from("bank_reconciliations")
+    .select("account_id, period_start, period_end")
+    .eq("id", item.reconciliation_id)
+    .single();
+  if (headerError || !header) {
+    alert("Data rekonsiliasi tidak ditemukan.");
+    return;
+  }
+
+  const { data: line, error: lineError } = await client
+    .from("journal_lines")
+    .select(`id, account_id, debit, kredit, journal_entries!inner (tanggal, status)`)
+    .eq("id", journalLineId)
+    .single();
+  if (lineError || !line) {
+    alert("Baris jurnal tidak ditemukan.");
+    return;
+  }
+
+  const entry = line.journal_entries;
+  const expectedAmount = item.item_type === "deposit" ? Number(line.debit || 0) : Number(line.kredit || 0);
+  const oppositeAmount = item.item_type === "deposit" ? Number(line.kredit || 0) : Number(line.debit || 0);
+  const valid = line.account_id === header.account_id &&
+    String(entry?.status || "").toLowerCase() === "posted" &&
+    entry.tanggal >= header.period_start && entry.tanggal <= header.period_end &&
+    Math.abs(expectedAmount - Number(item.amount || 0)) < 0.005 &&
+    oppositeAmount < 0.005;
+
+  if (!valid) {
+    alert("Jurnal tidak cocok. Pastikan akun, periode, arah debit/kredit, dan nominal sama dengan mutasi.");
+    return;
+  }
+
+  const { data: updated, error: updateError } = await client
+    .from("bank_reconciliation_items")
+    .update({ matched: true, matched_journal_line_id: journalLineId })
+    .eq("id", itemId)
+    .eq("matched", false)
+    .select("id")
+    .maybeSingle();
+
+  if (updateError) {
+    alert("Gagal mencocokkan mutasi: " + updateError.message);
+    return;
+  }
+  if (!updated) {
+    alert("Mutasi sudah berubah atau sudah dicocokkan. Muat ulang daftar mutasi.");
+    return;
+  }
+
+  alert("Mutasi berhasil dicocokkan dengan jurnal.");
+  await loadBankMutations(item.reconciliation_id);
 }
 
 const originalBankShowPage = window.showPage;
