@@ -954,8 +954,25 @@ function setupReports() {
     </div>
 
     <div class="financial-note" style="margin-top:18px">
-      Laporan ini dihitung dari jurnal yang berstatus Posted. Nilai surplus atau defisit merupakan hasil periode sebelum pembagian SHU dan alokasi sesuai ketentuan koperasi.
+      Laporan laba rugi dihitung dari jurnal berstatus Posted. Nilai surplus atau defisit merupakan hasil periode sebelum pembagian SHU dan alokasi sesuai ketentuan koperasi.
     </div>
+
+    <h3 class="report-section-title" style="margin-top:32px">Neraca</h3>
+    <div class="financial-note">Neraca menampilkan saldo akun sampai tanggal akhir yang dipilih, berdasarkan jurnal berstatus Posted.</div>
+    <div id="balanceSheetMessage" class="erp-message erp-muted">Neraca akan dimuat bersama laporan laba rugi.</div>
+    <div class="report-summary">
+      <div class="report-card"><small>Total Aset</small><strong id="balanceTotalAssets">Rp0</strong></div>
+      <div class="report-card"><small>Total Kewajiban</small><strong id="balanceTotalLiabilities">Rp0</strong></div>
+      <div class="report-card"><small>Total Ekuitas + SHU Berjalan</small><strong id="balanceTotalEquity">Rp0</strong></div>
+    </div>
+    <div class="erp-table-wrap">
+      <table class="erp-table">
+        <thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Kelompok</th><th>Saldo</th></tr></thead>
+        <tbody id="balanceSheetBody"><tr><td colspan="4">Belum ada data.</td></tr></tbody>
+        <tfoot id="balanceSheetFoot"></tfoot>
+      </table>
+    </div>
+    <div id="balanceSheetCheck" class="financial-note" style="margin-top:14px;font-weight:bold"></div>
   `;
 
   page.appendChild(section);
@@ -963,7 +980,104 @@ function setupReports() {
   document.getElementById("reportStart").value=firstDayOfMonth();
   document.getElementById("reportEnd").value=todayDate();
 
-  document.getElementById("reportSearchButton").addEventListener("click",loadIncomeStatement);
+  document.getElementById("reportSearchButton").addEventListener("click",async()=>{
+    await loadIncomeStatement();
+    await loadBalanceSheet();
+  });
+}
+
+async function loadBalanceSheet() {
+  const end=document.getElementById("reportEnd")?.value;
+  const message=document.getElementById("balanceSheetMessage");
+  const body=document.getElementById("balanceSheetBody");
+  const foot=document.getElementById("balanceSheetFoot");
+  const check=document.getElementById("balanceSheetCheck");
+  if(!end||!message||!body)return;
+  message.textContent="Menghitung saldo Neraca...";
+  message.className="erp-message erp-muted";
+  body.innerHTML='<tr><td colspan="4">Memuat saldo akun...</td></tr>';
+  check.textContent="";
+  try {
+    const {data:accounts,error:accountError}=await supabaseClient
+      .from("accounts")
+      .select("id,kode_akun,nama_akun,kategori,saldo_normal");
+    if(accountError)throw accountError;
+
+    const allLines=[];
+    let from=0;
+    const pageSize=500;
+    while(true) {
+      const {data,error}=await supabaseClient
+        .from("journal_lines")
+        .select("account_id,debit,kredit,journal_entries!inner(tanggal,status)")
+        .eq("journal_entries.status","posted")
+        .lte("journal_entries.tanggal",end)
+        .range(from,from+pageSize-1);
+      if(error)throw error;
+      allLines.push(...(data||[]));
+      if(!data||data.length<pageSize)break;
+      from+=pageSize;
+    }
+
+    const totals=new Map((accounts||[]).map(account=>[account.id,0]));
+    allLines.forEach(line=>{
+      if(!totals.has(line.account_id))return;
+      const account=(accounts||[]).find(item=>item.id===line.account_id);
+      if(!account)return;
+      const debit=Number(line.debit||0),credit=Number(line.kredit||0);
+      const balance=String(account.saldo_normal||"").toLowerCase()==="kredit" ? credit-debit : debit-credit;
+      totals.set(account.id,totals.get(account.id)+balance);
+    });
+
+    const rows=(accounts||[]).map(account=>({...account,saldo:totals.get(account.id)||0}));
+    const assets=rows.filter(a=>a.kategori==="aset");
+    const liabilities=rows.filter(a=>a.kategori==="kewajiban");
+    const equity=rows.filter(a=>a.kategori==="ekuitas");
+    const income=rows.filter(a=>a.kategori==="pendapatan");
+    const expenses=rows.filter(a=>a.kategori==="beban");
+    const sum=list=>list.reduce((total,a)=>total+a.saldo,0);
+    const totalAssets=sum(assets);
+    const totalLiabilities=sum(liabilities);
+    const totalEquity=sum(equity);
+    const currentSurplus=sum(income)-sum(expenses);
+    const equityWithSurplus=totalEquity+currentSurplus;
+    const difference=totalAssets-(totalLiabilities+equityWithSurplus);
+
+    document.getElementById("balanceTotalAssets").textContent=formatRupiah(totalAssets);
+    document.getElementById("balanceTotalLiabilities").textContent=formatRupiah(totalLiabilities);
+    document.getElementById("balanceTotalEquity").textContent=formatRupiah(equityWithSurplus);
+    body.replaceChildren();
+    const groups=[
+      {label:"ASET",items:assets,total:totalAssets},
+      {label:"KEWAJIBAN",items:liabilities,total:totalLiabilities},
+      {label:"EKUITAS",items:equity,total:totalEquity}
+    ];
+    groups.forEach(group=>{
+      const heading=document.createElement("tr");
+      const headingCell=document.createElement("td");headingCell.colSpan=4;headingCell.textContent=group.label;headingCell.style.fontWeight="bold";heading.appendChild(headingCell);body.appendChild(heading);
+      group.items.forEach(account=>{
+        const row=document.createElement("tr");
+        [account.kode_akun,account.nama_akun,group.label,formatRupiah(account.saldo)].forEach(value=>{const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);});
+        body.appendChild(row);
+      });
+      const totalRow=document.createElement("tr");totalRow.className="report-total-row";
+      ["","TOTAL "+group.label,"",formatRupiah(group.total)].forEach(value=>{const cell=document.createElement("td");cell.textContent=value;totalRow.appendChild(cell);});
+      body.appendChild(totalRow);
+    });
+    const surplusRow=document.createElement("tr");surplusRow.className="report-total-row";
+    ["","Surplus / Defisit Berjalan","",formatRupiah(currentSurplus)].forEach(value=>{const cell=document.createElement("td");cell.textContent=value;surplusRow.appendChild(cell);});
+    body.appendChild(surplusRow);
+    foot.innerHTML=`<tr class="report-total-row"><td colspan="3">TOTAL KEWAJIBAN + EKUITAS + SHU BERJALAN</td><td>${formatRupiah(totalLiabilities+equityWithSurplus)}</td></tr>`;
+    check.textContent=Math.abs(difference)<0.01 ? "NERACA SEIMBANG — Selisih Rp0" : "NERACA BELUM SEIMBANG — Selisih: "+formatRupiah(difference);
+    check.style.color=Math.abs(difference)<0.01 ? "#15803d" : "#b91c1c";
+    message.textContent="Neraca berhasil dimuat sampai tanggal "+end+".";
+    message.className="erp-message erp-success";
+  } catch(error) {
+    console.error("Neraca error:",error);
+    body.innerHTML='<tr><td colspan="4">Gagal mengambil data Neraca.</td></tr>';
+    message.textContent="Gagal memuat Neraca: "+(error.message||"Kesalahan tidak diketahui");
+    message.className="erp-message erp-error";
+  }
 }
 
 async function loadIncomeStatement() {
