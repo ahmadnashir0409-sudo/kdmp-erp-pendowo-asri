@@ -2917,6 +2917,10 @@ tokoStyle.textContent = `
 .toko-history table{width:100%;min-width:650px;border-collapse:collapse}
 .toko-history th,.toko-history td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
 .toko-history th{background:#fafafa}
+.toko-status{display:inline-block;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.toko-status.selesai{background:#dcfce7;color:#166534}
+.toko-status.diproses{background:#fef3c7;color:#92400e}
+.toko-status.gagal{background:#fee2e2;color:#991b1b}
 @media(max-width:650px){
  .toko-grid{grid-template-columns:1fr}
  .toko-stat-grid{grid-template-columns:1fr}
@@ -3068,11 +3072,12 @@ function setupToko(){
               <th>Pelanggan</th>
               <th>Pembayaran</th>
               <th>Total</th>
+              <th>Status</th>
               <th>Aksi</th>
             </tr>
           </thead>
           <tbody id="tokoHistoryBody">
-            <tr><td colspan="6">Memuat data...</td></tr>
+            <tr><td colspan="7">Memuat data...</td></tr>
           </tbody>
         </table>
       </div>
@@ -3208,6 +3213,7 @@ function makeTokoSaleNumber(){
 async function saveTokoSale(){
   const button=document.getElementById("tokoSave");
   const message=document.getElementById("tokoMessage");
+  if(button.disabled)return;
   const totals=calculateTokoTotal();
   const items=tokoItems.filter(item=>item.name.trim() && item.quantity>0 && item.price>=0);
 
@@ -3228,12 +3234,15 @@ async function saveTokoSale(){
     message.className="erp-message erp-error"; return;
   }
 
-  button.disabled=true; button.textContent="Memeriksa stok...";
+  button.disabled=true;
+  button.textContent="Memeriksa stok...";
   let createdSaleId=null;
   const stockChanges=[];
-  let movementIds=[];
+  const movementIds=[];
+  let grouped=new Map();
+  let saleNumber="";
   try{
-    // Cocokkan nama barang kasir dengan master persediaan.
+    // Ambil master barang; nama harus sama persis dengan Persediaan Barang.
     const {data:products,error:productError}=await supabaseClient
       .from("inventory_products")
       .select("id,product_code,product_name,unit,current_stock,purchase_price,selling_price")
@@ -3243,7 +3252,6 @@ async function saveTokoSale(){
     const productByName=new Map((products||[]).map(p=>[
       String(p.product_name||"").trim().toLocaleLowerCase("id-ID"),p
     ]));
-    const grouped=new Map();
     const resolvedItems=items.map(item=>{
       const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
       if(!product)throw new Error('Barang "'+item.name+'" belum terdaftar di menu Persediaan Barang. Gunakan nama yang sama dengan master barang.');
@@ -3251,51 +3259,68 @@ async function saveTokoSale(){
         throw new Error('Satuan barang "'+item.name+'" harus '+product.unit+'.');
       const qty=Number(item.quantity);
       const entry=grouped.get(product.id)||{product,quantity:0};
-      entry.quantity+=qty; grouped.set(product.id,entry);
+      entry.quantity+=qty;
+      grouped.set(product.id,entry);
       return {...item,product};
     });
 
+    // Pemeriksaan awal untuk memberi pesan stok yang mudah dipahami.
     for(const {product,quantity} of grouped.values()){
       const available=Number(product.current_stock||0);
-      if(quantity>available)throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
+      if(quantity>available)
+        throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
     }
 
-    // Simpan header dan rincian transaksi terlebih dahulu.
-    const saleNumber=makeTokoSaleNumber();
+    saleNumber=makeTokoSaleNumber();
     const sale={
       sale_number:saleNumber,
       customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
       payment_method:document.getElementById("tokoPayment").value,
       subtotal:totals.subtotal, discount:totals.discount, total:totals.total,
-      paid_amount:totals.paid, change_amount:totals.change, status:"selesai",
+      paid_amount:totals.paid, change_amount:totals.change,
+      status:"diproses",
       notes:document.getElementById("tokoNotes").value.trim()||null,
       created_by:window.currentUser.id
     };
+
     button.textContent="Menyimpan transaksi...";
     const {data:createdSale,error:saleError}=await supabaseClient
       .from("store_sales").insert(sale).select().single();
     if(saleError)throw saleError;
     createdSaleId=createdSale.id;
 
-    const detailItems=resolvedItems.map(item=>({
-      sale_id:createdSale.id,
-      product_name:item.product.product_name,
-      quantity:item.quantity,
-      unit:item.product.unit||item.unit||"pcs",
-      unit_price:item.price,
-      line_total:item.quantity*item.price
-    }));
+    const detailItems=items.map(item=>{
+      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
+      return {
+        sale_id:createdSale.id,
+        product_name:product.product_name,
+        quantity:item.quantity,
+        unit:product.unit||item.unit||"pcs",
+        unit_price:item.price,
+        line_total:item.quantity*item.price
+      };
+    });
     const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
     if(itemError)throw itemError;
 
-    // Kurangi stok dan buat jejak mutasi untuk setiap barang.
-    button.textContent="Memperbarui persediaan...";
+    // Kurangi stok secara atomik: update hanya jika stok masih sama dengan
+    // angka yang tadi dibaca. Dua kasir tidak bisa menjual stok terakhir bersamaan.
+    button.textContent="Mengunci dan memperbarui stok...";
     for(const {product,quantity} of grouped.values()){
       const before=Number(product.current_stock||0);
       const after=before-quantity;
-      const {error:updateError}=await supabaseClient
-        .from("inventory_products").update({current_stock:after}).eq("id",product.id);
+      const {data:updatedProduct,error:updateError}=await supabaseClient
+        .from("inventory_products")
+        .update({current_stock:after})
+        .eq("id",product.id)
+        .eq("current_stock",before)
+        .select("id")
+        .maybeSingle();
+
       if(updateError)throw updateError;
+      if(!updatedProduct){
+        throw new Error('Stok '+product.product_name+' baru saja berubah karena transaksi lain. Silakan muat ulang persediaan lalu coba lagi.');
+      }
       stockChanges.push({product,before,after});
 
       const {data:movement,error:movementError}=await supabaseClient
@@ -3312,54 +3337,79 @@ async function saveTokoSale(){
       movementIds.push(movement.id);
     }
 
-    // Jurnal otomatis penjualan toko: kas/bank, pendapatan, HPP, dan persediaan.
-    // Kegagalan jurnal tidak membatalkan transaksi toko yang sudah tersimpan.
-    const totalHpp = Array.from(grouped.values()).reduce(
-      (sum, entry) => sum + Number(entry.quantity || 0) * Number(entry.product.purchase_price || 0),
-      0
+    // Selesaikan transaksi hanya setelah seluruh barang dan mutasi stok berhasil.
+    const {data:completedSale,error:completeError}=await supabaseClient
+      .from("store_sales")
+      .update({status:"selesai"})
+      .eq("id",createdSaleId)
+      .eq("status","diproses")
+      .select("id")
+      .maybeSingle();
+    if(completeError)throw completeError;
+    if(!completedSale)throw new Error("Status transaksi tidak dapat diselesaikan. Transaksi dibatalkan.");
+
+    // Jurnal otomatis. Jika jurnal gagal, transaksi penjualan tetap selesai
+    // dan peringatannya ditampilkan agar bisa ditindaklanjuti.
+    const totalHpp=Array.from(grouped.values()).reduce(
+      (sum,entry)=>sum+Number(entry.quantity||0)*Number(entry.product.purchase_price||0),0
     );
-    let journalNotice = "";
-    const { error: journalError } = await supabaseClient.rpc("catat_jurnal_penjualan_toko", {
-      p_nomor_transaksi: saleNumber,
-      p_tanggal: todayDate(),
-      p_metode_pembayaran: sale.payment_method,
-      p_total_penjualan: Number(totals.total || 0),
-      p_total_hpp: totalHpp,
-      p_keterangan: "Penjualan toko KDMP " + saleNumber
+    let journalNotice="";
+    const {error:journalError}=await supabaseClient.rpc("catat_jurnal_penjualan_toko",{
+      p_nomor_transaksi:saleNumber,
+      p_tanggal:todayDate(),
+      p_metode_pembayaran:sale.payment_method,
+      p_total_penjualan:Number(totals.total||0),
+      p_total_hpp:totalHpp,
+      p_keterangan:"Penjualan toko KDMP "+saleNumber
     });
-    if (journalError) {
-      console.error("Jurnal otomatis penjualan toko gagal:", journalError);
-      journalNotice = " Namun jurnal otomatis belum terbentuk: " + journalError.message;
+    if(journalError){
+      console.error("Jurnal otomatis penjualan toko gagal:",journalError);
+      journalNotice=" Namun jurnal otomatis belum terbentuk: "+journalError.message;
     }
 
-    message.textContent="Transaksi berhasil disimpan dan stok persediaan otomatis diperbarui: "+saleNumber+journalNotice;
-    message.className="erp-message "+(journalNotice ? "erp-error" : "erp-success");
+    message.textContent="Transaksi berhasil disimpan, stok diperbarui, dan status penjualan Selesai: "+saleNumber+journalNotice;
+    message.className="erp-message "+(journalNotice?"erp-error":"erp-success");
     resetTokoForm();
     await loadTokoHistory();
     if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
     if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
-    printTokoReceipt(createdSale,resolvedItems.map(item=>({
-      product_name:item.product.product_name,quantity:item.quantity,
-      unit:item.product.unit||item.unit||"pcs",unit_price:item.price,
-      line_total:item.quantity*item.price
-    })));
+    printTokoReceipt(createdSale,detailItems);
   }catch(error){
-    // Upaya membatalkan perubahan stok bila salah satu tahap gagal.
+    // Kembalikan stok hanya jika nilainya masih sesuai hasil pengurangan
+    // transaksi ini, agar tidak menimpa perubahan dari transaksi lain.
     for(const change of stockChanges.reverse()){
-      await supabaseClient.from("inventory_products")
-        .update({current_stock:change.before}).eq("id",change.product.id);
+      const {data:rolledBack,error:rollbackError}=await supabaseClient
+        .from("inventory_products")
+        .update({current_stock:change.before})
+        .eq("id",change.product.id)
+        .eq("current_stock",change.after)
+        .select("id")
+        .maybeSingle();
+      if(rollbackError||!rolledBack){
+        console.error("Rollback stok perlu pemeriksaan manual:",change.product.product_name,rollbackError);
+      }
     }
     if(movementIds.length){
-      await supabaseClient.from("inventory_movements").delete().in("id",movementIds);
+      const {error:movementDeleteError}=await supabaseClient
+        .from("inventory_movements").delete().in("id",movementIds);
+      if(movementDeleteError)console.error("Gagal menghapus mutasi rollback:",movementDeleteError);
     }
     if(createdSaleId){
-      await supabaseClient.from("store_sale_items").delete().eq("sale_id",createdSaleId);
-      await supabaseClient.from("store_sales").delete().eq("id",createdSaleId);
+      // Simpan jejak transaksi gagal untuk audit, tetapi jangan pernah dihitung omzet.
+      const {error:failedStatusError}=await supabaseClient
+        .from("store_sales")
+        .update({status:"gagal"})
+        .eq("id",createdSaleId);
+      if(failedStatusError)console.error("Gagal mengubah status transaksi:",failedStatusError);
     }
-    message.textContent="Transaksi dibatalkan: "+(error.message||"Terjadi kesalahan");
+    message.textContent="Transaksi gagal dan tidak dihitung sebagai penjualan: "+(error.message||"Terjadi kesalahan");
     message.className="erp-message erp-error";
+    await loadTokoHistory();
+    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
+    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
   }finally{
-    button.disabled=false; button.textContent="Simpan Transaksi";
+    button.disabled=false;
+    button.textContent="Simpan Transaksi";
   }
 }
 
@@ -3368,8 +3418,7 @@ async function loadTokoHistory(){
   const message=document.getElementById("tokoHistoryMessage");
   if(!body)return;
 
-  body.innerHTML='<tr><td colspan="6">Memuat data...</td></tr>';
-
+  body.innerHTML='<tr><td colspan="7">Memuat data...</td></tr>';
   const date=document.getElementById("tokoFilterDate").value;
 
   let query=supabaseClient
@@ -3384,53 +3433,53 @@ async function loadTokoHistory(){
   }
 
   const {data,error}=await query;
-
   if(error){
-    body.innerHTML=`<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;
+    body.innerHTML=`<tr><td colspan="7">${escapeHTML(error.message)}</td></tr>`;
     message.textContent="Gagal mengambil riwayat transaksi.";
     return;
   }
 
   const sales=data||[];
   const today=new Date().toISOString().slice(0,10);
-  const todaySales=sales.filter(s=>
-    String(s.sale_date).slice(0,10)===today
+  const completedToday=sales.filter(s=>
+    String(s.sale_date).slice(0,10)===today &&
+    String(s.status||"").toLowerCase()==="selesai"
   );
+  const omzet=completedToday.reduce((sum,s)=>sum+Number(s.total||0),0);
 
-  const omzet=todaySales.reduce((sum,s)=>sum+Number(s.total||0),0);
-
-  document.getElementById("tokoStatCount").textContent=todaySales.length;
+  document.getElementById("tokoStatCount").textContent=completedToday.length;
   document.getElementById("tokoStatOmzet").textContent=formatRupiah(omzet);
   document.getElementById("tokoStatAverage").textContent=
-    formatRupiah(todaySales.length?omzet/todaySales.length:0);
+    formatRupiah(completedToday.length?omzet/completedToday.length:0);
 
   if(!sales.length){
-    body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px">Belum ada transaksi penjualan.</td></tr>';
+    body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px">Belum ada transaksi penjualan.</td></tr>';
     message.textContent="Belum ada riwayat transaksi.";
     return;
   }
 
-  const paymentLabels={
-    tunai:"Tunai",
-    transfer:"Transfer",
-    qris:"QRIS"
-  };
+  const paymentLabels={tunai:"Tunai",transfer:"Transfer",qris:"QRIS"};
+  const statusLabels={selesai:"Selesai",diproses:"Diproses",gagal:"Gagal"};
+  body.innerHTML=sales.map(sale=>{
+    const status=String(sale.status||"").toLowerCase();
+    const isCompleted=status==="selesai";
+    return `
+      <tr>
+        <td>${escapeHTML(sale.sale_number||"-")}</td>
+        <td>${sale.sale_date?new Date(sale.sale_date).toLocaleString("id-ID"):"-"}</td>
+        <td>${escapeHTML(sale.customer_name||"Pelanggan Umum")}</td>
+        <td>${paymentLabels[sale.payment_method]||"-"}</td>
+        <td>${formatRupiah(sale.total)}</td>
+        <td><span class="toko-status ${["selesai","diproses","gagal"].includes(status)?status:"gagal"}">${statusLabels[status]||"Status tidak dikenal"}</span></td>
+        <td>${isCompleted
+          ? `<button class="toko-btn secondary" onclick="printTokoReceiptById('${sale.id}')">Cetak</button>`
+          : '<span class="erp-muted">Tidak dapat dicetak</span>'}</td>
+      </tr>
+    `;
+  }).join("");
 
-  body.innerHTML=sales.map(sale=>`
-    <tr>
-      <td>${escapeHTML(sale.sale_number)}</td>
-      <td>${new Date(sale.sale_date).toLocaleString("id-ID")}</td>
-      <td>${escapeHTML(sale.customer_name||"Pelanggan Umum")}</td>
-      <td>${paymentLabels[sale.payment_method]||"-"}</td>
-      <td>${formatRupiah(sale.total)}</td>
-      <td>
-        <button class="toko-btn secondary"
-          onclick="printTokoReceiptById('${sale.id}')">Cetak</button>
-      </td>
-    </tr>
-  `).join("");
-
-  message.textContent="Menampilkan "+sales.length+" transaksi.";
+  const completedCount=sales.filter(s=>String(s.status||"").toLowerCase()==="selesai").length;
+  message.textContent="Menampilkan "+sales.length+" transaksi; "+completedCount+" selesai. Transaksi gagal/diproses tidak masuk omzet.";
 }
 
 window.printTokoReceiptById=async function(id){
@@ -3442,6 +3491,10 @@ window.printTokoReceiptById=async function(id){
 
   if(error){
     alert("Gagal mengambil transaksi: "+error.message);
+    return;
+  }
+  if(String(sale.status||"").toLowerCase()!=="selesai"){
+    alert("Transaksi ini berstatus "+(sale.status||"tidak diketahui")+" dan tidak dapat dicetak sebagai penjualan berhasil.");
     return;
   }
 
@@ -3702,7 +3755,7 @@ function setupMemberManagement(){
               </tr>
             </thead>
             <tbody id="memberTableBody">
-              <tr><td colspan="6">Memuat data...</td></tr>
+              <tr><td colspan="7">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
