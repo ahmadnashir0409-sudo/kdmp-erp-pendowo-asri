@@ -3264,6 +3264,19 @@ async function saveTokoSale(){
       return {...item,product};
     });
 
+    // Periksa stok SEBELUM membuat header transaksi.
+    // Jika stok kurang, catat percobaan langsung dengan status "gagal",
+    // sehingga tidak ada baris "diproses" yang tertinggal.
+    const stockProblems=[];
+    for(const {product,quantity} of grouped.values()){
+      const available=Number(product.current_stock||0);
+      if(quantity>available){
+        stockProblems.push(
+          'Stok '+product.product_name+' tidak mencukupi. Stok tersedia '+available+' '+product.unit+'.'
+        );
+      }
+    }
+
     saleNumber=makeTokoSaleNumber();
     const sale={
       sale_number:saleNumber,
@@ -3271,7 +3284,7 @@ async function saveTokoSale(){
       payment_method:document.getElementById("tokoPayment").value,
       subtotal:totals.subtotal, discount:totals.discount, total:totals.total,
       paid_amount:totals.paid, change_amount:totals.change,
-      status:"diproses",
+      status:stockProblems.length ? "gagal" : "diproses",
       notes:document.getElementById("tokoNotes").value.trim()||null,
       created_by:window.currentUser.id
     };
@@ -3282,13 +3295,19 @@ async function saveTokoSale(){
     if(saleError)throw saleError;
     createdSaleId=createdSale.id;
 
-    // Validasi stok dilakukan setelah header transaksi tercatat.
-    // Jika stok tidak cukup, blok catch akan mengubah status menjadi "gagal"
-    // sehingga percobaan tersebut tercatat untuk audit tetapi tidak masuk omzet.
-    for(const {product,quantity} of grouped.values()){
-      const available=Number(product.current_stock||0);
-      if(quantity>available)
-        throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
+    // Bila stok kurang, percobaan sudah tersimpan sebagai Gagal.
+    // Hentikan sebelum rincian, pengurangan stok, atau jurnal dibuat.
+    if(stockProblems.length){
+      const {data:failedSale,error:failedInsertError}=await supabaseClient
+        .from("store_sales")
+        .update({status:"gagal"})
+        .eq("id",createdSaleId)
+        .eq("status","gagal")
+        .select("id")
+        .maybeSingle();
+      if(failedInsertError)throw failedInsertError;
+      if(!failedSale)throw new Error("Percobaan tercatat, tetapi status Gagal belum dapat dikonfirmasi.");
+      throw new Error(stockProblems.join(" "));
     }
 
     const detailItems=items.map(item=>{
@@ -3396,15 +3415,23 @@ async function saveTokoSale(){
         .from("inventory_movements").delete().in("id",movementIds);
       if(movementDeleteError)console.error("Gagal menghapus mutasi rollback:",movementDeleteError);
     }
+    let statusWarning="";
     if(createdSaleId){
-      // Simpan jejak transaksi gagal untuk audit, tetapi jangan pernah dihitung omzet.
-      const {error:failedStatusError}=await supabaseClient
+      // Jika proses gagal setelah transaksi dibuat, pastikan status menjadi Gagal.
+      const {data:failedSale,error:failedStatusError}=await supabaseClient
         .from("store_sales")
         .update({status:"gagal"})
-        .eq("id",createdSaleId);
-      if(failedStatusError)console.error("Gagal mengubah status transaksi:",failedStatusError);
+        .eq("id",createdSaleId)
+        .select("id")
+        .maybeSingle();
+      if(failedStatusError){
+        console.error("Gagal mengubah status transaksi:",failedStatusError);
+        statusWarning=" PERHATIAN: status gagal tidak berhasil disimpan ("+failedStatusError.message+").";
+      }else if(!failedSale){
+        statusWarning=" PERHATIAN: database tidak mengonfirmasi perubahan status menjadi Gagal.";
+      }
     }
-    message.textContent="Transaksi gagal dan tidak dihitung sebagai penjualan: "+(error.message||"Terjadi kesalahan");
+    message.textContent="Transaksi gagal dan tidak dihitung sebagai penjualan: "+(error.message||"Terjadi kesalahan")+statusWarning;
     message.className="erp-message erp-error";
     await loadTokoHistory();
     if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
