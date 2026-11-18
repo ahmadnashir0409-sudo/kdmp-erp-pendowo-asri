@@ -111,6 +111,23 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+const balanceAccountDetailStyle=document.createElement("style");
+balanceAccountDetailStyle.textContent=`
+.balance-account-clickable{cursor:pointer}
+.balance-account-clickable:hover{background:#fff5f5}
+.balance-account-clickable:focus{outline:2px solid #a71925;outline-offset:-2px}
+.balance-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px}
+.balance-detail-dialog{width:min(1050px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:14px;padding:22px;box-shadow:0 15px 50px rgba(0,0,0,.2)}
+.balance-detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:15px}
+.balance-detail-close{border:0;background:#eee;border-radius:8px;padding:9px 13px;cursor:pointer}
+.balance-detail-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+.balance-detail-summary>div{background:#fafafa;border:1px solid #eee;border-radius:9px;padding:12px}
+.balance-detail-summary small{display:block;color:#777;margin-bottom:6px}
+.balance-detail-summary strong{font-size:15px}
+@media(max-width:650px){.balance-detail-dialog{padding:14px}.balance-detail-summary{grid-template-columns:1fr}}
+`;
+document.head.appendChild(balanceAccountDetailStyle);
+
 // ==========================================
 // DASHBOARD - DATA DARI SUPABASE
 // ==========================================
@@ -571,7 +588,7 @@ function setupFinancial() {
       <div class="financial-card"><small>Total Pemasukan</small><strong id="financialIncome">Rp0</strong></div>
       <div class="financial-card"><small>Total Pengeluaran</small><strong id="financialExpense">Rp0</strong></div>
     </div>
-    <div class="erp-toolbar"><div><h3 style="margin:0 0 5px">Transaksi Keuangan</h3><div class="erp-muted">Catat pemasukan dan pengeluaran KDMP.</div></div><button class="erp-button" id="financialNewButton">+ Catat Transaksi</button></div>
+    <div class="erp-toolbar"><div><h3 style="margin:0 0 5px">Transaksi Keuangan</h3><div class="erp-muted">Catat pemasukan dan pengeluaran KDMP.</div></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" class="erp-button secondary" id="financialOpenReportsButton">📊 Lihat Laporan Keuangan</button><button class="erp-button" id="financialNewButton">+ Catat Transaksi</button></div></div>
     <div class="erp-form" id="financialForm"><h3 id="financialFormTitle">Catat Pemasukan</h3>
       <div class="financial-tabs"><button type="button" id="financialIncomeTab" class="active">Pemasukan</button><button type="button" id="financialExpenseTab">Pengeluaran</button></div>
       <div class="financial-note">Transaksi yang disimpan akan otomatis membentuk jurnal debit dan kredit.</div>
@@ -587,6 +604,9 @@ function setupFinancial() {
     <h3>Riwayat Transaksi</h3><div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Keterangan</th><th>Akun Kas/Bank</th><th>Akun Lawan</th><th>Nominal</th><th>Nomor Jurnal</th></tr></thead><tbody id="financialHistoryBody"><tr><td colspan="7">Memuat transaksi...</td></tr></tbody></table></div>`;
   page.appendChild(section);
   document.getElementById("financialNewButton").addEventListener("click",openFinancialForm);
+  document.getElementById("financialOpenReportsButton").addEventListener("click",()=>{
+    if(typeof window.showPage==="function") window.showPage("laporan");
+  });
   document.getElementById("financialIncomeTab").addEventListener("click",()=>setFinancialType("pemasukan"));
   document.getElementById("financialExpenseTab").addEventListener("click",()=>setFinancialType("pengeluaran"));
   document.getElementById("financialCancelButton").addEventListener("click",closeFinancialForm);
@@ -1140,6 +1160,7 @@ async function loadBalanceSheet() {
       .from("accounts")
       .select("id,kode_akun,nama_akun,kategori,saldo_normal");
     if(accountError)throw accountError;
+    coaCache=accounts||[];
 
     const allLines=[];
     let from=0;
@@ -1195,6 +1216,18 @@ async function loadBalanceSheet() {
       const headingCell=document.createElement("td");headingCell.colSpan=4;headingCell.textContent=group.label;headingCell.style.fontWeight="bold";heading.appendChild(headingCell);body.appendChild(heading);
       group.items.forEach(account=>{
         const row=document.createElement("tr");
+        row.className="balance-account-clickable";
+        row.tabIndex=0;
+        row.setAttribute("role","button");
+        row.title="Klik untuk melihat rincian buku besar akun ini";
+        row.setAttribute("aria-label",`Lihat rincian akun ${account.kode_akun} ${account.nama_akun}`);
+        row.addEventListener("click",()=>openBalanceAccountDetail(account.id,end));
+        row.addEventListener("keydown",event=>{
+          if(event.key==="Enter"||event.key===" "){
+            event.preventDefault();
+            openBalanceAccountDetail(account.id,end);
+          }
+        });
         [account.kode_akun,account.nama_akun,group.label,formatRupiah(account.saldo)].forEach(value=>{const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);});
         body.appendChild(row);
       });
@@ -1215,6 +1248,124 @@ async function loadBalanceSheet() {
     body.innerHTML='<tr><td colspan="4">Gagal mengambil data Neraca.</td></tr>';
     message.textContent="Gagal memuat Neraca: "+(error.message||"Kesalahan tidak diketahui");
     message.className="erp-message erp-error";
+  }
+}
+
+async function openBalanceAccountDetail(accountId,endDate) {
+  const account=(coaCache||[]).find(item=>item.id===accountId);
+  let overlay=document.getElementById("balanceAccountDetailOverlay");
+  if(!overlay) {
+    overlay=document.createElement("div");
+    overlay.id="balanceAccountDetailOverlay";
+    overlay.className="balance-detail-overlay";
+    overlay.innerHTML=`
+      <div class="balance-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="balanceAccountDetailTitle">
+        <div class="balance-detail-head">
+          <div>
+            <h3 id="balanceAccountDetailTitle" style="margin:0 0 5px">Rincian Akun Neraca</h3>
+            <div class="erp-muted" id="balanceAccountDetailMessage">Memuat rincian...</div>
+          </div>
+          <button type="button" class="balance-detail-close" id="balanceAccountDetailClose">Tutup ✕</button>
+        </div>
+        <div class="balance-detail-summary">
+          <div><small>Total Debit</small><strong id="balanceDetailDebit">Rp0</strong></div>
+          <div><small>Total Kredit</small><strong id="balanceDetailCredit">Rp0</strong></div>
+          <div><small>Saldo Akhir</small><strong id="balanceDetailClosing">Rp0</strong></div>
+        </div>
+        <div class="erp-table-wrap">
+          <table class="erp-table" style="min-width:850px">
+            <thead><tr><th>Tanggal</th><th>Nomor Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th><th>Aksi</th></tr></thead>
+            <tbody id="balanceAccountDetailBody"><tr><td colspan="7">Memuat...</td></tr></tbody>
+          </table>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click",event=>{
+      if(event.target===overlay) overlay.style.display="none";
+    });
+    overlay.querySelector("#balanceAccountDetailClose").addEventListener("click",()=>overlay.style.display="none");
+  }
+  overlay.style.display="flex";
+  const message=document.getElementById("balanceAccountDetailMessage");
+  const body=document.getElementById("balanceAccountDetailBody");
+  const debitEl=document.getElementById("balanceDetailDebit");
+  const creditEl=document.getElementById("balanceDetailCredit");
+  const closingEl=document.getElementById("balanceDetailClosing");
+  if(!account) {
+    message.textContent="Akun tidak ditemukan pada daftar akun.";
+    body.innerHTML='<tr><td colspan="7">Akun tidak ditemukan.</td></tr>';
+    return;
+  }
+  document.getElementById("balanceAccountDetailTitle").textContent=`Rincian ${account.kode_akun} - ${account.nama_akun}`;
+  message.textContent="Mengambil seluruh mutasi jurnal Posted sampai tanggal "+endDate+"...";
+  body.innerHTML='<tr><td colspan="7">Memuat mutasi akun...</td></tr>';
+  debitEl.textContent="Memuat...";
+  creditEl.textContent="Memuat...";
+  closingEl.textContent="Memuat...";
+  try {
+    const allLines=[];
+    let from=0;
+    const pageSize=500;
+    while(true) {
+      const {data,error}=await supabaseClient.from("journal_lines")
+        .select("account_id,journal_id,debit,kredit,journal_entries!inner(tanggal,nomor_jurnal,keterangan,status)")
+        .eq("account_id",accountId)
+        .eq("journal_entries.status","posted")
+        .lte("journal_entries.tanggal",endDate)
+        .range(from,from+pageSize-1);
+      if(error) throw error;
+      allLines.push(...(data||[]));
+      if(!data||data.length<pageSize) break;
+      from+=pageSize;
+    }
+    const movements=allLines.map(line=>({
+      journalId:line.journal_id,
+      date:line.journal_entries?.tanggal||"",
+      number:line.journal_entries?.nomor_jurnal||"-",
+      description:line.journal_entries?.keterangan||"-",
+      debit:Number(line.debit||0),
+      credit:Number(line.kredit||0)
+    })).sort((a,b)=>a.date.localeCompare(b.date)||a.number.localeCompare(b.number));
+    const normal=String(account.saldo_normal||"debit").toLowerCase();
+    const signed=(m)=>normal==="kredit"?m.credit-m.debit:m.debit-m.credit;
+    const totalDebit=movements.reduce((sum,m)=>sum+m.debit,0);
+    const totalCredit=movements.reduce((sum,m)=>sum+m.credit,0);
+    let running=0;
+    body.replaceChildren();
+    if(!movements.length) {
+      body.innerHTML='<tr><td colspan="7">Belum ada mutasi jurnal Posted untuk akun ini.</td></tr>';
+    } else {
+      movements.forEach(m=>{
+        running+=signed(m);
+        const row=document.createElement("tr");
+        [m.date,m.number,m.description,formatRupiah(m.debit),formatRupiah(m.credit),(running<0?"(Saldo abnormal) ":"")+formatRupiah(Math.abs(running))].forEach(value=>{
+          const cell=document.createElement("td");
+          cell.textContent=value;
+          row.appendChild(cell);
+        });
+        const actionCell=document.createElement("td");
+        const button=document.createElement("button");
+        button.type="button";
+        button.className="journal-detail-button";
+        button.textContent="Lihat Jurnal";
+        button.disabled=!m.journalId;
+        button.addEventListener("click",()=>openJournalDetail(m.journalId));
+        actionCell.appendChild(button);
+        row.appendChild(actionCell);
+        body.appendChild(row);
+      });
+    }
+    debitEl.textContent=formatRupiah(totalDebit);
+    creditEl.textContent=formatRupiah(totalCredit);
+    closingEl.textContent=(running<0?"(Saldo abnormal) ":"")+formatRupiah(Math.abs(running));
+    message.textContent=`${movements.length} mutasi ditemukan sampai ${endDate}. Klik "Lihat Jurnal" untuk membuka rincian debit dan kredit.`;
+  } catch(error) {
+    console.error("Rincian akun Neraca error:",error);
+    body.innerHTML=`<tr><td colspan="7">${escapeHTML(error.message||"Gagal memuat rincian akun.")}</td></tr>`;
+    message.textContent="Gagal memuat rincian akun: "+(error.message||"Kesalahan tidak diketahui");
+    debitEl.textContent="-";
+    creditEl.textContent="-";
+    closingEl.textContent="-";
   }
 }
 
