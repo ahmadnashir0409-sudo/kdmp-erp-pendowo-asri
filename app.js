@@ -1798,7 +1798,7 @@ function setupInvoice() {
      </div>
      <div>
       <label id="invCounterpartyLabel">Nama Pelanggan</label>
-      <input id="invCustomer" required maxlength="150" placeholder="Nama pelanggan atau pemasok">
+      <input id="invCustomer" maxlength="150" placeholder="Opsional — default Pelanggan Umum / Pemasok Umum">
      </div>
      <div>
       <label>Nomor Telepon</label>
@@ -1922,11 +1922,6 @@ function updateInvoiceType() {
   isPurchase?"Alamat Pemasok":"Alamat Pelanggan";
  document.getElementById("invCustomer").placeholder=
   isPurchase?"Nama pemasok":"Nama pelanggan";
- document.querySelectorAll("#invoiceItemRows tr").forEach(row=>{
-  const product=invoiceInventoryProducts.find(item=>item.id===row.querySelector(".inv-product")?.value);
-  if(product) row.querySelector(".inv-price").value=invoicePriceForProduct(product);
- });
- updateInvoiceTotal();
 }
 
 function openInvoiceForm() {
@@ -1939,7 +1934,6 @@ function openInvoiceForm() {
  updateInvoiceType();
  document.getElementById("invoiceFormMessage").textContent="";
  document.getElementById("invoiceItemRows").replaceChildren();
- invoiceInventoryProducts=[];
  addInvoiceItem();
  document.getElementById("invoiceFormPanel").scrollIntoView({behavior:"smooth"});
 }
@@ -1948,59 +1942,22 @@ function closeInvoiceForm() {
  document.getElementById("invoiceFormPanel").style.display="none";
 }
 
-let invoiceInventoryProducts=[];
-
-async function loadInvoiceInventoryProducts(force=false) {
- if(invoiceInventoryProducts.length && !force) return invoiceInventoryProducts;
- const {data,error}=await supabaseClient
-  .from("inventory_products")
-  .select("id,product_code,product_name,unit,current_stock,selling_price,purchase_price,is_active")
-  .eq("is_active",true)
-  .order("product_name",{ascending:true});
- if(error) throw error;
- invoiceInventoryProducts=data||[];
- return invoiceInventoryProducts;
-}
-
-function invoicePriceForProduct(product) {
- const type=document.getElementById("invType").value;
- return Number(type==="pembelian"?product.purchase_price:product.selling_price)||0;
-}
-
-async function addInvoiceItem() {
+function addInvoiceItem() {
  const body=document.getElementById("invoiceItemRows");
  const row=document.createElement("tr");
+
  row.innerHTML=`
-  <td><select class="inv-product" required><option value="">Memuat daftar barang...</option></select></td>
-  <td><input class="inv-quantity" type="number" min="0.01" step="0.01" value="1" required></td>
-  <td><input class="inv-unit" readonly></td>
-  <td><input class="inv-price" type="number" min="0" step="1" readonly></td>
+  <td><input class="inv-description" required placeholder="Nama barang / jasa"></td>
+  <td><input class="inv-quantity" type="number" min="0.01" step="0.01" value="1"></td>
+  <td><input class="inv-unit" value="pcs"></td>
+  <td><input class="inv-price" type="number" min="0" step="1" value="0"></td>
   <td class="inv-line-total">Rp0</td>
   <td><button type="button" class="invoice-action invoice-danger">×</button></td>
  `;
- const select=row.querySelector(".inv-product");
- try {
-  const products=await loadInvoiceInventoryProducts();
-  select.replaceChildren(new Option("-- Pilih barang persediaan --",""));
-  products.forEach(product=>{
-   const option=new Option(
-    `${product.product_name} (${product.current_stock} ${product.unit||"pcs"} tersedia)`,
-    product.id
-   );
-   select.add(option);
-  });
-  if(!products.length) select.replaceChildren(new Option("Belum ada barang aktif di persediaan",""));
- } catch(error) {
-  select.replaceChildren(new Option("Gagal memuat barang persediaan",""));
-  console.error("Gagal memuat barang invoice:",error);
- }
- select.addEventListener("change",()=>{
-  const product=invoiceInventoryProducts.find(item=>item.id===select.value);
-  row.querySelector(".inv-unit").value=product?.unit||"";
-  row.querySelector(".inv-price").value=product?invoicePriceForProduct(product):"";
-  updateInvoiceTotal();
+
+ row.querySelectorAll("input").forEach(input=>{
+  input.addEventListener("input",updateInvoiceTotal);
  });
- row.querySelector(".inv-quantity").addEventListener("input",updateInvoiceTotal);
  row.querySelector("button").addEventListener("click",()=>{
   if(body.children.length<=1){
    alert("Invoice minimal harus memiliki satu barang.");
@@ -2009,25 +1966,24 @@ async function addInvoiceItem() {
   row.remove();
   updateInvoiceTotal();
  });
+
  body.appendChild(row);
  updateInvoiceTotal();
 }
 
 function getInvoiceItems() {
  return [...document.querySelectorAll("#invoiceItemRows tr")].map(row=>{
-  const productId=row.querySelector(".inv-product").value;
-  const product=invoiceInventoryProducts.find(item=>item.id===productId);
+  const description=row.querySelector(".inv-description").value.trim();
   const quantity=Number(row.querySelector(".inv-quantity").value);
-  const unit=product?.unit||"";
+  const unit=row.querySelector(".inv-unit").value.trim()||"pcs";
   const price=Number(row.querySelector(".inv-price").value);
+
   return {
-   product_id:productId||null,
-   description:product?.product_name||"",
+   description,
    quantity,
    unit,
    unit_price:price,
-   line_total:quantity*price,
-   available_stock:Number(product?.current_stock||0)
+   line_total:quantity*price
   };
  });
 }
@@ -2073,7 +2029,8 @@ async function saveInvoice(event) {
  const result=calculateInvoiceTotal();
  const date=document.getElementById("invDate").value;
  const dueDate=document.getElementById("invDueDate").value;
- const counterparty=document.getElementById("invCustomer").value.trim();
+ const enteredCounterparty=document.getElementById("invCustomer").value.trim();
+ const counterparty=enteredCounterparty||(type==="pembelian"?"Pemasok Umum":"Pelanggan Umum");
 
  if(!["penjualan","pembelian"].includes(type)){
   message.textContent="Pilih jenis invoice yang benar.";
@@ -2081,42 +2038,20 @@ async function saveInvoice(event) {
   return;
  }
 
- if(!counterparty || !date || (dueDate && dueDate<date)){
-  message.textContent="Periksa nama pelanggan/pemasok dan tanggal invoice.";
+ if(!date || (dueDate && dueDate<date)){
+  message.textContent="Periksa tanggal invoice dan tanggal jatuh tempo.";
   message.className="invoice-message erp-error";
   return;
  }
 
  if(!result.items.length || result.items.some(item=>
-  !item.product_id || !item.description || !Number.isFinite(item.quantity) ||
+  !item.description || !Number.isFinite(item.quantity) ||
   item.quantity<=0 || !Number.isFinite(item.unit_price) ||
   item.unit_price<0
  )){
-  message.textContent="Pilih barang dari master Persediaan Barang dan periksa jumlahnya.";
+  message.textContent="Periksa rincian barang dan harga.";
   message.className="invoice-message erp-error";
   return;
- }
-
- if(type==="penjualan"){
-  const grouped=new Map();
-  result.items.forEach(item=>grouped.set(item.product_id,(grouped.get(item.product_id)||0)+item.quantity));
-  const {data:latestProducts,error:stockError}=await supabaseClient
-   .from("inventory_products")
-   .select("id,product_name,unit,current_stock")
-   .in("id",[...grouped.keys()]);
-  if(stockError){
-   message.textContent="Gagal memeriksa stok terbaru: "+stockError.message;
-   message.className="invoice-message erp-error";
-   return;
-  }
-  for(const [productId,quantity] of grouped){
-   const product=(latestProducts||[]).find(item=>item.id===productId);
-   if(!product || quantity>Number(product.current_stock||0)){
-    message.textContent=`Stok ${product?.product_name||"barang"} tidak cukup. Tersedia ${Number(product?.current_stock||0)} ${product?.unit||""}.`;
-    message.className="invoice-message erp-error";
-    return;
-   }
-  }
  }
 
  if(result.discount<0 || result.tax<0 || result.discount>result.subtotal){
@@ -2163,12 +2098,7 @@ async function saveInvoice(event) {
 
   const itemRows=result.items.map(item=>({
    invoice_id:invoice.id,
-   product_id:item.product_id,
-   description:item.description,
-   quantity:item.quantity,
-   unit:item.unit,
-   unit_price:item.unit_price,
-   line_total:item.line_total
+   ...item
   }));
 
   const {error:itemError}=await supabaseClient
