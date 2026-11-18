@@ -3264,13 +3264,6 @@ async function saveTokoSale(){
       return {...item,product};
     });
 
-    // Pemeriksaan awal untuk memberi pesan stok yang mudah dipahami.
-    for(const {product,quantity} of grouped.values()){
-      const available=Number(product.current_stock||0);
-      if(quantity>available)
-        throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
-    }
-
     saleNumber=makeTokoSaleNumber();
     const sale={
       sale_number:saleNumber,
@@ -3288,6 +3281,15 @@ async function saveTokoSale(){
       .from("store_sales").insert(sale).select().single();
     if(saleError)throw saleError;
     createdSaleId=createdSale.id;
+
+    // Validasi stok dilakukan setelah header transaksi tercatat.
+    // Jika stok tidak cukup, blok catch akan mengubah status menjadi "gagal"
+    // sehingga percobaan tersebut tercatat untuk audit tetapi tidak masuk omzet.
+    for(const {product,quantity} of grouped.values()){
+      const available=Number(product.current_stock||0);
+      if(quantity>available)
+        throw new Error('Stok '+product.product_name+' tidak cukup. Tersedia '+available+' '+product.unit+'.');
+    }
 
     const detailItems=items.map(item=>{
       const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
