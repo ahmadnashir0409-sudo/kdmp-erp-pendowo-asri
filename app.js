@@ -1690,6 +1690,7 @@ checkLoginSession();
 // =============================================
 
 let invoiceRows = [];
+let invoiceProducts = [];
 
 const invoiceStyle = document.createElement("style");
 invoiceStyle.textContent = `
@@ -1710,6 +1711,7 @@ invoiceStyle.textContent = `
 .invoice-items{width:100%;border-collapse:collapse;min-width:650px}
 .invoice-items th,.invoice-items td{padding:10px;border-bottom:1px solid #eee;text-align:left}
 .invoice-items input{min-width:80px}
+.invoice-items select{min-width:230px}.inv-stock-info{display:block;color:#687386;font-size:11px;margin-top:5px}.inv-stock-info.low{color:#b42318;font-weight:bold}
 .invoice-total{text-align:right;margin-top:16px;font-weight:bold;font-size:18px}
 .invoice-action{border:0;border-radius:7px;padding:9px 13px;cursor:pointer;font-weight:bold}
 .invoice-primary{background:#a71925;color:#fff}
@@ -1917,14 +1919,21 @@ function updateInvoiceType() {
  const type=document.getElementById("invType").value;
  const isPurchase=type==="pembelian";
  document.getElementById("invCounterpartyLabel").textContent=
-  isPurchase?"Nama Pemasok":"Nama Pelanggan";
+  isPurchase?"Nama Pemasok (opsional)":"Nama Pelanggan (opsional)";
  document.getElementById("invAddressLabel").textContent=
   isPurchase?"Alamat Pemasok":"Alamat Pelanggan";
  document.getElementById("invCustomer").placeholder=
-  isPurchase?"Nama pemasok":"Nama pelanggan";
+  isPurchase?"Opsional - kosongkan untuk Pemasok Umum":"Opsional - kosongkan untuk Pelanggan Umum";
+ document.querySelectorAll("#invoiceItemRows tr").forEach(row=>{
+  const productId=row.querySelector(".inv-product")?.value;
+  const product=invoiceProducts.find(item=>item.id===productId);
+  if(product)row.querySelector(".inv-price").value=
+   Number(isPurchase?product.purchase_price:product.selling_price)||0;
+ });
+ updateInvoiceTotal();
 }
 
-function openInvoiceForm() {
+async function openInvoiceForm() {
  const form=document.getElementById("invoiceForm");
  form.reset();
  document.getElementById("invoiceFormPanel").style.display="block";
@@ -1934,7 +1943,17 @@ function openInvoiceForm() {
  updateInvoiceType();
  document.getElementById("invoiceFormMessage").textContent="";
  document.getElementById("invoiceItemRows").replaceChildren();
- addInvoiceItem();
+ const formMessage=document.getElementById("invoiceFormMessage");
+ formMessage.textContent="Memuat daftar barang dari Persediaan...";
+ try{
+  await loadInvoiceProducts();
+  addInvoiceItem();
+  formMessage.textContent="Pilih barang dari master Persediaan Barang.";
+  formMessage.className="invoice-message";
+ }catch(error){
+  formMessage.textContent="Gagal memuat persediaan: "+error.message;
+  formMessage.className="invoice-message erp-error";
+ }
  document.getElementById("invoiceFormPanel").scrollIntoView({behavior:"smooth"});
 }
 
@@ -1942,48 +1961,91 @@ function closeInvoiceForm() {
  document.getElementById("invoiceFormPanel").style.display="none";
 }
 
+async function loadInvoiceProducts() {
+ const {data,error}=await supabaseClient
+  .from("inventory_products")
+  .select("id,product_code,product_name,unit,current_stock,purchase_price,selling_price,is_active")
+  .eq("is_active",true)
+  .order("product_name",{ascending:true});
+ if(error)throw error;
+ invoiceProducts=data||[];
+}
+
+function invoiceProductOptions(selectedId="") {
+ return '<option value="">Pilih barang dari Persediaan</option>'+invoiceProducts.map(product=>{
+  const stock=Number(product.current_stock||0);
+  return `<option value="${escapeHTML(product.id)}" ${product.id===selectedId?"selected":""}>${escapeHTML(product.product_code||"")} - ${escapeHTML(product.product_name)} (Stok: ${stock} ${escapeHTML(product.unit||"")})</option>`;
+ }).join("");
+}
+
+function setInvoiceRowProduct(row) {
+ const productId=row.querySelector(".inv-product").value;
+ const product=invoiceProducts.find(item=>item.id===productId);
+ const type=document.getElementById("invType").value;
+ const unitInput=row.querySelector(".inv-unit");
+ const priceInput=row.querySelector(".inv-price");
+ const stockInfo=row.querySelector(".inv-stock-info");
+ const nameInput=row.querySelector(".inv-description");
+ if(!product){
+  nameInput.value="";
+  unitInput.value="";
+  priceInput.value=0;
+  stockInfo.textContent="Pilih barang dari master Persediaan Barang.";
+  stockInfo.className="inv-stock-info";
+  updateInvoiceTotal();
+  return;
+ }
+ nameInput.value=product.product_name;
+ unitInput.value=product.unit||"pcs";
+ priceInput.value=Number(type==="pembelian"?product.purchase_price:product.selling_price)||0;
+ const stock=Number(product.current_stock||0);
+ stockInfo.textContent="Kode: "+(product.product_code||"-")+" | Stok tersedia: "+stock+" "+(product.unit||"");
+ stockInfo.className="inv-stock-info"+(stock<=0?" low":"");
+ updateInvoiceTotal();
+}
+
 function addInvoiceItem() {
  const body=document.getElementById("invoiceItemRows");
  const row=document.createElement("tr");
-
  row.innerHTML=`
-  <td><input class="inv-description" required placeholder="Nama barang / jasa"></td>
+  <td>
+   <select class="inv-product" required>${invoiceProductOptions()}</select>
+   <input class="inv-description" type="hidden" required>
+   <small class="inv-stock-info">Pilih barang dari master Persediaan Barang.</small>
+  </td>
   <td><input class="inv-quantity" type="number" min="0.01" step="0.01" value="1"></td>
-  <td><input class="inv-unit" value="pcs"></td>
+  <td><input class="inv-unit" readonly></td>
   <td><input class="inv-price" type="number" min="0" step="1" value="0"></td>
   <td class="inv-line-total">Rp0</td>
   <td><button type="button" class="invoice-action invoice-danger">×</button></td>
  `;
-
- row.querySelectorAll("input").forEach(input=>{
-  input.addEventListener("input",updateInvoiceTotal);
- });
+ row.querySelector(".inv-product").addEventListener("change",()=>setInvoiceRowProduct(row));
+ row.querySelectorAll(".inv-quantity,.inv-price").forEach(input=>input.addEventListener("input",updateInvoiceTotal));
  row.querySelector("button").addEventListener("click",()=>{
-  if(body.children.length<=1){
-   alert("Invoice minimal harus memiliki satu barang.");
-   return;
-  }
+  if(body.children.length<=1){alert("Invoice minimal harus memiliki satu barang.");return;}
   row.remove();
   updateInvoiceTotal();
  });
-
  body.appendChild(row);
  updateInvoiceTotal();
 }
 
 function getInvoiceItems() {
  return [...document.querySelectorAll("#invoiceItemRows tr")].map(row=>{
-  const description=row.querySelector(".inv-description").value.trim();
+  const productId=row.querySelector(".inv-product").value;
+  const product=invoiceProducts.find(item=>item.id===productId);
+  const description=product?.product_name||"";
   const quantity=Number(row.querySelector(".inv-quantity").value);
-  const unit=row.querySelector(".inv-unit").value.trim()||"pcs";
+  const unit=product?.unit||"pcs";
   const price=Number(row.querySelector(".inv-price").value);
-
   return {
+   product_id:productId,
    description,
    quantity,
    unit,
    unit_price:price,
-   line_total:quantity*price
+   line_total:quantity*price,
+   available_stock:Number(product?.current_stock||0)
   };
  });
 }
@@ -2052,6 +2114,25 @@ async function saveInvoice(event) {
   message.textContent="Periksa rincian barang dan harga.";
   message.className="invoice-message erp-error";
   return;
+ }
+
+ if(result.items.some(item=>!item.product_id)){
+  message.textContent="Pilih barang dari daftar Persediaan Barang untuk setiap baris invoice.";
+  message.className="invoice-message erp-error";
+  return;
+ }
+
+ if(type==="penjualan"){
+  const grouped=new Map();
+  result.items.forEach(item=>grouped.set(item.product_id,(grouped.get(item.product_id)||0)+item.quantity));
+  for(const [productId,quantity] of grouped){
+   const product=invoiceProducts.find(p=>p.id===productId);
+   if(!product){message.textContent="Barang tidak ditemukan di Persediaan.";message.className="invoice-message erp-error";return;}
+   if(quantity>Number(product.current_stock||0)){
+    message.textContent="Stok "+product.product_name+" tidak cukup. Tersedia "+Number(product.current_stock||0)+" "+(product.unit||"")+".";
+    message.className="invoice-message erp-error";return;
+   }
+  }
  }
 
  if(result.discount<0 || result.tax<0 || result.discount>result.subtotal){
