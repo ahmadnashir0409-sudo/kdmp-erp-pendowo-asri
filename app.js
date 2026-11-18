@@ -8003,3 +8003,233 @@ window.showPage=function(page,button){
 window.calculateBankReconciliation = calculateBankReconciliation;
 window.saveBankMutation = saveBankMutation;
 window.saveBankReconciliation = saveBankReconciliation;
+
+
+// ======================================================
+// PENYEMPURNAAN LAPORAN KEUANGAN: LABA RUGI, NERACA, ARUS KAS
+// Menggantikan tampilan laporan lama tanpa mengubah modul lain.
+// ======================================================
+function setupReports() {
+  const page=document.getElementById("modulePage");
+  if(!page||document.getElementById("reportContent"))return;
+  const section=document.createElement("section");
+  section.id="reportContent";
+  section.className="erp-content";
+  section.innerHTML=`
+    <div class="report-filter">
+      <div class="erp-field"><label>Dari Tanggal</label><input type="date" id="reportStart"></div>
+      <div class="erp-field"><label>Sampai Tanggal</label><input type="date" id="reportEnd"></div>
+      <button class="erp-button" id="reportSearchButton">Tampilkan Laporan</button>
+    </div>
+    <div class="financial-tabs report-tabs">
+      <button type="button" class="active" data-report-tab="income">Laba Rugi</button>
+      <button type="button" data-report-tab="balance">Neraca</button>
+      <button type="button" data-report-tab="cashflow">Arus Kas</button>
+    </div>
+    <div id="reportMessage" class="erp-message erp-muted">Pilih periode untuk melihat laporan.</div>
+    <div id="reportIncomePanel">
+      <div class="report-summary">
+        <div class="report-card"><small>Total Pendapatan</small><strong id="reportIncome">Rp0</strong></div>
+        <div class="report-card"><small>Total Beban</small><strong id="reportExpense">Rp0</strong></div>
+        <div class="report-card profit" id="reportProfitCard"><small id="reportProfitLabel">Surplus / Defisit</small><strong id="reportProfit">Rp0</strong></div>
+      </div>
+      <h3 class="report-section-title">Rincian Pendapatan</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Jumlah Pendapatan</th></tr></thead><tbody id="reportIncomeBody"></tbody><tfoot id="reportIncomeFoot"></tfoot></table></div>
+      <h3 class="report-section-title">Rincian Beban</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Jumlah Beban</th></tr></thead><tbody id="reportExpenseBody"></tbody><tfoot id="reportExpenseFoot"></tfoot></table></div>
+    </div>
+    <div id="reportBalancePanel" style="display:none">
+      <h3 class="report-section-title">Neraca per <span id="reportBalanceDate">-</span></h3>
+      <div class="report-summary">
+        <div class="report-card"><small>Total Aset</small><strong id="balanceAssets">Rp0</strong></div>
+        <div class="report-card"><small>Total Kewajiban</small><strong id="balanceLiabilities">Rp0</strong></div>
+        <div class="report-card"><small>Total Ekuitas</small><strong id="balanceEquity">Rp0</strong></div>
+      </div>
+      <h3 class="report-section-title">Aset</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Saldo</th></tr></thead><tbody id="balanceAssetBody"></tbody><tfoot id="balanceAssetFoot"></tfoot></table></div>
+      <h3 class="report-section-title">Kewajiban</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Saldo</th></tr></thead><tbody id="balanceLiabilityBody"></tbody><tfoot id="balanceLiabilityFoot"></tfoot></table></div>
+      <h3 class="report-section-title">Ekuitas</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Saldo</th></tr></thead><tbody id="balanceEquityBody"></tbody><tfoot id="balanceEquityFoot"></tfoot></table></div>
+      <div class="financial-note" id="balanceCheck" style="margin-top:16px"></div>
+    </div>
+    <div id="reportCashflowPanel" style="display:none">
+      <h3 class="report-section-title">Laporan Arus Kas</h3>
+      <div class="report-summary">
+        <div class="report-card"><small>Saldo Kas Awal Periode</small><strong id="cashOpening">Rp0</strong></div>
+        <div class="report-card"><small>Kenaikan / Penurunan Kas</small><strong id="cashNetChange">Rp0</strong></div>
+        <div class="report-card"><small>Saldo Kas Akhir Periode</small><strong id="cashClosing">Rp0</strong></div>
+      </div>
+      <h3 class="report-section-title">Aktivitas Operasi</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Uraian</th><th>Jumlah</th></tr></thead><tbody id="cashOperatingBody"></tbody><tfoot id="cashOperatingFoot"></tfoot></table></div>
+      <h3 class="report-section-title">Aktivitas Investasi</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Uraian</th><th>Jumlah</th></tr></thead><tbody id="cashInvestingBody"></tbody><tfoot id="cashInvestingFoot"></tfoot></table></div>
+      <h3 class="report-section-title">Aktivitas Pendanaan</h3>
+      <div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Uraian</th><th>Jumlah</th></tr></thead><tbody id="cashFinancingBody"></tbody><tfoot id="cashFinancingFoot"></tfoot></table></div>
+      <div class="financial-note">Arus kas dihitung dari jurnal berstatus Posted pada akun yang namanya mengandung “Kas” atau “Bank”. Pengelompokan aktivitas mengikuti kategori akun lawan pada jurnal.</div>
+    </div>`;
+  page.appendChild(section);
+  document.getElementById("reportStart").value=firstDayOfMonth();
+  document.getElementById("reportEnd").value=todayDate();
+  document.getElementById("reportSearchButton").addEventListener("click",loadIncomeStatement);
+  section.querySelectorAll("[data-report-tab]").forEach(button=>{
+    button.addEventListener("click",()=>{
+      section.querySelectorAll("[data-report-tab]").forEach(b=>b.classList.toggle("active",b===button));
+      document.getElementById("reportIncomePanel").style.display=button.dataset.reportTab==="income"?"block":"none";
+      document.getElementById("reportBalancePanel").style.display=button.dataset.reportTab==="balance"?"block":"none";
+      document.getElementById("reportCashflowPanel").style.display=button.dataset.reportTab==="cashflow"?"block":"none";
+    });
+  });
+}
+
+async function loadIncomeStatement() {
+  const start=document.getElementById("reportStart")?.value;
+  const end=document.getElementById("reportEnd")?.value;
+  const button=document.getElementById("reportSearchButton");
+  const message=document.getElementById("reportMessage");
+  if(!start||!end||start>end){
+    message.textContent="Periksa tanggal laporan. Tanggal awal tidak boleh melewati tanggal akhir.";
+    message.className="erp-message erp-error";return;
+  }
+  button.disabled=true;button.textContent="Memuat...";
+  message.textContent="Mengambil jurnal Posted untuk menyusun laporan...";
+  message.className="erp-message erp-muted";
+  try{
+    const {data:accounts,error:accountError}=await supabaseClient.from("accounts")
+      .select("id,kode_akun,nama_akun,kategori,saldo_normal,aktif").eq("aktif",true).order("kode_akun");
+    if(accountError)throw accountError;
+    const allLines=[];let from=0;const pageSize=500;
+    while(true){
+      const {data,error}=await supabaseClient.from("journal_lines")
+        .select("account_id,journal_id,debit,kredit,journal_entries!inner(tanggal,status,nomor_jurnal,keterangan)")
+        .eq("journal_entries.status","posted").lte("journal_entries.tanggal",end)
+        .range(from,from+pageSize-1);
+      if(error)throw error;
+      allLines.push(...(data||[]));
+      if(!data||data.length<pageSize)break;
+      from+=pageSize;
+    }
+    const accountMap=new Map((accounts||[]).map(a=>[a.id,a]));
+    const balances=new Map((accounts||[]).map(a=>[a.id,0]));
+    allLines.forEach(line=>{
+      const a=accountMap.get(line.account_id);if(!a)return;
+      const debit=Number(line.debit||0),credit=Number(line.kredit||0);
+      const signed=a.saldo_normal==="kredit"?credit-debit:debit-credit;
+      balances.set(a.id,(balances.get(a.id)||0)+signed);
+    });
+    const periodLines=allLines.filter(line=>line.journal_entries.tanggal>=start&&line.journal_entries.tanggal<=end);
+    const totalsFor=(category,lines)=>{
+      const result=new Map((accounts||[]).filter(a=>a.kategori===category).map(a=>[a.id,0]));
+      lines.forEach(line=>{
+        const a=accountMap.get(line.account_id);if(!a||a.kategori!==category)return;
+        const amount=category==="pendapatan"
+          ?Number(line.kredit||0)-Number(line.debit||0)
+          :Number(line.debit||0)-Number(line.kredit||0);
+        result.set(a.id,(result.get(a.id)||0)+amount);
+      });
+      return (accounts||[]).filter(a=>a.kategori===category).map(a=>({...a,total:result.get(a.id)||0}));
+    };
+    const incomeRows=totalsFor("pendapatan",periodLines),expenseRows=totalsFor("beban",periodLines);
+    const totalIncome=incomeRows.reduce((s,a)=>s+a.total,0),totalExpense=expenseRows.reduce((s,a)=>s+a.total,0);
+    const profit=totalIncome-totalExpense;
+    document.getElementById("reportIncome").textContent=formatRupiah(totalIncome);
+    document.getElementById("reportExpense").textContent=formatRupiah(totalExpense);
+    document.getElementById("reportProfit").textContent=formatRupiah(Math.abs(profit));
+    document.getElementById("reportProfitCard").className="report-card "+(profit>=0?"profit":"loss");
+    document.getElementById("reportProfitLabel").textContent=profit>=0?"Surplus Periode":"Defisit Periode";
+    const renderAccountRows=(bodyId,footId,rows,total,label)=>{
+      const body=document.getElementById(bodyId);
+      const visible=rows.filter(a=>Math.abs(a.total)>0.0001);
+      body.innerHTML=visible.length?visible.map(a=>`<tr><td>${escapeHTML(a.kode_akun)}</td><td>${escapeHTML(a.nama_akun)}</td><td>${formatRupiah(a.total)}</td></tr>`).join(""):`<tr><td colspan="3" class="report-empty">Belum ada data.</td></tr>`;
+      document.getElementById(footId).innerHTML=`<tr class="report-total-row"><td colspan="2">${label}</td><td>${formatRupiah(total)}</td></tr>`;
+    };
+    renderAccountRows("reportIncomeBody","reportIncomeFoot",incomeRows,totalIncome,"TOTAL PENDAPATAN");
+    renderAccountRows("reportExpenseBody","reportExpenseFoot",expenseRows,totalExpense,"TOTAL BEBAN");
+
+    // NERACA: saldo seluruh jurnal sampai tanggal akhir.
+    const categoryRows=category=>(accounts||[]).filter(a=>a.kategori===category).map(a=>({
+      ...a,total:balances.get(a.id)||0
+    })).filter(a=>Math.abs(a.total)>0.0001);
+    const assetRows=categoryRows("aset"),liabilityRows=categoryRows("kewajiban"),equityRows=categoryRows("ekuitas");
+    const assetTotal=assetRows.reduce((s,a)=>s+a.total,0);
+    const liabilityTotal=liabilityRows.reduce((s,a)=>s+a.total,0);
+    const equityBase=equityRows.reduce((s,a)=>s+a.total,0);
+    const cumulativeIncome=totalsFor("pendapatan",allLines).reduce((s,a)=>s+a.total,0);
+    const cumulativeExpense=totalsFor("beban",allLines).reduce((s,a)=>s+a.total,0);
+    const retainedSurplus=cumulativeIncome-cumulativeExpense;
+    const equityTotal=equityBase+retainedSurplus;
+    document.getElementById("reportBalanceDate").textContent=end;
+    document.getElementById("balanceAssets").textContent=formatRupiah(assetTotal);
+    document.getElementById("balanceLiabilities").textContent=formatRupiah(liabilityTotal);
+    document.getElementById("balanceEquity").textContent=formatRupiah(equityTotal);
+    const renderBalance=(bodyId,footId,rows,total,label)=>{
+      document.getElementById(bodyId).innerHTML=rows.length?rows.map(a=>`<tr><td>${escapeHTML(a.kode_akun)}</td><td>${escapeHTML(a.nama_akun)}</td><td>${formatRupiah(a.total)}</td></tr>`).join(""):`<tr><td colspan="3" class="report-empty">Belum ada saldo.</td></tr>`;
+      document.getElementById(footId).innerHTML=`<tr class="report-total-row"><td colspan="2">${label}</td><td>${formatRupiah(total)}</td></tr>`;
+    };
+    renderBalance("balanceAssetBody","balanceAssetFoot",assetRows,assetTotal,"TOTAL ASET");
+    renderBalance("balanceLiabilityBody","balanceLiabilityFoot",liabilityRows,liabilityTotal,"TOTAL KEWAJIBAN");
+    const equityDisplay=[...equityRows];
+    if(Math.abs(retainedSurplus)>0.0001)equityDisplay.push({kode_akun:"—",nama_akun:"Surplus / Defisit Berjalan (akumulasi)",total:retainedSurplus});
+    renderBalance("balanceEquityBody","balanceEquityFoot",equityDisplay,equityTotal,"TOTAL EKUITAS");
+    const balanceDifference=assetTotal-liabilityTotal-equityTotal;
+    document.getElementById("balanceCheck").textContent=Math.abs(balanceDifference)<0.01
+      ?"Neraca seimbang: total aset sama dengan total kewajiban dan ekuitas."
+      :"Perhatian: neraca belum seimbang. Selisih "+formatRupiah(balanceDifference)+". Periksa saldo awal, jurnal, dan klasifikasi akun.";
+
+    // ARUS KAS: hanya akun Kas/Bank, dikelompokkan menurut kategori akun lawan.
+    const cashAccounts=(accounts||[]).filter(a=>a.kategori==="aset"&&(/kas|bank/i.test(a.nama_akun||"")||["1101","1102"].includes(String(a.kode_akun))));
+    const cashIds=new Set(cashAccounts.map(a=>a.id));
+    const cashOpening=allLines.filter(l=>l.journal_entries.tanggal<start&&cashIds.has(l.account_id))
+      .reduce((s,l)=>s+Number(l.debit||0)-Number(l.kredit||0),0);
+    const cashPeriod=periodLines.filter(l=>cashIds.has(l.account_id));
+    const cashNet=cashPeriod.reduce((s,l)=>s+Number(l.debit||0)-Number(l.kredit||0),0);
+    const activity={operasi:0,investasi:0,pendanaan:0};
+    const journalGroups=new Map();
+    periodLines.forEach(l=>{if(!journalGroups.has(l.journal_id))journalGroups.set(l.journal_id,[]);journalGroups.get(l.journal_id).push(l);});
+    for(const lines of journalGroups.values()){
+      const cashLines=lines.filter(l=>cashIds.has(l.account_id));
+      if(!cashLines.length)continue;
+      const otherLines=lines.filter(l=>!cashIds.has(l.account_id));
+      for(const cashLine of cashLines){
+        const delta=Number(cashLine.debit||0)-Number(cashLine.kredit||0);
+        if(Math.abs(delta)<0.0001)continue;
+        let target="operasi";
+        for(const other of otherLines){
+          const oa=accountMap.get(other.account_id);if(!oa)continue;
+          if(oa.kategori==="aset")target="investasi";
+          else if(oa.kategori==="kewajiban"||oa.kategori==="ekuitas")target="pendanaan";
+          else if(oa.kategori==="pendapatan"||oa.kategori==="beban")target="operasi";
+        }
+        activity[target]+=delta;
+      }
+    }
+    document.getElementById("cashOpening").textContent=formatRupiah(cashOpening);
+    document.getElementById("cashNetChange").textContent=formatRupiah(cashNet);
+    document.getElementById("cashClosing").textContent=formatRupiah(cashOpening+cashNet);
+    const cashRows=[
+      ["operasi","Penerimaan / (Pengeluaran) Aktivitas Operasi"],
+      ["investasi","Penerimaan / (Pengeluaran) Aktivitas Investasi"],
+      ["pendanaan","Penerimaan / (Pengeluaran) Aktivitas Pendanaan"]
+    ];
+    cashRows.forEach(([key,label])=>{
+      const body=document.getElementById("cash"+key.charAt(0).toUpperCase()+key.slice(1)+"Body");
+      const foot=document.getElementById("cash"+key.charAt(0).toUpperCase()+key.slice(1)+"Foot");
+      body.innerHTML=`<tr><td>${label}</td><td>${formatRupiah(activity[key])}</td></tr>`;
+      foot.innerHTML=`<tr class="report-total-row"><td>Total ${key}</td><td>${formatRupiah(activity[key])}</td></tr>`;
+    });
+    const activityTotal=activity.operasi+activity.investasi+activity.pendanaan;
+    if(Math.abs(activityTotal-cashNet)>0.01){
+      document.getElementById("reportCashflowPanel").querySelector(".financial-note").textContent=
+        "Catatan: terdapat jurnal kas yang pengelompokan aktivitasnya belum sepenuhnya teridentifikasi. Perubahan saldo kas tetap dihitung dari seluruh jurnal Posted pada akun Kas/Bank.";
+    }
+    message.textContent=`Laporan berhasil dimuat untuk periode ${start} sampai ${end}. Neraca dihitung per ${end}.`;
+    message.className="erp-message erp-success";
+  }catch(error){
+    console.error("Laporan keuangan error:",error);
+    message.textContent="Gagal memuat laporan: "+(error.message||"Kesalahan tidak diketahui");
+    message.className="erp-message erp-error";
+  }finally{
+    button.disabled=false;button.textContent="Tampilkan Laporan";
+  }
+}
+
