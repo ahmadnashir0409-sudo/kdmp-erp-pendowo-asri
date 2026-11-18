@@ -80,6 +80,18 @@ style.textContent = `
 .report-section-title{margin:25px 0 12px;font-size:16px}
 .report-total-row{font-weight:bold;background:#fafafa}
 .report-empty{padding:18px;text-align:center;color:#777}
+.journal-detail-button{border:1px solid #a71925;background:#fff;color:#a71925;padding:7px 10px;border-radius:7px;cursor:pointer;font-weight:600;font-size:12px}
+.journal-detail-button:hover{background:#fff4f4}
+.journal-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px}
+.journal-detail-dialog{width:min(850px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:14px;padding:22px;box-shadow:0 15px 50px rgba(0,0,0,.2)}
+.journal-detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+.journal-detail-close{border:0;background:#eee;border-radius:8px;padding:9px 13px;cursor:pointer}
+.journal-detail-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.journal-detail-meta div{background:#fafafa;border:1px solid #eee;border-radius:8px;padding:11px;font-size:13px}
+.journal-detail-meta small{display:block;color:#777;margin-bottom:5px}
+.journal-detail-total{display:flex;justify-content:flex-end;gap:22px;flex-wrap:wrap;font-weight:700;margin-top:15px}
+@media(max-width:600px){.journal-detail-dialog{padding:15px}.journal-detail-meta{grid-template-columns:1fr}}
+
 @media(max-width:700px){
  .erp-grid{grid-template-columns:1fr}
  .journal-line{grid-template-columns:1fr 1fr;border:1px solid #eee;border-radius:9px;padding:12px;margin-bottom:12px}
@@ -679,7 +691,7 @@ function setupJournal() {
       <div id="journalBalance" class="journal-balance"></div><div id="journalMessage" class="erp-message"></div>
       <div class="erp-actions"><button type="submit" class="erp-button" id="journalSaveButton">Simpan dan Posting</button><button type="button" class="erp-button secondary" id="journalCancelButton">Batal</button></div>
     </form></div>
-    <h3>Riwayat Jurnal</h3><div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Nomor Jurnal</th><th>Tanggal</th><th>Keterangan</th><th>Status</th><th>Total Debit</th><th>Total Kredit</th></tr></thead><tbody id="journalHistoryBody"><tr><td colspan="6">Memuat riwayat jurnal...</td></tr></tbody></table></div>`;
+    <h3>Riwayat Jurnal</h3><div class="erp-table-wrap"><table class="erp-table"><thead><tr><th>Nomor Jurnal</th><th>Tanggal</th><th>Keterangan</th><th>Status</th><th>Total Debit</th><th>Total Kredit</th><th>Aksi</th></tr></thead><tbody id="journalHistoryBody"><tr><td colspan="7">Memuat riwayat jurnal...</td></tr></tbody></table></div>`;
   page.appendChild(section);
   document.getElementById("journalNewButton").addEventListener("click",openJournalForm);
   document.getElementById("journalAddLine").addEventListener("click",addJournalLine);
@@ -753,13 +765,13 @@ async function saveJournal(event) {
 
 async function loadJournalHistory() {
   const body=document.getElementById("journalHistoryBody");if(!body)return;
-  body.innerHTML='<tr><td colspan="6">Memuat riwayat jurnal...</td></tr>';
+  body.innerHTML='<tr><td colspan="7">Memuat riwayat jurnal...</td></tr>';
   const {data:entries,error}=await supabaseClient.from("journal_entries").select("id,nomor_jurnal,tanggal,keterangan,status").order("tanggal",{ascending:false}).limit(50);
-  if(error){body.innerHTML=`<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`;return;}
-  if(!entries?.length){body.innerHTML='<tr><td colspan="6">Belum ada jurnal.</td></tr>';return;}
+  if(error){body.innerHTML=`<tr><td colspan="7">${escapeHTML(error.message)}</td></tr>`;return;}
+  if(!entries?.length){body.innerHTML='<tr><td colspan="7">Belum ada jurnal.</td></tr>';return;}
   const ids=entries.map(e=>e.id);
   const {data:lines,error:lineError}=await supabaseClient.from("journal_lines").select("journal_id,debit,kredit").in("journal_id",ids);
-  if(lineError){body.innerHTML=`<tr><td colspan="6">${escapeHTML(lineError.message)}</td></tr>`;return;}
+  if(lineError){body.innerHTML=`<tr><td colspan="7">${escapeHTML(lineError.message)}</td></tr>`;return;}
   body.replaceChildren();
   entries.forEach(entry=>{
     const related=(lines||[]).filter(l=>l.journal_id===entry.id),debit=related.reduce((s,l)=>s+Number(l.debit),0),credit=related.reduce((s,l)=>s+Number(l.kredit),0),row=document.createElement("tr");
@@ -767,9 +779,89 @@ async function loadJournalHistory() {
       const cell=document.createElement("td");cell.textContent=value;
       if(index===3&&entry.status==="posted"){const badge=document.createElement("span");badge.className="erp-status";badge.textContent="Posted";cell.replaceChildren(badge);}
       row.appendChild(cell);
-    });body.appendChild(row);
+    });
+    const actionCell=document.createElement("td");
+    const detailButton=document.createElement("button");
+    detailButton.type="button";
+    detailButton.className="journal-detail-button";
+    detailButton.textContent="Lihat Detail";
+    detailButton.addEventListener("click",()=>openJournalDetail(entry.id));
+    actionCell.appendChild(detailButton);
+    row.appendChild(actionCell);
+    body.appendChild(row);
   });
 }
+
+// ==========================================
+// DETAIL JURNAL (READ ONLY)
+// ==========================================
+async function openJournalDetail(journalId) {
+  if (!journalId) { alert("ID jurnal tidak ditemukan."); return; }
+  let overlay=document.getElementById("journalDetailOverlay");
+  if (!overlay) {
+    overlay=document.createElement("div");
+    overlay.id="journalDetailOverlay";
+    overlay.className="journal-detail-overlay";
+    overlay.innerHTML=`
+      <div class="journal-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="journalDetailTitle">
+        <div class="journal-detail-head">
+          <div><h3 id="journalDetailTitle" style="margin:0 0 5px">Detail Jurnal</h3><div class="erp-muted" id="journalDetailMessage">Memuat rincian jurnal...</div></div>
+          <button type="button" class="journal-detail-close" id="journalDetailClose">Tutup ✕</button>
+        </div>
+        <div id="journalDetailContent"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click",event=>{ if(event.target===overlay)overlay.style.display="none"; });
+    overlay.querySelector("#journalDetailClose").addEventListener("click",()=>overlay.style.display="none");
+  }
+  overlay.style.display="flex";
+  const message=document.getElementById("journalDetailMessage");
+  const content=document.getElementById("journalDetailContent");
+  message.textContent="Memuat rincian jurnal...";
+  content.innerHTML="";
+  try {
+    const [{data:entry,error:entryError},{data:lines,error:lineError}]=await Promise.all([
+      supabaseClient.from("journal_entries").select("id,nomor_jurnal,tanggal,keterangan,status").eq("id",journalId).single(),
+      supabaseClient.from("journal_lines").select("account_id,keterangan,debit,kredit").eq("journal_id",journalId)
+    ]);
+    if(entryError)throw entryError;
+    if(lineError)throw lineError;
+    const accountIds=[...new Set((lines||[]).map(line=>line.account_id).filter(Boolean))];
+    let accounts=[];
+    if(accountIds.length) {
+      const {data,error}=await supabaseClient.from("accounts").select("id,kode_akun,nama_akun").in("id",accountIds);
+      if(error)throw error;
+      accounts=data||[];
+    }
+    const accountMap=new Map(accounts.map(account=>[account.id,account]));
+    const totalDebit=(lines||[]).reduce((sum,line)=>sum+Number(line.debit||0),0);
+    const totalCredit=(lines||[]).reduce((sum,line)=>sum+Number(line.kredit||0),0);
+    const rows=(lines||[]).map(line=>{
+      const account=accountMap.get(line.account_id);
+      const name=account?`${account.kode_akun} - ${account.nama_akun}`:"Akun tidak ditemukan";
+      return `<tr><td>${escapeHTML(name)}</td><td>${escapeHTML(line.keterangan||"-")}</td><td style="text-align:right">${formatRupiah(line.debit)}</td><td style="text-align:right">${formatRupiah(line.kredit)}</td></tr>`;
+    }).join("");
+    document.getElementById("journalDetailTitle").textContent="Detail Jurnal "+(entry.nomor_jurnal||"");
+    message.textContent="Rincian jurnal berhasil dimuat.";
+    content.innerHTML=`
+      <div class="journal-detail-meta">
+        <div><small>Nomor Jurnal</small><strong>${escapeHTML(entry.nomor_jurnal||"-")}</strong></div>
+        <div><small>Tanggal</small><strong>${escapeHTML(entry.tanggal||"-")}</strong></div>
+        <div><small>Keterangan</small><strong>${escapeHTML(entry.keterangan||"-")}</strong></div>
+        <div><small>Status</small><strong>${escapeHTML(entry.status||"-")}</strong></div>
+      </div>
+      <div class="erp-table-wrap"><table class="erp-table" style="min-width:620px">
+        <thead><tr><th>Akun</th><th>Keterangan Baris</th><th style="text-align:right">Debit</th><th style="text-align:right">Kredit</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="4">Belum ada rincian jurnal.</td></tr>'}</tbody>
+      </table></div>
+      <div class="journal-detail-total"><span>Total Debit: ${formatRupiah(totalDebit)}</span><span>Total Kredit: ${formatRupiah(totalCredit)}</span></div>`;
+  } catch(error) {
+    console.error("Detail jurnal error:",error);
+    message.textContent="Gagal memuat detail jurnal: "+(error.message||"Kesalahan tidak diketahui");
+    content.innerHTML='<div class="erp-message erp-error">Rincian jurnal tidak dapat ditampilkan.</div>';
+  }
+}
+window.openJournalDetail=openJournalDetail;
 
 // ==========================================
 // BUKU BESAR
@@ -834,7 +926,7 @@ async function loadLedger() {
   if(!start||!end||start>end){message.textContent="Periksa rentang tanggal. Tanggal awal tidak boleh melewati tanggal akhir.";message.className="erp-message erp-error";return;}
   button.disabled=true;button.textContent="Memuat...";
   message.textContent="Mengambil mutasi jurnal yang sudah diposting...";message.className="erp-message erp-muted";
-  body.innerHTML='<tr><td colspan="6">Memuat mutasi...</td></tr>';
+  body.innerHTML='<tr><td colspan="7">Memuat mutasi...</td></tr>';
   try {
     const allLines=[];let from=0;const pageSize=500;
     while(true) {
@@ -849,7 +941,7 @@ async function loadLedger() {
     }
     const movements=allLines.map(line=>{
       const j=line.journal_entries;
-      return {date:j.tanggal,number:j.nomor_jurnal,description:j.keterangan,debit:Number(line.debit),credit:Number(line.kredit)};
+      return {journalId:line.journal_id,date:j.tanggal,number:j.nomor_jurnal,description:j.keterangan,debit:Number(line.debit),credit:Number(line.kredit)};
     }).sort((a,b)=>a.date.localeCompare(b.date)||a.number.localeCompare(b.number));
     const openingLines=movements.filter(m=>m.date<start);
     const periodLines=movements.filter(m=>m.date>=start&&m.date<=end);
@@ -862,20 +954,28 @@ async function loadLedger() {
     document.getElementById("ledgerCredit").textContent=formatRupiah(totalCredit);
     document.getElementById("ledgerAccountInfo").textContent=`${account.kode_akun} - ${account.nama_akun} | ${capitalize(account.kategori)} | Saldo normal ${capitalize(account.saldo_normal)} | Periode ${start} s.d. ${end}`;
     body.replaceChildren();
-    if(!periodLines.length) body.innerHTML='<tr><td colspan="6">Tidak ada mutasi pada periode ini.</td></tr>';
+    if(!periodLines.length) body.innerHTML='<tr><td colspan="7">Tidak ada mutasi pada periode ini.</td></tr>';
     else periodLines.forEach(m=>{
       running+=signedLedgerAmount(m.debit,m.credit,account.saldo_normal);
       const row=document.createElement("tr");
       [m.date,m.number,m.description,formatRupiah(m.debit),formatRupiah(m.credit),displayLedgerBalance(running,account.saldo_normal)].forEach(value=>{
         const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);
       });
+      const actionCell=document.createElement("td");
+      const detailButton=document.createElement("button");
+      detailButton.type="button";
+      detailButton.className="journal-detail-button";
+      detailButton.textContent="Lihat";
+      detailButton.addEventListener("click",()=>openJournalDetail(m.journalId));
+      actionCell.appendChild(detailButton);
+      row.appendChild(actionCell);
       body.appendChild(row);
     });
     document.getElementById("ledgerClosing").textContent=displayLedgerBalance(running,account.saldo_normal);
     message.textContent=`Buku Besar berhasil dimuat. ${periodLines.length} mutasi ditemukan.`;
     message.className="erp-message erp-success";
   } catch(error) {
-    body.innerHTML=`<tr><td colspan="6">${escapeHTML(error.message||"Gagal memuat Buku Besar.")}</td></tr>`;
+    body.innerHTML=`<tr><td colspan="7">${escapeHTML(error.message||"Gagal memuat Buku Besar.")}</td></tr>`;
     message.textContent="Gagal memuat Buku Besar: "+(error.message||"Kesalahan tidak diketahui");
     message.className="erp-message erp-error";
   } finally {
