@@ -2044,8 +2044,7 @@ function getInvoiceItems() {
    quantity,
    unit,
    unit_price:price,
-   line_total:quantity*price,
-   available_stock:Number(product?.current_stock||0)
+   line_total:quantity*price
   };
  });
 }
