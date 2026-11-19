@@ -17,6 +17,7 @@ const modules = {
   persediaan: ["📦", "Persediaan Barang", "Pengelolaan stok masuk dan stok keluar."],
   bulanan: ["📅", "Laporan Bulanan", "Rekapitulasi keuangan setiap bulan."],
   monitoring: ["🛡️", "Monitoring Manajer", "Pemantauan aktivitas dan kondisi keuangan."],
+  "rumus-kamus": ["📚", "Rumus Excel & Kamus Akuntansi", "Pusat referensi rumus spreadsheet dan istilah akuntansi."],
   pengaturan: ["⚙️", "Pengaturan", "Pengaturan sistem dan pengguna."]
 };
 
@@ -8873,4 +8874,182 @@ window.showPage=function(page,button){
   if(settings)settings.style.display="none";
   kdmpOriginalShowPageForSettings(page,button);
   if(page==="pengaturan")setupSettings();
+};
+
+
+// =====================================================
+// REFERENSI DAGBOEK: RUMUS EXCEL & KAMUS AKUNTANSI
+// =====================================================
+const referenceExcelData = [
+  {name:"SUM",category:"Matematika",syntax:"=SUM(number1, [number2], …)",example:"=SUM(B2:B10)",description:"Menjumlahkan seluruh angka dalam satu atau beberapa rentang.",use:"Menjumlahkan total pemasukan, pengeluaran, simpanan, atau penjualan."},
+  {name:"AVERAGE",category:"Statistik",syntax:"=AVERAGE(number1, [number2], …)",example:"=AVERAGE(C2:C13)",description:"Menghitung nilai rata-rata dari sekumpulan angka.",use:"Menghitung rata-rata penjualan atau biaya per bulan."},
+  {name:"MIN",category:"Statistik",syntax:"=MIN(number1, [number2], …)",example:"=MIN(D2:D20)",description:"Menampilkan nilai paling kecil dalam rentang.",use:"Mencari transaksi atau nilai penjualan terendah."},
+  {name:"MAX",category:"Statistik",syntax:"=MAX(number1, [number2], …)",example:"=MAX(D2:D20)",description:"Menampilkan nilai paling besar dalam rentang.",use:"Mencari transaksi atau nilai penjualan tertinggi."},
+  {name:"COUNT",category:"Statistik",syntax:"=COUNT(value1, [value2], …)",example:"=COUNT(A2:A100)",description:"Menghitung jumlah sel yang berisi angka.",use:"Menghitung banyaknya entri numerik."},
+  {name:"COUNTA",category:"Statistik",syntax:"=COUNTA(value1, [value2], …)",example:"=COUNTA(A2:A100)",description:"Menghitung jumlah sel yang tidak kosong.",use:"Menghitung jumlah baris data yang telah diisi."},
+  {name:"IF",category:"Logika",syntax:"=IF(logical_test, value_if_true, value_if_false)",example:'=IF(E2>=1000000,"Besar","Normal")',description:"Menghasilkan nilai berbeda berdasarkan suatu kondisi.",use:"Memberi label transaksi berdasarkan batas nominal."},
+  {name:"AND",category:"Logika",syntax:"=AND(logical1, [logical2], …)",example:"=AND(B2>0,C2=\"Aktif\")",description:"Menghasilkan TRUE jika seluruh kondisi terpenuhi.",use:"Memeriksa beberapa syarat sekaligus."},
+  {name:"OR",category:"Logika",syntax:"=OR(logical1, [logical2], …)",example:"=OR(C2=\"Tunai\",C2=\"Transfer\")",description:"Menghasilkan TRUE jika minimal satu kondisi terpenuhi.",use:"Memeriksa apakah transaksi memakai salah satu metode tertentu."},
+  {name:"IFERROR",category:"Logika",syntax:"=IFERROR(value, value_if_error)",example:'=IFERROR(B2/C2,0)',description:"Mengganti hasil rumus yang menghasilkan error dengan nilai alternatif.",use:"Menghindari tampilan error pada perhitungan rasio."},
+  {name:"SUMIF",category:"Perhitungan Bersyarat",syntax:"=SUMIF(range, criteria, [sum_range])",example:'=SUMIF(B2:B100,"Pemasukan",C2:C100)',description:"Menjumlahkan nilai yang memenuhi satu kriteria.",use:"Menjumlahkan transaksi berdasarkan jenisnya."},
+  {name:"SUMIFS",category:"Perhitungan Bersyarat",syntax:"=SUMIFS(sum_range, criteria_range1, criteria1, …)",example:'=SUMIFS(D2:D100,B2:B100,"Penjualan",C2:C100,"Tunai")',description:"Menjumlahkan nilai berdasarkan beberapa kriteria sekaligus.",use:"Merekap penjualan berdasarkan jenis dan metode pembayaran."},
+  {name:"COUNTIF",category:"Perhitungan Bersyarat",syntax:"=COUNTIF(range, criteria)",example:'=COUNTIF(B2:B100,"Lunas")',description:"Menghitung jumlah sel yang memenuhi satu kriteria.",use:"Menghitung jumlah invoice berstatus lunas."},
+  {name:"COUNTIFS",category:"Perhitungan Bersyarat",syntax:"=COUNTIFS(criteria_range1, criteria1, …)",example:'=COUNTIFS(B2:B100,"Belum Lunas",C2:C100,"Jatuh Tempo")',description:"Menghitung data yang memenuhi beberapa kriteria.",use:"Menghitung tagihan belum lunas yang sudah jatuh tempo."},
+  {name:"VLOOKUP",category:"Pencarian Data",syntax:"=VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])",example:"=VLOOKUP(A2,$H$2:$J$100,3,FALSE)",description:"Mencari nilai pada kolom pertama tabel dan mengambil data dari kolom lain di baris yang sama.",use:"Mengambil nama barang atau harga berdasarkan kode barang."},
+  {name:"XLOOKUP",category:"Pencarian Data",syntax:"=XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found])",example:'=XLOOKUP(A2,H2:H100,J2:J100,"Tidak ditemukan")',description:"Mencari nilai pada suatu rentang dan mengembalikan nilai yang sejajar; dapat mencari ke kiri maupun kanan.",use:"Mencari nama, satuan, atau harga barang dari kode barang."},
+  {name:"INDEX",category:"Pencarian Data",syntax:"=INDEX(array, row_num, [column_num])",example:"=INDEX(C2:C100,5)",description:"Mengambil nilai pada posisi baris dan kolom tertentu dalam rentang.",use:"Mengambil data berdasarkan posisi hasil pencarian."},
+  {name:"MATCH",category:"Pencarian Data",syntax:"=MATCH(lookup_value, lookup_array, [match_type])",example:"=MATCH(A2,H2:H100,0)",description:"Mengembalikan posisi relatif suatu nilai dalam rentang.",use:"Menemukan posisi kode akun atau kode barang."},
+  {name:"TODAY",category:"Tanggal & Waktu",syntax:"=TODAY()",example:"=TODAY()",description:"Menghasilkan tanggal hari ini sesuai tanggal sistem.",use:"Membandingkan tanggal jatuh tempo dengan hari ini."},
+  {name:"EOMONTH",category:"Tanggal & Waktu",syntax:"=EOMONTH(start_date, months)",example:"=EOMONTH(A2,0)",description:"Menghasilkan tanggal hari terakhir pada bulan yang ditentukan.",use:"Menentukan akhir periode laporan bulanan."},
+  {name:"DATEDIF",category:"Tanggal & Waktu",syntax:"=DATEDIF(start_date, end_date, unit)",example:'=DATEDIF(A2,TODAY(),"d")',description:"Menghitung selisih antara dua tanggal dalam satuan hari, bulan, atau tahun.",use:"Menghitung umur piutang atau lama keanggotaan."},
+  {name:"ROUND",category:"Matematika",syntax:"=ROUND(number, num_digits)",example:"=ROUND(B2,2)",description:"Membulatkan angka ke jumlah digit yang ditentukan.",use:"Membulatkan hasil rasio atau perhitungan nominal."},
+  {name:"SUBTOTAL",category:"Rekapitulasi",syntax:"=SUBTOTAL(function_num, ref1, …)",example:"=SUBTOTAL(9,D2:D100)",description:"Menghitung subtotal dengan fungsi tertentu dan dapat mengabaikan baris yang difilter.",use:"Menjumlahkan data yang sedang terlihat setelah filter."},
+  {name:"PMT",category:"Keuangan",syntax:"=PMT(rate, nper, pv, [fv], [type])",example:"=PMT(12%/12,12,-12000000)",description:"Menghitung pembayaran berkala untuk pinjaman dengan suku bunga dan jumlah periode tetap.",use:"Simulasi angsuran pinjaman. Pastikan periode bunga dan periode angsuran konsisten."},
+  {name:"PV",category:"Keuangan",syntax:"=PV(rate, nper, pmt, [fv], [type])",example:"=PV(1%,12,-1000000)",description:"Menghitung nilai sekarang dari serangkaian pembayaran atau arus kas dengan tingkat bunga tetap.",use:"Analisis nilai kini arus kas."},
+  {name:"FV",category:"Keuangan",syntax:"=FV(rate, nper, pmt, [pv], [type])",example:"=FV(1%,12,-500000,0)",description:"Menghitung nilai masa depan suatu investasi berdasarkan pembayaran dan tingkat bunga tetap.",use:"Simulasi perkembangan tabungan atau investasi."},
+  {name:"TEXT",category:"Pengolahan Teks",syntax:"=TEXT(value, format_text)",example:'=TEXT(A2,"dd mmmm yyyy")',description:"Mengubah angka atau tanggal menjadi teks dengan format tertentu.",use:"Menampilkan tanggal atau angka dengan format laporan."},
+  {name:"LEFT",category:"Pengolahan Teks",syntax:"=LEFT(text, [num_chars])",example:"=LEFT(A2,4)",description:"Mengambil sejumlah karakter dari sisi kiri teks.",use:"Mengambil awalan kode akun atau kode barang."},
+  {name:"RIGHT",category:"Pengolahan Teks",syntax:"=RIGHT(text, [num_chars])",example:"=RIGHT(A2,3)",description:"Mengambil sejumlah karakter dari sisi kanan teks.",use:"Mengambil akhiran nomor dokumen."},
+  {name:"CONCAT",category:"Pengolahan Teks",syntax:"=CONCAT(text1, [text2], …)",example:'=CONCAT(A2," - ",B2)',description:"Menggabungkan teks dari beberapa sel atau nilai.",use:"Menggabungkan kode dan nama akun/barang."}
+];
+
+const referenceAccountingData = [
+  {name:"Aset",category:"Unsur Laporan Keuangan",definition:"Sumber daya ekonomi yang dikuasai entitas sebagai akibat peristiwa masa lalu dan diharapkan memberi manfaat ekonomi di masa depan.",function:"Menunjukkan sumber daya yang digunakan koperasi untuk menjalankan kegiatan.",example:"Kas, rekening bank, piutang anggota, persediaan barang, dan peralatan."},
+  {name:"Liabilitas",category:"Unsur Laporan Keuangan",definition:"Kewajiban kini entitas yang timbul dari peristiwa masa lalu dan penyelesaiannya diperkirakan mengakibatkan arus keluar sumber daya.",function:"Menunjukkan kewajiban koperasi kepada pihak lain.",example:"Utang usaha, pinjaman bank, dan kewajiban yang masih harus dibayar."},
+  {name:"Ekuitas",category:"Unsur Laporan Keuangan",definition:"Hak residual atas aset setelah dikurangi seluruh liabilitas.",function:"Menunjukkan bagian kekayaan bersih yang menjadi hak pemilik atau anggota sesuai ketentuan entitas.",example:"Simpanan pokok, simpanan wajib, dan cadangan sesuai kebijakan serta standar yang berlaku."},
+  {name:"Pendapatan",category:"Unsur Laporan Keuangan",definition:"Arus masuk manfaat ekonomi atau peningkatan aset/penurunan liabilitas yang meningkatkan ekuitas, selain kontribusi pemilik/anggota dalam kapasitasnya sebagai pemilik.",function:"Mengukur hasil kegiatan usaha selama periode tertentu.",example:"Pendapatan penjualan barang dan pendapatan jasa."},
+  {name:"Beban",category:"Unsur Laporan Keuangan",definition:"Penurunan manfaat ekonomi selama periode pelaporan yang menurunkan ekuitas, selain distribusi kepada pemilik/anggota.",function:"Mencatat sumber daya yang digunakan untuk menghasilkan pendapatan dan menjalankan kegiatan.",example:"Beban listrik, gaji, transportasi, dan penyusutan."},
+  {name:"Debit",category:"Dasar Akuntansi",definition:"Sisi kiri dalam format akun atau jurnal.",function:"Dampaknya bergantung pada jenis akun; umumnya menambah aset dan beban, serta mengurangi liabilitas, ekuitas, dan pendapatan.",example:"Pembelian perlengkapan secara tunai: debit perlengkapan, kredit kas."},
+  {name:"Kredit",category:"Dasar Akuntansi",definition:"Sisi kanan dalam format akun atau jurnal.",function:"Dampaknya bergantung pada jenis akun; umumnya menambah liabilitas, ekuitas, dan pendapatan, serta mengurangi aset dan beban.",example:"Penerimaan pendapatan tunai: debit kas, kredit pendapatan."},
+  {name:"Jurnal Umum",category:"Proses Akuntansi",definition:"Catatan kronologis transaksi yang menunjukkan akun yang didebit dan dikredit.",function:"Menjadi catatan awal untuk mengklasifikasikan transaksi sebelum diposting ke buku besar.",example:"Mencatat pembelian persediaan, pembayaran beban, atau penerimaan pendapatan."},
+  {name:"Buku Besar",category:"Proses Akuntansi",definition:"Kumpulan akun yang merangkum mutasi debit, kredit, dan saldo masing-masing akun.",function:"Menunjukkan pergerakan dan saldo setiap akun.",example:"Buku besar kas memperlihatkan saldo awal, penerimaan, pengeluaran, dan saldo akhir kas."},
+  {name:"Neraca Saldo",category:"Laporan & Analisis",definition:"Daftar saldo akun buku besar pada tanggal tertentu yang disajikan dalam kolom debit dan kredit.",function:"Membantu memeriksa keseimbangan pencatatan debit dan kredit sebelum penyusunan laporan.",example:"Total saldo debit harus sama dengan total saldo kredit; keseimbangan tidak otomatis menjamin semua transaksi benar."},
+  {name:"Neraca / Laporan Posisi Keuangan",category:"Laporan & Analisis",definition:"Laporan yang menyajikan aset, liabilitas, dan ekuitas pada tanggal tertentu.",function:"Menunjukkan posisi keuangan entitas pada suatu tanggal.",example:"Saldo kas, persediaan, utang usaha, dan ekuitas pada akhir bulan."},
+  {name:"Laporan Laba Rugi",category:"Laporan & Analisis",definition:"Laporan yang menyajikan pendapatan dan beban selama suatu periode.",function:"Menilai hasil kinerja keuangan selama periode pelaporan.",example:"Pendapatan dikurangi beban menghasilkan surplus atau defisit/laba atau rugi sesuai konteks entitas."},
+  {name:"Laporan Arus Kas",category:"Laporan & Analisis",definition:"Laporan arus kas masuk dan keluar yang dikelompokkan menurut aktivitas operasi, investasi, dan pendanaan.",function:"Menilai kemampuan entitas menghasilkan dan menggunakan kas.",example:"Penerimaan dari pelanggan, pembelian peralatan, dan penerimaan pinjaman."},
+  {name:"HPP (Harga Pokok Penjualan)",category:"Persediaan & Penjualan",definition:"Biaya persediaan yang menjadi beban ketika barang terkait dijual.",function:"Mengukur biaya langsung barang yang terjual dan menjadi dasar perhitungan laba kotor.",example:"Barang dengan HPP Rp3.000 yang dijual Rp5.000 menghasilkan laba kotor Rp2.000 sebelum beban lain."},
+  {name:"Laba Kotor",category:"Persediaan & Penjualan",definition:"Selisih antara penjualan neto dan harga pokok penjualan.",function:"Menunjukkan hasil penjualan setelah memperhitungkan biaya barang yang terjual, sebelum beban operasional lainnya.",example:"Penjualan Rp10 juta dikurangi HPP Rp6 juta menghasilkan laba kotor Rp4 juta."},
+  {name:"Gross Profit Margin",category:"Rasio & Profitabilitas",definition:"Persentase laba kotor terhadap penjualan neto.",function:"Mengukur bagian penjualan yang tersisa setelah HPP diperhitungkan.",example:"(Penjualan − HPP) ÷ Penjualan × 100%. Penjualan Rp5.000 dan HPP Rp3.000 menghasilkan margin kotor 40%."},
+  {name:"Net Profit Margin",category:"Rasio & Profitabilitas",definition:"Persentase laba atau surplus bersih terhadap pendapatan/penjualan neto sesuai basis laporan yang digunakan.",function:"Mengukur bagian pendapatan yang tersisa setelah seluruh beban yang relevan diperhitungkan.",example:"Laba bersih Rp1 juta ÷ penjualan neto Rp10 juta × 100% = 10%."},
+  {name:"Markup",category:"Rasio & Profitabilitas",definition:"Persentase kenaikan harga jual terhadap biaya atau harga pokok.",function:"Membantu menetapkan harga jual berdasarkan biaya dan target kenaikan.",example:"(Harga jual − HPP) ÷ HPP × 100%. HPP Rp3.000 dan harga jual Rp5.000 menghasilkan markup 66,67%."},
+  {name:"BEP (Break-Even Point)",category:"Rasio & Profitabilitas",definition:"Titik impas ketika total pendapatan sama dengan total biaya sehingga hasilnya nol.",function:"Membantu mengetahui jumlah penjualan minimum untuk menutup biaya pada asumsi tertentu.",example:"BEP unit = biaya tetap ÷ (harga jual per unit − biaya variabel per unit)."},
+  {name:"Rekonsiliasi Bank",category:"Proses Akuntansi",definition:"Proses mencocokkan saldo dan transaksi menurut catatan entitas dengan rekening koran bank.",function:"Mengidentifikasi transaksi belum tercatat, biaya bank, setoran dalam perjalanan, atau perbedaan lainnya.",example:"Mencocokkan saldo buku bank dengan saldo rekening koran pada tanggal yang sama."},
+  {name:"Piutang",category:"Akun & Modal Kerja",definition:"Hak entitas untuk menerima kas atau manfaat ekonomi dari pihak lain.",function:"Mencatat tagihan yang belum diterima pembayarannya.",example:"Penjualan kredit kepada pelanggan yang belum dilunasi."},
+  {name:"Utang",category:"Akun & Modal Kerja",definition:"Kewajiban entitas untuk menyerahkan kas atau sumber daya lain kepada pihak lain.",function:"Memantau kewajiban pembayaran dan tanggal jatuh tempo.",example:"Pembelian barang secara kredit dari pemasok."},
+  {name:"Akrual",category:"Dasar Akuntansi",definition:"Dasar pencatatan yang mengakui transaksi ketika hak atau kewajiban timbul, bukan semata-mata saat kas diterima atau dibayar.",function:"Mencerminkan pendapatan dan beban pada periode terjadinya sesuai ketentuan yang berlaku.",example:"Beban listrik bulan ini diakui meskipun tagihan dibayar bulan berikutnya."},
+  {name:"Penyusutan",category:"Aset & Pengelolaan",definition:"Alokasi sistematis jumlah yang dapat disusutkan dari aset tetap selama umur manfaatnya.",function:"Membebankan biaya penggunaan aset tetap secara teratur selama masa manfaat.",example:"Penyusutan peralatan toko sesuai metode dan estimasi umur manfaat yang ditetapkan."},
+  {name:"SHU (Sisa Hasil Usaha)",category:"Koperasi",definition:"Hasil usaha koperasi dalam satu tahun buku setelah pendapatan dikurangi beban, penyusutan, kewajiban, dan komponen lain sesuai ketentuan yang berlaku.",function:"Menunjukkan hasil usaha koperasi yang selanjutnya penggunaannya diputuskan sesuai AD/ART dan peraturan koperasi.",example:"SHU tahunan dibahas dalam rapat anggota dan dialokasikan sesuai ketentuan koperasi."},
+  {name:"Simpanan Pokok",category:"Koperasi",definition:"Sejumlah uang yang wajib dibayarkan anggota pada saat masuk menjadi anggota, sesuai ketentuan koperasi.",function:"Merupakan salah satu komponen modal koperasi berdasarkan ketentuan dan kebijakan yang berlaku.",example:"Anggota menyetorkan simpanan pokok sesuai nominal yang ditetapkan dalam AD/ART."},
+  {name:"Simpanan Wajib",category:"Koperasi",definition:"Simpanan yang wajib dibayar anggota secara berkala sesuai ketentuan koperasi.",function:"Mendukung penghimpunan modal koperasi secara berkala.",example:"Anggota membayar simpanan wajib setiap bulan sesuai keputusan koperasi."},
+  {name:"Modal Kerja",category:"Akun & Modal Kerja",definition:"Sumber daya jangka pendek yang digunakan untuk mendukung kegiatan operasional sehari-hari; sering dianalisis melalui aset lancar dikurangi liabilitas jangka pendek.",function:"Menilai kemampuan entitas memenuhi kebutuhan operasional dan kewajiban jangka pendek.",example:"Modal kerja bersih = aset lancar − liabilitas jangka pendek."},
+  {name:"Rasio Lancar (Current Ratio)",category:"Rasio & Profitabilitas",definition:"Perbandingan aset lancar dengan liabilitas jangka pendek.",function:"Mengukur kemampuan jangka pendek memenuhi kewajiban lancar.",example:"Aset lancar Rp20 juta ÷ liabilitas lancar Rp10 juta = 2 kali."}
+];
+
+function escapeReferenceHTML(value){
+  return String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+}
+
+function setupReferenceLibrary(){
+  const parent=document.getElementById("modulePage");
+  if(!parent)return;
+  let section=document.getElementById("referenceLibraryContent");
+  if(!section){
+    section=document.createElement("section");
+    section.id="referenceLibraryContent";
+    section.className="page erp-content reference-library";
+    section.innerHTML=`
+      <div class="reference-hero">
+        <div class="reference-hero-icon">📚</div>
+        <div><span class="reference-eyebrow">PUSAT REFERENSI DAGBOEK</span><h2>Rumus Excel & Kamus Akuntansi</h2><p>Temukan rumus spreadsheet dan pahami istilah akuntansi dengan contoh yang dekat dengan kegiatan koperasi.</p></div>
+      </div>
+      <div class="reference-tabs" role="tablist" aria-label="Jenis referensi">
+        <button type="button" class="reference-tab active" data-reference-tab="excel" role="tab" aria-selected="true">📊 Rumus Excel</button>
+        <button type="button" class="reference-tab" data-reference-tab="accounting" role="tab" aria-selected="false">📖 Kamus Akuntansi</button>
+      </div>
+      <div class="reference-toolbar">
+        <div class="reference-search"><span>⌕</span><input id="referenceSearch" type="search" placeholder="Cari rumus, istilah, atau fungsi..." autocomplete="off"><button type="button" id="referenceClearSearch" aria-label="Hapus pencarian">×</button></div>
+        <select id="referenceCategory" aria-label="Filter kategori"><option value="all">Semua kategori</option></select>
+      </div>
+      <div class="reference-meta"><span id="referenceCount">Memuat referensi...</span><span>Materi referensi · Versi awal</span></div>
+      <div id="referenceCards" class="reference-cards"></div>
+      <div id="referenceDetail" class="reference-detail" hidden></div>
+      <div class="reference-note"><strong>Catatan:</strong> Contoh rumus menggunakan nama fungsi Excel berbahasa Inggris dan pemisah koma. Pada beberapa pengaturan regional, Excel menggunakan titik koma. Pastikan rumus diuji pada salinan data sebelum digunakan untuk pembukuan resmi.</div>`;
+    parent.appendChild(section);
+    section.querySelectorAll("[data-reference-tab]").forEach(button=>button.addEventListener("click",()=>{
+      section.querySelectorAll("[data-reference-tab]").forEach(tab=>{const active=tab===button;tab.classList.toggle("active",active);tab.setAttribute("aria-selected",String(active));});
+      document.getElementById("referenceDetail").hidden=true;
+      renderReferenceLibrary();
+    }));
+    document.getElementById("referenceSearch").addEventListener("input",()=>{document.getElementById("referenceDetail").hidden=true;renderReferenceLibrary();});
+    document.getElementById("referenceCategory").addEventListener("change",()=>{document.getElementById("referenceDetail").hidden=true;renderReferenceLibrary();});
+    document.getElementById("referenceClearSearch").addEventListener("click",()=>{document.getElementById("referenceSearch").value="";renderReferenceLibrary();});
+    document.getElementById("referenceCards").addEventListener("click",event=>{
+      const button=event.target.closest("[data-reference-index]");if(!button)return;
+      const isExcel=document.querySelector('[data-reference-tab].active')?.dataset.referenceTab==="excel";
+      const list=isExcel?referenceExcelData:referenceAccountingData;
+      showReferenceDetail(list[Number(button.dataset.referenceIndex)],isExcel);
+    });
+    document.getElementById("referenceDetail").addEventListener("click",async event=>{
+      const copyButton=event.target.closest("[data-copy-reference]");
+      if(copyButton){
+        const text=copyButton.dataset.copyReference||"";
+        try{await navigator.clipboard.writeText(text);copyButton.textContent="Tersalin ✓";}
+        catch(_){const area=document.createElement("textarea");area.value=text;document.body.appendChild(area);area.select();try{document.execCommand("copy");copyButton.textContent="Tersalin ✓";}catch(__){copyButton.textContent="Salin manual";}area.remove();}
+      }
+      if(event.target.closest("[data-reference-back]"))document.getElementById("referenceDetail").hidden=true;
+    });
+  }
+  section.style.display="block";
+  renderReferenceLibrary();
+}
+
+function renderReferenceLibrary(){
+  const active=document.querySelector('[data-reference-tab].active')?.dataset.referenceTab||"excel";
+  const isExcel=active==="excel";
+  const data=isExcel?referenceExcelData:referenceAccountingData;
+  const query=(document.getElementById("referenceSearch")?.value||"").trim().toLocaleLowerCase("id-ID");
+  const category=document.getElementById("referenceCategory");
+  const categories=[...new Set(data.map(item=>item.category))].sort((a,b)=>a.localeCompare(b,"id"));
+  const currentCategory=category?.dataset.kind===active?category.value:"all";
+  if(category){category.dataset.kind=active;category.innerHTML='<option value="all">Semua kategori</option>'+categories.map(item=>`<option value="${escapeReferenceHTML(item)}">${escapeReferenceHTML(item)}</option>`).join("");category.value=categories.includes(currentCategory)?currentCategory:"all";}
+  const selectedCategory=category?.value||"all";
+  const filtered=data.map((item,index)=>({...item,index})).filter(item=>{
+    const haystack=Object.values(item).join(" ").toLocaleLowerCase("id-ID");
+    return (selectedCategory==="all"||item.category===selectedCategory)&&(!query||haystack.includes(query));
+  });
+  const count=document.getElementById("referenceCount");if(count)count.textContent=`Menampilkan ${filtered.length} dari ${data.length} ${isExcel?"rumus":"istilah"}`;
+  const cards=document.getElementById("referenceCards");if(!cards)return;
+  cards.innerHTML=filtered.length?filtered.map(item=>`
+    <button type="button" class="reference-card" data-reference-index="${item.index}">
+      <span class="reference-card-top"><span class="reference-category">${escapeReferenceHTML(item.category)}</span><span class="reference-arrow">↗</span></span>
+      <strong>${escapeReferenceHTML(item.name)}</strong>
+      <span class="reference-card-description">${escapeReferenceHTML(isExcel?item.description:item.definition)}</span>
+      ${isExcel?`<code>${escapeReferenceHTML(item.example)}</code>`:""}
+      <span class="reference-card-link">Lihat detail →</span>
+    </button>`).join(""):`<div class="reference-empty"><strong>Tidak ada hasil yang cocok.</strong><span>Coba kata kunci atau kategori lain.</span></div>`;
+}
+
+function showReferenceDetail(item,isExcel){
+  const detail=document.getElementById("referenceDetail");if(!detail)return;
+  detail.innerHTML=isExcel?`
+    <div class="reference-detail-head"><button type="button" class="reference-back" data-reference-back>← Kembali ke daftar</button><span class="reference-category">${escapeReferenceHTML(item.category)}</span></div>
+    <h3>${escapeReferenceHTML(item.name)}</h3><p>${escapeReferenceHTML(item.description)}</p>
+    <div class="reference-detail-block"><span>Sintaks</span><code>${escapeReferenceHTML(item.syntax)}</code><button type="button" data-copy-reference="${escapeReferenceHTML(item.syntax)}">Salin sintaks</button></div>
+    <div class="reference-detail-block"><span>Contoh rumus</span><code>${escapeReferenceHTML(item.example)}</code><button type="button" data-copy-reference="${escapeReferenceHTML(item.example)}">Salin rumus</button></div>
+    <div class="reference-detail-block"><span>Penerapan di koperasi</span><p>${escapeReferenceHTML(item.use)}</p></div>`:`
+    <div class="reference-detail-head"><button type="button" class="reference-back" data-reference-back>← Kembali ke daftar</button><span class="reference-category">${escapeReferenceHTML(item.category)}</span></div>
+    <h3>${escapeReferenceHTML(item.name)}</h3>
+    <div class="reference-detail-block"><span>Pengertian</span><p>${escapeReferenceHTML(item.definition)}</p></div>
+    <div class="reference-detail-block"><span>Fungsi</span><p>${escapeReferenceHTML(item.function)}</p></div>
+    <div class="reference-detail-block"><span>Contoh</span><p>${escapeReferenceHTML(item.example)}</p></div>`;
+  detail.hidden=false;
+  detail.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+const referencePreviousShowPage=window.showPage;
+window.showPage=function(page,button){
+  const reference=document.getElementById("referenceLibraryContent");
+  if(reference)reference.style.display="none";
+  referencePreviousShowPage(page,button);
+  if(page==="rumus-kamus")setupReferenceLibrary();
 };
