@@ -8826,3 +8826,176 @@ window.showPage=function(page,button){
   kdmpOriginalShowPageForSettings(page,button);
   if(page==="pengaturan")setupSettings();
 };
+
+
+// ==========================================
+// GLOBAL DARK THEME FIX - ALL ERP MODULES
+// Konten dibuat abu-abu terang dengan teks gelap;
+// sidebar/topbar tetap navy. Mode terang tidak disentuh.
+(function applyGlobalDarkThemeStyles(){
+  if(document.getElementById("kdmpGlobalDarkThemeStyles")) return;
+  const globalThemeStyle=document.createElement("style");
+  globalThemeStyle.id="kdmpGlobalDarkThemeStyles";
+  globalThemeStyle.textContent=`
+  body[data-kdmp-theme="dark"]{
+    background:#151922!important;
+    color:#17191e!important;
+    color-scheme:dark;
+  }
+  /* Kerangka navigasi tetap gelap */
+  body[data-kdmp-theme="dark"] .sidebar,
+  body[data-kdmp-theme="dark"] .topbar{
+    background:#202b42!important;
+    color:#f3f5f8!important;
+  }
+  /* Semua panel kerja lintas modul */
+  body[data-kdmp-theme="dark"] .erp-content,
+  body[data-kdmp-theme="dark"] .erp-card,
+  body[data-kdmp-theme="dark"] .erp-form,
+  body[data-kdmp-theme="dark"] .erp-table-wrap,
+  body[data-kdmp-theme="dark"] .financial-card,
+  body[data-kdmp-theme="dark"] .ledger-filter,
+  body[data-kdmp-theme="dark"] .ledger-card,
+  body[data-kdmp-theme="dark"] .report-filter,
+  body[data-kdmp-theme="dark"] .report-card,
+  body[data-kdmp-theme="dark"] .dashboard-chart-wrap,
+  body[data-kdmp-theme="dark"] .journal-detail-dialog,
+  body[data-kdmp-theme="dark"] .balance-detail-dialog,
+  body[data-kdmp-theme="dark"] .invoice-panel,
+  body[data-kdmp-theme="dark"] .invoice-stat,
+  body[data-kdmp-theme="dark"] .toko-box,
+  body[data-kdmp-theme="dark"] .toko-stat,
+  body[data-kdmp-theme="dark"] .member-panel,
+  body[data-kdmp-theme="dark"] .member-card,
+  body[data-kdmp-theme="dark"] .sav-card,
+  body[data-kdmp-theme="dark"] .sav-panel,
+  body[data-kdmp-theme="dark"] .loan-card,
+  body[data-kdmp-theme="dark"] .loan-panel,
+  body[data-kdmp-theme="dark"] .loan-table-wrap,
+  body[data-kdmp-theme="dark"] .debt-card,
+  body[data-kdmp-theme="dark"] .debt-panel,
+  body[data-kdmp-theme="dark"] .debt-table-wrap,
+  body[data-kdmp-theme="dark"] .inventory-card,
+  body[data-kdmp-theme="dark"] .inventory-panel,
+  body[data-kdmp-theme="dark"] .inventory-table-wrap,
+  body[data-kdmp-theme="dark"] .settings-card,
+  body[data-kdmp-theme="dark"] .settings-theme-row,
+  body[data-kdmp-theme="dark"] .operational-card,
+  body[data-kdmp-theme="dark"] .summary-card,
+  body[data-kdmp-theme="dark"] .manager-info-card,
+  body[data-kdmp-theme="dark"] .pending-loan-empty,
+  body[data-kdmp-theme="dark"] .table-responsive,
+  body[data-kdmp-theme="dark"] .sav-table-wrap{
+    background:#d9dce2!important;
+    color:#17191e!important;
+    border-color:#c2c7d0!important;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  /* Judul, label, angka, keterangan di area kerja */
+  body[data-kdmp-theme="dark"] .erp-content h1,
+  body[data-kdmp-theme="dark"] .erp-content h2,
+  body[data-kdmp-theme="dark"] .erp-content h3,
+  body[data-kdmp-theme="dark"] .erp-content h4,
+  body[data-kdmp-theme="dark"] .erp-content label,
+  body[data-kdmp-theme="dark"] .erp-content p,
+  body[data-kdmp-theme="dark"] .erp-content small,
+  body[data-kdmp-theme="dark"] .erp-content strong,
+  body[data-kdmp-theme="dark"] .erp-content span:not(.erp-status),
+  body[data-kdmp-theme="dark"] .erp-muted,
+  body[data-kdmp-theme="dark"] .report-section-title,
+  body[data-kdmp-theme="dark"] .manager-info-title,
+  body[data-kdmp-theme="dark"] .manager-info-value,
+  body[data-kdmp-theme="dark"] .manager-info-note,
+  body[data-kdmp-theme="dark"] .debt-muted,
+  body[data-kdmp-theme="dark"] .settings-help,
+  body[data-kdmp-theme="dark"] .settings-field label,
+  body[data-kdmp-theme="dark"] .settings-theme-state strong{
+    color:#20242b!important;
+  }
+  body[data-kdmp-theme="dark"] .erp-content .erp-muted,
+  body[data-kdmp-theme="dark"] .erp-content .settings-help,
+  body[data-kdmp-theme="dark"] .erp-content .financial-card small,
+  body[data-kdmp-theme="dark"] .erp-content .ledger-card small,
+  body[data-kdmp-theme="dark"] .erp-content .report-card small{
+    color:#555d69!important;
+  }
+  /* Tabel seluruh modul: isi terang, teks gelap, header biru */
+  body[data-kdmp-theme="dark"] .erp-content table,
+  body[data-kdmp-theme="dark"] .erp-content .erp-table,
+  body[data-kdmp-theme="dark"] .erp-content .loan-table,
+  body[data-kdmp-theme="dark"] .erp-content .debt-table,
+  body[data-kdmp-theme="dark"] .erp-content .sav-table{
+    background:#d9dce2!important;
+    color:#17191e!important;
+    border-color:#c2c7d0!important;
+  }
+  body[data-kdmp-theme="dark"] .erp-content table th,
+  body[data-kdmp-theme="dark"] .erp-content .erp-table th,
+  body[data-kdmp-theme="dark"] .erp-content .loan-table th,
+  body[data-kdmp-theme="dark"] .erp-content .debt-table th,
+  body[data-kdmp-theme="dark"] .erp-content .sav-table th{
+    background:#344b70!important;
+    color:#fff!important;
+    border-color:#52698c!important;
+  }
+  body[data-kdmp-theme="dark"] .erp-content table td,
+  body[data-kdmp-theme="dark"] .erp-content .erp-table td,
+  body[data-kdmp-theme="dark"] .erp-content .loan-table td,
+  body[data-kdmp-theme="dark"] .erp-content .debt-table td,
+  body[data-kdmp-theme="dark"] .erp-content .sav-table td{
+    background:#d9dce2!important;
+    color:#17191e!important;
+    border-color:#c2c7d0!important;
+  }
+  body[data-kdmp-theme="dark"] .erp-content .report-total-row{
+    background:#cbd0d8!important;color:#17191e!important;
+  }
+  /* Form controls lintas modul */
+  body[data-kdmp-theme="dark"] .erp-content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  body[data-kdmp-theme="dark"] .erp-content select,
+  body[data-kdmp-theme="dark"] .erp-content textarea,
+  body[data-kdmp-theme="dark"] .erp-input,
+  body[data-kdmp-theme="dark"] .inventory-field input,
+  body[data-kdmp-theme="dark"] .inventory-field select,
+  body[data-kdmp-theme="dark"] .inventory-field textarea,
+  body[data-kdmp-theme="dark"] .toko-field input,
+  body[data-kdmp-theme="dark"] .toko-field select,
+  body[data-kdmp-theme="dark"] .member-field input,
+  body[data-kdmp-theme="dark"] .member-field select,
+  body[data-kdmp-theme="dark"] .sav-field input,
+  body[data-kdmp-theme="dark"] .sav-field select,
+  body[data-kdmp-theme="dark"] .loan-field input,
+  body[data-kdmp-theme="dark"] .loan-field select,
+  body[data-kdmp-theme="dark"] .settings-field input,
+  body[data-kdmp-theme="dark"] .settings-field textarea{
+    background:#eef0f3!important;
+    color:#17191e!important;
+    border-color:#b8bec8!important;
+  }
+  body[data-kdmp-theme="dark"] .erp-content input::placeholder,
+  body[data-kdmp-theme="dark"] .erp-content textarea::placeholder{
+    color:#626975!important;opacity:1;
+  }
+  /* Tombol aksi mempertahankan warna identitas masing-masing */
+  body[data-kdmp-theme="dark"] .erp-button.secondary,
+  body[data-kdmp-theme="dark"] .toko-btn.secondary,
+  body[data-kdmp-theme="dark"] .loan-btn.gray,
+  body[data-kdmp-theme="dark"] .inventory-btn.gray,
+  body[data-kdmp-theme="dark"] .member-btn.gray,
+  body[data-kdmp-theme="dark"] .debt-btn.secondary{
+    background:#c5cad3!important;color:#20242b!important;border-color:#aeb5c0!important;
+  }
+  body[data-kdmp-theme="dark"] .erp-status{color:#166534!important;background:#dcfce7!important}
+  body[data-kdmp-theme="dark"] .erp-error,
+  body[data-kdmp-theme="dark"] .error{color:#991b1b!important}
+  body[data-kdmp-theme="dark"] .erp-success{color:#166534!important}
+  body[data-kdmp-theme="dark"] .financial-note,
+  body[data-kdmp-theme="dark"] .ledger-opening{
+    background:#fff0c9!important;color:#654b13!important;border-color:#e7d39b!important;
+  }
+  body[data-kdmp-theme="dark"] .dashboard-chart-label,
+  body[data-kdmp-theme="dark"] .dashboard-legend{color:#3e4652!important}
+  body[data-kdmp-theme="dark"] .settings-theme-state small{color:#555d69!important}
+  `;
+  document.head.appendChild(globalThemeStyle);
+})();
