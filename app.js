@@ -7702,9 +7702,11 @@ inventoryStyle.textContent = `
 .inventory-btn:disabled{opacity:.6;cursor:wait}
 .inventory-search{max-width:350px;width:100%;padding:11px;border:1px solid #ddd;border-radius:7px}
 .inventory-table-wrap{overflow-x:auto;border:1px solid #eee;border-radius:9px}
-.inventory-table{width:100%;min-width:950px;border-collapse:collapse}
-.inventory-table th,.inventory-table td{padding:12px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.inventory-table{width:100%;min-width:1040px;border-collapse:collapse}
+.inventory-table th,.inventory-table td{padding:10px 11px;border-bottom:1px solid #eee;text-align:left;font-size:12px;white-space:nowrap}
 .inventory-table th{background:#fafafa;color:#666;white-space:nowrap}
+.inventory-stock-opening{color:#64748b;font-variant-numeric:tabular-nums}
+.inventory-stock-closing{color:#166534;font-variant-numeric:tabular-nums}
 .inventory-badge{padding:5px 9px;border-radius:20px;background:#e8f8ef;color:#16834e;font-size:11px;font-weight:700}
 .inventory-badge.low{background:#fff0d9;color:#a45b00}
 .inventory-message{font-size:13px;margin-top:12px;line-height:1.5}
@@ -7862,7 +7864,8 @@ function setupInventoryManagement(){
               <th>KODE</th>
               <th>NAMA BARANG</th>
               <th>KATEGORI</th>
-              <th>STOK</th>
+              <th>STOK AWAL</th>
+              <th>STOK AKHIR</th>
               <th>SATUAN</th>
               <th>HARGA BELI</th>
               <th>NILAI STOK</th>
@@ -7871,7 +7874,7 @@ function setupInventoryManagement(){
             </tr>
           </thead>
           <tbody id="invProductBody">
-            <tr><td colspan="9">Memuat data barang...</td></tr>
+            <tr><td colspan="10">Memuat data barang...</td></tr>
           </tbody>
         </table>
       </div>
@@ -8139,7 +8142,7 @@ async function loadInventoryProducts(){
   const body=document.getElementById("invProductBody");
   if(!body)return;
 
-  body.innerHTML='<tr><td colspan="9">Memuat data barang...</td></tr>';
+  body.innerHTML='<tr><td colspan="10">Memuat data barang...</td></tr>';
 
   const {data,error}=await supabaseClient
     .from("inventory_products")
@@ -8148,13 +8151,48 @@ async function loadInventoryProducts(){
     .order("product_name");
 
   if(error){
-    body.innerHTML=`<tr><td colspan="9">${inventoryEscape(error.message)}</td></tr>`;
+    body.innerHTML=`<tr><td colspan="10">${inventoryEscape(error.message)}</td></tr>`;
     document.getElementById("invProductListMessage").textContent=
       "Gagal memuat data persediaan.";
     return;
   }
 
   const products=data||[];
+  const productIds=products.map(p=>p.id);
+  const openingStockByProduct=new Map();
+
+  // Ambil seluruh mutasi agar stok awal tidak salah akibat batas 200 riwayat.
+  // Mutasi paling awal menjadi dasar saldo awal setiap barang.
+  if(productIds.length){
+    let from=0;
+    const pageSize=500;
+    while(true){
+      const {data:movements,error:movementError}=await supabaseClient
+        .from("inventory_movements")
+        .select("product_id,movement_type,quantity,stock_before,stock_after,movement_date,created_at")
+        .in("product_id",productIds)
+        .order("movement_date",{ascending:true})
+        .order("created_at",{ascending:true})
+        .range(from,from+pageSize-1);
+
+      if(movementError){
+        document.getElementById("invProductListMessage").textContent=
+          "Data barang dimuat, tetapi riwayat untuk menghitung stok awal gagal: "+movementError.message;
+        break;
+      }
+
+      for(const movement of movements||[]){
+        if(openingStockByProduct.has(movement.product_id))continue;
+        const opening=movement.movement_type==="stok_awal"
+          ? Number(movement.stock_after??movement.quantity??0)
+          : Number(movement.stock_before??0);
+        openingStockByProduct.set(movement.product_id,opening);
+      }
+
+      if(!movements||movements.length<pageSize)break;
+      from+=pageSize;
+    }
+  }
 
   const totalStock=products.reduce((sum,p)=>sum+Number(p.current_stock||0),0);
   const stockValue=products.reduce(
@@ -8184,19 +8222,22 @@ async function loadInventoryProducts(){
   if(products.some(p=>p.id===selected))select.value=selected;
 
   if(!products.length){
-    body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:25px">Belum ada barang. Silakan tambah barang pertama.</td></tr>';
+    body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:25px">Belum ada barang. Silakan tambah barang pertama.</td></tr>';
   }else{
     body.innerHTML=products.map(p=>{
       const stock=Number(p.current_stock||0);
       const minimum=Number(p.minimum_stock||0);
       const low=stock<=minimum;
+      const hasOpening=openingStockByProduct.has(p.id);
+      const opening=hasOpening?openingStockByProduct.get(p.id):null;
 
       return `
         <tr>
           <td>${inventoryEscape(p.product_code)}</td>
           <td><strong>${inventoryEscape(p.product_name)}</strong></td>
           <td>${inventoryEscape(p.category||"-")}</td>
-          <td><strong>${stock.toLocaleString("id-ID")}</strong></td>
+          <td class="inventory-stock-opening">${hasOpening?opening.toLocaleString("id-ID"):'<span title="Belum ada riwayat mutasi">—</span>'}</td>
+          <td class="inventory-stock-closing"><strong>${stock.toLocaleString("id-ID")}</strong></td>
           <td>${inventoryEscape(p.unit)}</td>
           <td>${inventoryMoney(p.purchase_price)}</td>
           <td>${inventoryMoney(stock*Number(p.purchase_price||0))}</td>
@@ -8214,8 +8255,10 @@ async function loadInventoryProducts(){
     }).join("");
   }
 
+  const openingUnknown=products.filter(p=>!openingStockByProduct.has(p.id)).length;
   document.getElementById("invProductListMessage").textContent=
-    "Berhasil memuat "+products.length+" jenis barang.";
+    "Berhasil memuat "+products.length+" jenis barang. Stok akhir mengikuti saldo aktual; "+
+    (openingUnknown?openingUnknown+" barang belum memiliki riwayat untuk menentukan stok awal.":"stok awal dihitung dari mutasi paling awal.");
 }
 
 window.filterInventoryProducts=function(){
