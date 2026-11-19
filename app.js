@@ -3656,6 +3656,8 @@ tokoStyle.textContent = `
 .toko-status.selesai{background:#dcfce7;color:#166534}
 .toko-status.diproses{background:#fef3c7;color:#92400e}
 .toko-status.gagal{background:#fee2e2;color:#991b1b}
+.toko-status.dibatalkan{background:#eee;color:#555}
+.toko-btn.cancel-sale{background:#fff0f0;color:#a71925;border:1px solid #e7b7bc}.toko-btn.cancel-sale:disabled{opacity:.55;cursor:wait}
 @media(max-width:650px){
  .toko-grid{grid-template-columns:1fr}
  .toko-stat-grid{grid-template-columns:1fr}
@@ -4210,7 +4212,7 @@ async function loadTokoHistory(){
   }
 
   const paymentLabels={tunai:"Tunai",transfer:"Transfer",qris:"QRIS"};
-  const statusLabels={selesai:"Selesai",diproses:"Diproses",gagal:"Gagal"};
+  const statusLabels={selesai:"Selesai",diproses:"Diproses",gagal:"Gagal",dibatalkan:"Dibatalkan"};
   body.innerHTML=sales.map(sale=>{
     const status=String(sale.status||"").toLowerCase();
     const isCompleted=status==="selesai";
@@ -4221,17 +4223,73 @@ async function loadTokoHistory(){
         <td>${escapeHTML(sale.customer_name||"Pelanggan Umum")}</td>
         <td>${paymentLabels[sale.payment_method]||"-"}</td>
         <td>${formatRupiah(sale.total)}</td>
-        <td><span class="toko-status ${["selesai","diproses","gagal"].includes(status)?status:"gagal"}">${statusLabels[status]||"Status tidak dikenal"}</span></td>
-        <td>${isCompleted
-          ? `<button class="toko-btn secondary" onclick="printTokoReceiptById('${sale.id}')">Cetak</button>`
-          : '<span class="erp-muted">Tidak dapat dicetak</span>'}</td>
+        <td><span class="toko-status ${["selesai","diproses","gagal","dibatalkan"].includes(status)?status:"gagal"}">${statusLabels[status]||"Status tidak dikenal"}</span></td>
+        <td>
+          ${isCompleted
+            ? `<button class="toko-btn secondary" onclick="printTokoReceiptById('${sale.id}')">Cetak</button>
+               ${window.currentUser?.role==="manajer"
+                 ? `<button type="button" class="toko-btn cancel-sale" data-cancel-sale="${escapeHTML(sale.id)}" data-sale-number="${escapeHTML(sale.sale_number||"")}">Batalkan</button>`
+                 : ""}`
+            : '<span class="erp-muted">-</span>'}
+        </td>
       </tr>
     `;
   }).join("");
 
+  body.querySelectorAll("[data-cancel-sale]").forEach(button=>{
+    button.addEventListener("click",()=>{
+      cancelTokoSale(button.dataset.cancelSale,button.dataset.saleNumber,button);
+    });
+  });
+
   const completedCount=sales.filter(s=>String(s.status||"").toLowerCase()==="selesai").length;
   message.textContent="Menampilkan "+sales.length+" transaksi; "+completedCount+" selesai. Transaksi gagal/diproses tidak masuk omzet.";
 }
+
+// PEMBATALAN TRANSAKSI TOKO
+// Proses stok dan jurnal dijalankan secara atomik melalui RPC database.
+async function cancelTokoSale(saleId,saleNumber,button){
+  if(window.currentUser?.role!=="manajer"){
+    alert("Hanya Manajer KDMP yang dapat membatalkan transaksi.");
+    return;
+  }
+  if(!saleId)return;
+  const reason=prompt("Alasan pembatalan transaksi "+(saleNumber||"ini")+":","Pembatalan transaksi");
+  if(reason===null)return;
+  if(!reason.trim()){
+    alert("Alasan pembatalan wajib diisi.");
+    return;
+  }
+  const confirmed=confirm(
+    "Yakin batalkan transaksi "+(saleNumber||"ini")+"?\\n"+
+    "Stok akan dikembalikan dan jurnal penjualan akan dibuatkan jurnal pembalik.\\n"+
+    "Tindakan ini tidak dapat diulang."
+  );
+  if(!confirmed)return;
+  if(button){button.disabled=true;button.textContent="Memproses...";}
+  try{
+    const {data,error}=await supabaseClient.rpc("batalkan_transaksi_toko",{
+      p_sale_id:saleId,
+      p_reason:reason.trim()
+    });
+    if(error)throw error;
+    if(data?.success===false)throw new Error(data.message||"Pembatalan tidak berhasil.");
+    const journalText=data?.journal_reversed
+      ? " Jurnal pembalik berhasil dibuat."
+      : " Perhatian: jurnal penjualan tidak ditemukan; periksa jurnal secara manual.";
+    alert("Transaksi "+(saleNumber||"")+" berhasil dibatalkan. Stok telah dikembalikan."+journalText);
+    await loadTokoHistory();
+    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
+    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
+    if(typeof loadDashboard==="function")await loadDashboard();
+  }catch(error){
+    console.error("Pembatalan transaksi toko gagal:",error);
+    alert("Pembatalan gagal: "+(error.message||"Kesalahan tidak diketahui")+
+      "\\nPastikan SQL fitur pembatalan sudah dijalankan di Supabase.");
+    if(button){button.disabled=false;button.textContent="Batalkan";}
+  }
+}
+window.cancelTokoSale=cancelTokoSale;
 
 window.printTokoReceiptById=async function(id){
   const {data:sale,error}=await supabaseClient
