@@ -4260,6 +4260,10 @@ async function cancelTokoSale(saleId,saleNumber,button){
     alert("Alasan pembatalan wajib diisi.");
     return;
   }
+  if(reason.trim().length>500){
+    alert("Alasan pembatalan maksimal 500 karakter.");
+    return;
+  }
   const confirmed=confirm(
     "Yakin batalkan transaksi "+(saleNumber||"ini")+"?\\n"+
     "Stok akan dikembalikan dan jurnal penjualan akan dibuatkan jurnal pembalik.\\n"+
