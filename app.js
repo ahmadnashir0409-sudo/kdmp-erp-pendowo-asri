@@ -3667,7 +3667,6 @@ tokoStyle.textContent = `
 document.head.appendChild(tokoStyle);
 
 let tokoItems = [];
-let tokoProductsCache = [];
 
 function setupToko(){
   const page=document.getElementById("modulePage");
@@ -3835,50 +3834,15 @@ function setupToko(){
     loadTokoHistory();
   };
 
-  loadTokoProducts();
+  addTokoItem();
   loadTokoHistory();
-}
-
-async function loadTokoProducts(){
-  const body=document.getElementById("tokoItemsBody");
-  if(body)body.innerHTML='<tr><td colspan="6">Memuat daftar barang persediaan...</td></tr>';
-
-  try{
-    const {data,error}=await supabaseClient
-      .from("inventory_products")
-      .select("id,product_code,product_name,unit,current_stock,selling_price,purchase_price")
-      .eq("is_active",true)
-      .order("product_name",{ascending:true});
-    if(error)throw error;
-
-    // Kasir hanya menawarkan barang yang benar-benar memiliki stok tersedia.
-    tokoProductsCache=(data||[]).filter(product=>Number(product.current_stock||0)>0);
-    tokoItems=[];
-    addTokoItem();
-    if(!tokoProductsCache.length){
-      const message=document.getElementById("tokoMessage");
-      if(message){
-        message.textContent="Belum ada barang aktif dengan stok tersedia. Tambahkan stok melalui menu Persediaan Barang.";
-        message.className="erp-message erp-error";
-      }
-    }
-  }catch(error){
-    console.error("Gagal memuat barang untuk kasir:",error);
-    if(body)body.innerHTML='<tr><td colspan="6">Gagal memuat daftar barang. Periksa koneksi dan hak akses Persediaan Barang.</td></tr>';
-    const message=document.getElementById("tokoMessage");
-    if(message){
-      message.textContent="Daftar barang tidak berhasil dimuat: "+(error.message||"Kesalahan tidak diketahui");
-      message.className="erp-message erp-error";
-    }
-  }
 }
 
 function addTokoItem(){
   tokoItems.push({
-    productId:"",
     name:"",
     quantity:1,
-    unit:"",
+    unit:"pcs",
     price:0
   });
   renderTokoItems();
@@ -3891,15 +3855,9 @@ function renderTokoItems(){
   body.innerHTML=tokoItems.map((item,index)=>`
     <tr>
       <td>
-        <select aria-label="Pilih nama barang"
-          onchange="updateTokoItem(${index},'productId',this.value)">
-          <option value="">Pilih barang...</option>
-          ${tokoProductsCache.map(product=>`
-            <option value="${escapeHTML(product.id)}" ${item.productId===product.id?"selected":""}>
-              ${escapeHTML(product.product_code)} - ${escapeHTML(product.product_name)} (Stok: ${Number(product.current_stock||0)} ${escapeHTML(product.unit||"")})
-            </option>
-          `).join("")}
-        </select>
+        <input type="text" placeholder="Nama barang"
+          value="${escapeHTML(item.name)}"
+          oninput="updateTokoItem(${index},'name',this.value)">
       </td>
       <td>
         <input type="number" min="0.001" step="0.001"
@@ -3907,13 +3865,13 @@ function renderTokoItems(){
           oninput="updateTokoItem(${index},'quantity',this.value)">
       </td>
       <td>
-        <input type="text" value="${escapeHTML(item.unit)}" readonly
-          aria-label="Satuan dari master persediaan">
+        <input type="text" value="${escapeHTML(item.unit)}"
+          oninput="updateTokoItem(${index},'unit',this.value)">
       </td>
       <td>
         <input type="number" min="0" step="1"
-          value="${item.price}" readonly
-          aria-label="Harga jual dari master persediaan">
+          value="${item.price}"
+          oninput="updateTokoItem(${index},'price',this.value)">
       </td>
       <td id="tokoLine${index}">${formatRupiah(item.quantity*item.price)}</td>
       <td>
@@ -3929,16 +3887,10 @@ function renderTokoItems(){
 window.updateTokoItem=function(index,field,value){
   if(!tokoItems[index])return;
 
-  if(field==="productId"){
-    const product=tokoProductsCache.find(item=>item.id===value);
-    tokoItems[index].productId=product?.id||"";
-    tokoItems[index].name=product?.product_name||"";
-    tokoItems[index].unit=product?.unit||"";
-    tokoItems[index].price=Number(product?.selling_price||0);
-    renderTokoItems();
-    return;
-  }else if(field==="quantity"){
-    tokoItems[index].quantity=Math.max(0,Number(value)||0);
+  if(field==="name" || field==="unit"){
+    tokoItems[index][field]=value;
+  }else{
+    tokoItems[index][field]=Math.max(0,Number(value)||0);
   }
 
   const line=document.getElementById("tokoLine"+index);
@@ -4000,7 +3952,7 @@ async function saveTokoSale(){
   const message=document.getElementById("tokoMessage");
   if(button.disabled)return;
   const totals=calculateTokoTotal();
-  const items=tokoItems.filter(item=>item.productId && item.name.trim() && item.quantity>0 && item.price>=0);
+  const items=tokoItems.filter(item=>item.name.trim() && item.quantity>0 && item.price>=0);
 
   if(!window.currentUser?.id){
     message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
@@ -4034,11 +3986,14 @@ async function saveTokoSale(){
       .eq("is_active",true);
     if(productError)throw productError;
 
-    const productById=new Map((products||[]).map(p=>[p.id,p]));
+    const productByName=new Map((products||[]).map(p=>[
+      String(p.product_name||"").trim().toLocaleLowerCase("id-ID"),p
+    ]));
     const resolvedItems=items.map(item=>{
-      const product=productById.get(item.productId);
-      if(!product || Number(product.current_stock||0)<=0)
-        throw new Error('Barang "'+item.name+'" sudah tidak tersedia atau stoknya habis. Muat ulang daftar barang.');
+      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
+      if(!product)throw new Error('Barang "'+item.name+'" belum terdaftar di menu Persediaan Barang. Gunakan nama yang sama dengan master barang.');
+      if(item.unit.trim() && product.unit && item.unit.trim().toLowerCase()!==String(product.unit).toLowerCase())
+        throw new Error('Satuan barang "'+item.name+'" harus '+product.unit+'.');
       const qty=Number(item.quantity);
       const entry=grouped.get(product.id)||{product,quantity:0};
       entry.quantity+=qty;
@@ -4049,12 +4004,6 @@ async function saveTokoSale(){
     // Periksa stok SEBELUM membuat header transaksi.
     // Jika stok kurang, catat percobaan langsung dengan status "gagal",
     // sehingga tidak ada baris "diproses" yang tertinggal.
-    // Harga transaksi mengikuti harga jual terbaru dari master persediaan.
-    const latestSubtotal=resolvedItems.reduce((sum,item)=>sum+Number(item.quantity||0)*Number(item.product.selling_price||0),0);
-    if(Math.abs(latestSubtotal-totals.subtotal)>0.005){
-      throw new Error("Harga jual barang berubah. Muat ulang form dan periksa kembali total transaksi.");
-    }
-
     const stockProblems=[];
     for(const {product,quantity} of grouped.values()){
       const available=Number(product.current_stock||0);
@@ -4098,15 +4047,15 @@ async function saveTokoSale(){
       throw new Error(stockProblems.join(" "));
     }
 
-    const detailItems=resolvedItems.map(item=>{
-      const product=item.product;
+    const detailItems=items.map(item=>{
+      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
       return {
         sale_id:createdSale.id,
         product_name:product.product_name,
         quantity:item.quantity,
-        unit:product.unit||"pcs",
-        unit_price:Number(product.selling_price||0),
-        line_total:item.quantity*Number(product.selling_price||0)
+        unit:product.unit||item.unit||"pcs",
+        unit_price:item.price,
+        line_total:item.quantity*item.price
       };
     });
     const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
@@ -8676,3 +8625,143 @@ window.showPage=function(page,button){
 window.calculateBankReconciliation = calculateBankReconciliation;
 window.saveBankMutation = saveBankMutation;
 window.saveBankReconciliation = saveBankReconciliation;
+
+
+// ==========================================
+// PENGATURAN DASAR: PROFIL KOPERASI & TEMA
+// Data profil dan tema versi awal disimpan lokal di browser.
+// ==========================================
+const kdmpSettingsStyle=document.createElement("style");
+kdmpSettingsStyle.textContent=`
+#settingsContent{display:none}
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.settings-card{background:#fff;border:1px solid #eceef2;border-radius:13px;padding:20px;margin-bottom:16px}
+.settings-card h3{margin:0 0 7px;font-size:16px;color:#252a34}
+.settings-help{font-size:12px;color:#858b98;margin:0 0 16px;line-height:1.5}
+.settings-field{display:flex;flex-direction:column;gap:6px;margin-bottom:13px}
+.settings-field label{font-size:12px;font-weight:700;color:#606775}
+.settings-field input,.settings-field textarea{width:100%;border:1px solid #dfe3e9;border-radius:8px;padding:10px 11px;font:inherit;font-size:13px;background:#fff;color:#252a34}
+.settings-field textarea{min-height:75px;resize:vertical}
+.settings-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:8px}
+.settings-btn{border:0;border-radius:8px;padding:10px 15px;background:#a71925;color:#fff;font-weight:700;font-size:12px;cursor:pointer}
+.settings-btn.secondary{background:#eef0f3;color:#4d5562}
+.settings-logo-preview{width:76px;height:76px;border:1px dashed #cbd0d8;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fafafa;color:#888;font-size:11px;margin-bottom:10px}
+.settings-logo-preview img{width:100%;height:100%;object-fit:contain}
+.settings-theme-options{display:flex;gap:12px;flex-wrap:wrap}
+.settings-theme-option{flex:1;min-width:130px;border:1px solid #dfe3e9;border-radius:10px;padding:14px;background:#fff;color:#333;text-align:left;cursor:pointer}
+.settings-theme-option.active{border:2px solid #a71925;background:#fff7f7}
+.settings-theme-option strong{display:block;margin-top:7px;font-size:13px}
+.settings-theme-option small{display:block;color:#858b98;margin-top:3px;font-size:11px}
+#settingsMessage{font-size:12px;margin-top:10px;min-height:17px}
+body[data-kdmp-theme="dark"]{--bg:#151922;--text:#edf0f5;--white:#202633;--border:#343c4b;--muted:#a4adbb;background:#151922;color:#edf0f5}
+body[data-kdmp-theme="dark"] .sidebar,body[data-kdmp-theme="dark"] .topbar,body[data-kdmp-theme="dark"] .settings-card,body[data-kdmp-theme="dark"] .erp-content,body[data-kdmp-theme="dark"] .erp-card,body[data-kdmp-theme="dark"] .card,body[data-kdmp-theme="dark"] .panel{background:#202633!important;color:#edf0f5!important;border-color:#343c4b!important}
+body[data-kdmp-theme="dark"] .menu button{color:#c2c9d4}
+body[data-kdmp-theme="dark"] .menu button:hover,body[data-kdmp-theme="dark"] .menu button.active{background:#42242b;color:#ffb8c0}
+body[data-kdmp-theme="dark"] .settings-card h3,body[data-kdmp-theme="dark"] .settings-field label{color:#edf0f5}
+body[data-kdmp-theme="dark"] .settings-help,body[data-kdmp-theme="dark"] .settings-theme-option small{color:#a4adbb}
+body[data-kdmp-theme="dark"] .settings-field input,body[data-kdmp-theme="dark"] .settings-field textarea{background:#151922;color:#edf0f5;border-color:#424b5b}
+body[data-kdmp-theme="dark"] .settings-theme-option{background:#151922;color:#edf0f5;border-color:#424b5b}
+body[data-kdmp-theme="dark"] .settings-theme-option.active{background:#42242b;border-color:#ff7b89}
+body[data-kdmp-theme="dark"] table th{background:#252d3a!important;color:#dce2eb!important}
+body[data-kdmp-theme="dark"] table td{color:#e1e6ee;border-color:#343c4b!important}
+@media(max-width:700px){.settings-grid{grid-template-columns:1fr}.settings-card{padding:15px}}
+`;
+document.head.appendChild(kdmpSettingsStyle);
+
+function getKDMPProfile(){
+  try{return JSON.parse(localStorage.getItem("kdmp_erp_profile")||"{}");}
+  catch(_){return {};}
+}
+function applyKDMPTheme(theme){
+  const selected=theme==="dark"?"dark":"light";
+  document.body.setAttribute("data-kdmp-theme",selected);
+  try{localStorage.setItem("kdmp_erp_theme",selected);}catch(_){}
+  document.querySelectorAll(".settings-theme-option").forEach(button=>button.classList.toggle("active",button.dataset.theme===selected));
+}
+(function initKDMPTheme(){
+  let saved="light";
+  try{saved=localStorage.getItem("kdmp_erp_theme")||"light";}catch(_){}
+  document.body.setAttribute("data-kdmp-theme",saved==="dark"?"dark":"light");
+})();
+
+function setupSettings(){
+  const parent=document.getElementById("modulePage");
+  if(!parent)return;
+  let section=document.getElementById("settingsContent");
+  if(!section){
+    section=document.createElement("section");
+    section.id="settingsContent";
+    section.className="erp-content";
+    section.innerHTML=`
+      <div class="settings-card">
+        <h3>🏢 Profil Koperasi</h3>
+        <p class="settings-help">Atur identitas koperasi yang ditampilkan pada aplikasi dan dokumen.</p>
+        <div class="settings-grid">
+          <div>
+            <div class="settings-logo-preview" id="settingsLogoPreview">Logo</div>
+            <div class="settings-field"><label>Logo Koperasi</label><input type="file" id="settingsLogoFile" accept="image/png,image/jpeg,image/webp"></div>
+          </div>
+          <div>
+            <div class="settings-field"><label>Nama Koperasi</label><input id="settingsOrgName" maxlength="120" placeholder="Nama koperasi"></div>
+            <div class="settings-field"><label>Email Koperasi</label><input id="settingsOrgEmail" type="email" maxlength="160" placeholder="email@koperasi.id"></div>
+          </div>
+          <div class="settings-field"><label>Nomor Telepon</label><input id="settingsOrgPhone" maxlength="40" placeholder="Nomor kontak"></div>
+          <div class="settings-field"><label>Alamat</label><textarea id="settingsOrgAddress" maxlength="500" placeholder="Alamat lengkap koperasi"></textarea></div>
+        </div>
+        <div class="settings-actions"><button type="button" class="settings-btn" id="settingsSaveProfile">Simpan Profil</button><button type="button" class="settings-btn secondary" id="settingsResetProfile">Pulihkan Default</button></div>
+        <div id="settingsMessage"></div>
+      </div>
+      <div class="settings-card">
+        <h3>🎨 Tampilan Aplikasi</h3>
+        <p class="settings-help">Pilih tampilan terang atau gelap. Pilihan akan diingat pada perangkat dan browser ini.</p>
+        <div class="settings-theme-options">
+          <button type="button" class="settings-theme-option" data-theme="light"><span style="font-size:25px">☀️</span><strong>Mode Terang</strong><small>Tampilan cerah</small></button>
+          <button type="button" class="settings-theme-option" data-theme="dark"><span style="font-size:25px">🌙</span><strong>Mode Gelap</strong><small>Tampilan redup</small></button>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h3>ℹ️ Informasi Penyimpanan</h3>
+        <p class="settings-help">Versi awal ini menyimpan profil dan pilihan tema di browser/perangkat yang digunakan. Sinkronisasi profil ke Supabase untuk seluruh pengguna akan dibuat pada tahap integrasi berikutnya.</p>
+      </div>`;
+    parent.appendChild(section);
+    const profile=getKDMPProfile();
+    document.getElementById("settingsOrgName").value=profile.name||"KDMP Pendowo Asri";
+    document.getElementById("settingsOrgEmail").value=profile.email||"";
+    document.getElementById("settingsOrgPhone").value=profile.phone||"";
+    document.getElementById("settingsOrgAddress").value=profile.address||"";
+    if(profile.logo){document.getElementById("settingsLogoPreview").innerHTML=`<img src="${profile.logo}" alt="Logo koperasi">`;}
+    document.getElementById("settingsLogoFile").addEventListener("change",event=>{
+      const file=event.target.files?.[0];if(!file)return;
+      if(file.size>1024*1024){event.target.value="";document.getElementById("settingsMessage").textContent="Ukuran logo maksimal 1 MB.";return;}
+      const reader=new FileReader();reader.onload=()=>{section.dataset.pendingLogo=String(reader.result||"");document.getElementById("settingsLogoPreview").innerHTML=`<img src="${reader.result}" alt="Pratinjau logo">`;};reader.readAsDataURL(file);
+    });
+    document.getElementById("settingsSaveProfile").addEventListener("click",()=>{
+      const name=document.getElementById("settingsOrgName").value.trim();
+      if(!name){document.getElementById("settingsMessage").textContent="Nama koperasi wajib diisi.";return;}
+      const old=getKDMPProfile();
+      const profile={name,email:document.getElementById("settingsOrgEmail").value.trim(),phone:document.getElementById("settingsOrgPhone").value.trim(),address:document.getElementById("settingsOrgAddress").value.trim(),logo:section.dataset.pendingLogo||old.logo||""};
+      try{localStorage.setItem("kdmp_erp_profile",JSON.stringify(profile));document.getElementById("settingsMessage").textContent="Profil berhasil disimpan di perangkat ini.";document.getElementById("settingsMessage").style.color="#159765";}
+      catch(error){document.getElementById("settingsMessage").textContent="Gagal menyimpan. Ukuran logo mungkin terlalu besar.";document.getElementById("settingsMessage").style.color="#b91c2c";}
+    });
+    document.getElementById("settingsResetProfile").addEventListener("click",()=>{
+      if(!confirm("Pulihkan profil ke default KDMP Pendowo Asri?"))return;
+      localStorage.removeItem("kdmp_erp_profile");section.dataset.pendingLogo="";
+      document.getElementById("settingsOrgName").value="KDMP Pendowo Asri";
+      document.getElementById("settingsOrgEmail").value="";document.getElementById("settingsOrgPhone").value="";document.getElementById("settingsOrgAddress").value="";
+      document.getElementById("settingsLogoPreview").textContent="Logo";document.getElementById("settingsLogoFile").value="";
+      document.getElementById("settingsMessage").textContent="Profil default dipulihkan.";
+    });
+    document.querySelectorAll(".settings-theme-option").forEach(button=>button.addEventListener("click",()=>applyKDMPTheme(button.dataset.theme)));
+  }
+  section.style.display="block";
+  let theme="light";try{theme=localStorage.getItem("kdmp_erp_theme")||"light";}catch(_){}
+  document.querySelectorAll(".settings-theme-option").forEach(button=>button.classList.toggle("active",button.dataset.theme===theme));
+}
+
+const kdmpOriginalShowPageForSettings=window.showPage;
+window.showPage=function(page,button){
+  const settings=document.getElementById("settingsContent");
+  if(settings)settings.style.display="none";
+  kdmpOriginalShowPageForSettings(page,button);
+  if(page==="pengaturan")setupSettings();
+};
