@@ -910,7 +910,7 @@ function setupLedger() {
       <div class="ledger-card"><small>Saldo Akhir</small><strong id="ledgerClosing">Rp0</strong></div>
     </div>
     <div class="ledger-opening" id="ledgerAccountInfo">Pilih akun untuk melihat rincian mutasinya.</div>
-    <div class="erp-table-wrap"><table class="erp-table" style="min-width:850px">
+    <div class="erp-table-wrap ledger-table-wrap"><table class="erp-table ledger-table">
       <thead><tr><th>Tanggal</th><th>Nomor Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th><th>Aksi</th></tr></thead>
       <tbody id="ledgerTableBody"><tr><td colspan="6">Belum ada data yang ditampilkan.</td></tr></tbody>
     </table></div>`;
