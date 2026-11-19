@@ -3667,6 +3667,7 @@ tokoStyle.textContent = `
 document.head.appendChild(tokoStyle);
 
 let tokoItems = [];
+let tokoProductsCache = [];
 
 function setupToko(){
   const page=document.getElementById("modulePage");
@@ -3834,15 +3835,50 @@ function setupToko(){
     loadTokoHistory();
   };
 
-  addTokoItem();
+  loadTokoProducts();
   loadTokoHistory();
+}
+
+async function loadTokoProducts(){
+  const body=document.getElementById("tokoItemsBody");
+  const message=document.getElementById("tokoMessage");
+  if(body)body.innerHTML='<tr><td colspan="6">Memuat daftar barang persediaan...</td></tr>';
+
+  try{
+    const {data,error}=await supabaseClient
+      .from("inventory_products")
+      .select("id,product_code,product_name,unit,current_stock,selling_price,purchase_price")
+      .eq("is_active",true)
+      .order("product_name",{ascending:true});
+    if(error)throw error;
+
+    tokoProductsCache=(data||[]).filter(product=>Number(product.current_stock||0)>0);
+    tokoItems=[];
+    addTokoItem();
+
+    if(!tokoProductsCache.length && message){
+      message.textContent="Belum ada barang aktif dengan stok tersedia. Tambahkan stok melalui menu Persediaan Barang.";
+      message.className="erp-message erp-error";
+    }else if(message){
+      message.textContent="";
+      message.className="erp-message";
+    }
+  }catch(error){
+    console.error("Gagal memuat barang untuk kasir:",error);
+    if(body)body.innerHTML='<tr><td colspan="6">Gagal memuat daftar barang. Periksa koneksi dan hak akses Persediaan Barang.</td></tr>';
+    if(message){
+      message.textContent="Daftar barang tidak berhasil dimuat: "+(error.message||"Kesalahan tidak diketahui");
+      message.className="erp-message erp-error";
+    }
+  }
 }
 
 function addTokoItem(){
   tokoItems.push({
+    productId:"",
     name:"",
     quantity:1,
-    unit:"pcs",
+    unit:"",
     price:0
   });
   renderTokoItems();
@@ -3855,9 +3891,15 @@ function renderTokoItems(){
   body.innerHTML=tokoItems.map((item,index)=>`
     <tr>
       <td>
-        <input type="text" placeholder="Nama barang"
-          value="${escapeHTML(item.name)}"
-          oninput="updateTokoItem(${index},'name',this.value)">
+        <select aria-label="Pilih nama barang"
+          onchange="updateTokoItem(${index},'productId',this.value)">
+          <option value="">Pilih barang...</option>
+          ${tokoProductsCache.map(product=>`
+            <option value="${escapeHTML(product.id)}" ${item.productId===product.id?"selected":""}>
+              ${escapeHTML(product.product_code)} - ${escapeHTML(product.product_name)} (Stok: ${Number(product.current_stock||0)} ${escapeHTML(product.unit||"")})
+            </option>
+          `).join("")}
+        </select>
       </td>
       <td>
         <input type="number" min="0.001" step="0.001"
@@ -3865,13 +3907,13 @@ function renderTokoItems(){
           oninput="updateTokoItem(${index},'quantity',this.value)">
       </td>
       <td>
-        <input type="text" value="${escapeHTML(item.unit)}"
-          oninput="updateTokoItem(${index},'unit',this.value)">
+        <input type="text" value="${escapeHTML(item.unit)}" readonly
+          aria-label="Satuan dari master persediaan">
       </td>
       <td>
         <input type="number" min="0" step="1"
-          value="${item.price}"
-          oninput="updateTokoItem(${index},'price',this.value)">
+          value="${item.price}" readonly
+          aria-label="Harga jual dari master persediaan">
       </td>
       <td id="tokoLine${index}">${formatRupiah(item.quantity*item.price)}</td>
       <td>
@@ -3887,10 +3929,16 @@ function renderTokoItems(){
 window.updateTokoItem=function(index,field,value){
   if(!tokoItems[index])return;
 
-  if(field==="name" || field==="unit"){
-    tokoItems[index][field]=value;
-  }else{
-    tokoItems[index][field]=Math.max(0,Number(value)||0);
+  if(field==="productId"){
+    const product=tokoProductsCache.find(item=>item.id===value);
+    tokoItems[index].productId=product?.id||"";
+    tokoItems[index].name=product?.product_name||"";
+    tokoItems[index].unit=product?.unit||"";
+    tokoItems[index].price=Number(product?.selling_price||0);
+    renderTokoItems();
+    return;
+  }else if(field==="quantity"){
+    tokoItems[index].quantity=Math.max(0,Number(value)||0);
   }
 
   const line=document.getElementById("tokoLine"+index);
@@ -3952,7 +4000,7 @@ async function saveTokoSale(){
   const message=document.getElementById("tokoMessage");
   if(button.disabled)return;
   const totals=calculateTokoTotal();
-  const items=tokoItems.filter(item=>item.name.trim() && item.quantity>0 && item.price>=0);
+  const items=tokoItems.filter(item=>item.productId && item.name.trim() && item.quantity>0 && item.price>=0);
 
   if(!window.currentUser?.id){
     message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
@@ -8826,266 +8874,3 @@ window.showPage=function(page,button){
   kdmpOriginalShowPageForSettings(page,button);
   if(page==="pengaturan")setupSettings();
 };
-
-
-// ============================================================
-// MODE GELAP V2 - PALET KONSISTEN UNTUK SELURUH APLIKASI
-// Panel biru, area sekunder charcoal, tabel gelap, teks kontras.
-// ============================================================
-(function installKDMPDarkPaletteV2(){
-  if(document.getElementById("kdmpDarkPaletteV2")) return;
-  const css=document.createElement("style");
-  css.id="kdmpDarkPaletteV2";
-  css.textContent=`
-  body[data-kdmp-theme="dark"]{
-    --kdmp-bg:#111827;
-    --kdmp-surface:#1f2937;
-    --kdmp-surface-2:#27364b;
-    --kdmp-blue:#24558a;
-    --kdmp-blue-2:#3274b9;
-    --kdmp-text:#f8fafc;
-    --kdmp-muted:#cbd5e1;
-    --kdmp-border:#46566d;
-    background:var(--kdmp-bg)!important;
-    color:var(--kdmp-text)!important;
-    color-scheme:dark;
-  }
-  body[data-kdmp-theme="dark"] #modulePage{
-    background:transparent!important;
-    color:var(--kdmp-text)!important;
-  }
-  /* Navigasi */
-  body[data-kdmp-theme="dark"] #sidebar,
-  body[data-kdmp-theme="dark"] .sidebar,
-  body[data-kdmp-theme="dark"] .topbar{
-    background:#172b49!important;
-    color:#fff!important;
-    border-color:#314969!important;
-  }
-  body[data-kdmp-theme="dark"] #sidebar *,
-  body[data-kdmp-theme="dark"] .sidebar *,
-  body[data-kdmp-theme="dark"] .topbar *{
-    color:inherit;
-  }
-  body[data-kdmp-theme="dark"] .menu button,
-  body[data-kdmp-theme="dark"] .menu a{
-    color:#eaf2ff!important;
-  }
-  body[data-kdmp-theme="dark"] .menu button.active,
-  body[data-kdmp-theme="dark"] .menu a.active{
-    background:#a71935!important;color:#fff!important;
-  }
-
-  /* Panel utama: biru terang, bukan putih pudar */
-  body[data-kdmp-theme="dark"] .erp-card,
-  body[data-kdmp-theme="dark"] .export-center,
-  body[data-kdmp-theme="dark"] .manager-info-card,
-  body[data-kdmp-theme="dark"] .invoice-panel,
-  body[data-kdmp-theme="dark"] .toko-box,
-  body[data-kdmp-theme="dark"] .member-panel,
-  body[data-kdmp-theme="dark"] .sav-panel,
-  body[data-kdmp-theme="dark"] .loan-panel,
-  body[data-kdmp-theme="dark"] .debt-panel,
-  body[data-kdmp-theme="dark"] .inventory-panel,
-  body[data-kdmp-theme="dark"] .settings-card,
-  body[data-kdmp-theme="dark"] .operational-card,
-  body[data-kdmp-theme="dark"] .balance-detail-dialog,
-  body[data-kdmp-theme="dark"] .journal-detail-dialog{
-    background:linear-gradient(145deg,#285783,#21466f)!important;
-    color:#fff!important;
-    border:1px solid #4779a8!important;
-    box-shadow:0 8px 22px rgba(0,0,0,.18)!important;
-  }
-
-  /* Kartu statistik dan subpanel charcoal */
-  body[data-kdmp-theme="dark"] .financial-card,
-  body[data-kdmp-theme="dark"] .ledger-card,
-  body[data-kdmp-theme="dark"] .report-card,
-  body[data-kdmp-theme="dark"] .inventory-card,
-  body[data-kdmp-theme="dark"] .member-card,
-  body[data-kdmp-theme="dark"] .sav-card,
-  body[data-kdmp-theme="dark"] .loan-card,
-  body[data-kdmp-theme="dark"] .debt-card,
-  body[data-kdmp-theme="dark"] .invoice-stat,
-  body[data-kdmp-theme="dark"] .toko-stat,
-  body[data-kdmp-theme="dark"] .manager-info-icon,
-  body[data-kdmp-theme="dark"] .pending-loan-empty,
-  body[data-kdmp-theme="dark"] .pending-loan-item,
-  body[data-kdmp-theme="dark"] .dashboard-chart-wrap,
-  body[data-kdmp-theme="dark"] .journal-detail-meta>div,
-  body[data-kdmp-theme="dark"] .balance-detail-summary>div{
-    background:#202a39!important;
-    color:#f8fafc!important;
-    border-color:#3c4c63!important;
-  }
-
-  /* Area filter, form, panel hasil rekonsiliasi, tabel mutasi */
-  body[data-kdmp-theme="dark"] .erp-form,
-  body[data-kdmp-theme="dark"] .ledger-filter,
-  body[data-kdmp-theme="dark"] .report-filter,
-  body[data-kdmp-theme="dark"] .operational-filter,
-  body[data-kdmp-theme="dark"] #bankContent .form-grid,
-  body[data-kdmp-theme="dark"] #bankResult,
-  body[data-kdmp-theme="dark"] #bankHistory,
-  body[data-kdmp-theme="dark"] #bankMutations,
-  body[data-kdmp-theme="dark"] .erp-table-wrap,
-  body[data-kdmp-theme="dark"] .table-responsive,
-  body[data-kdmp-theme="dark"] .toko-table-wrap,
-  body[data-kdmp-theme="dark"] .member-table-wrap,
-  body[data-kdmp-theme="dark"] .sav-table-wrap,
-  body[data-kdmp-theme="dark"] .loan-table-wrap,
-  body[data-kdmp-theme="dark"] .debt-table-wrap,
-  body[data-kdmp-theme="dark"] .inventory-table-wrap{
-    background:#1c2533!important;
-    color:#f8fafc!important;
-    border-color:#43536a!important;
-  }
-
-  /* Isi panel dan judul: putih jelas; teks sekunder abu terang */
-  body[data-kdmp-theme="dark"] #modulePage h1,
-  body[data-kdmp-theme="dark"] #modulePage h2,
-  body[data-kdmp-theme="dark"] #modulePage h3,
-  body[data-kdmp-theme="dark"] #modulePage h4,
-  body[data-kdmp-theme="dark"] #modulePage p,
-  body[data-kdmp-theme="dark"] #modulePage label,
-  body[data-kdmp-theme="dark"] #modulePage strong,
-  body[data-kdmp-theme="dark"] #modulePage .manager-info-title,
-  body[data-kdmp-theme="dark"] #modulePage .manager-info-value,
-  body[data-kdmp-theme="dark"] #modulePage .manager-info-note,
-  body[data-kdmp-theme="dark"] #modulePage .export-description,
-  body[data-kdmp-theme="dark"] #modulePage .export-field label,
-  body[data-kdmp-theme="dark"] #modulePage .form-hint{
-    color:#f8fafc!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage .erp-muted,
-  body[data-kdmp-theme="dark"] #modulePage .debt-muted,
-  body[data-kdmp-theme="dark"] #modulePage .dashboard-chart-label,
-  body[data-kdmp-theme="dark"] #modulePage .dashboard-legend,
-  body[data-kdmp-theme="dark"] #modulePage .export-message,
-  body[data-kdmp-theme="dark"] #modulePage .manager-dashboard-message,
-  body[data-kdmp-theme="dark"] #modulePage small{
-    color:#cbd5e1!important;
-  }
-
-  /* Semua tabel di seluruh modul */
-  body[data-kdmp-theme="dark"] #modulePage table,
-  body[data-kdmp-theme="dark"] #modulePage .erp-table,
-  body[data-kdmp-theme="dark"] #modulePage .inventory-table,
-  body[data-kdmp-theme="dark"] #modulePage .toko-table,
-  body[data-kdmp-theme="dark"] #modulePage .member-table,
-  body[data-kdmp-theme="dark"] #modulePage .sav-table,
-  body[data-kdmp-theme="dark"] #modulePage .loan-table,
-  body[data-kdmp-theme="dark"] #modulePage .debt-table{
-    background:#182231!important;color:#f8fafc!important;border-color:#46566d!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage table th,
-  body[data-kdmp-theme="dark"] #modulePage .erp-table th,
-  body[data-kdmp-theme="dark"] #modulePage .inventory-table th,
-  body[data-kdmp-theme="dark"] #modulePage .toko-table th,
-  body[data-kdmp-theme="dark"] #modulePage .member-table th,
-  body[data-kdmp-theme="dark"] #modulePage .sav-table th,
-  body[data-kdmp-theme="dark"] #modulePage .loan-table th,
-  body[data-kdmp-theme="dark"] #modulePage .debt-table th{
-    background:#3274b9!important;color:#fff!important;border-color:#568fc8!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage table td,
-  body[data-kdmp-theme="dark"] #modulePage .erp-table td,
-  body[data-kdmp-theme="dark"] #modulePage .inventory-table td,
-  body[data-kdmp-theme="dark"] #modulePage .toko-table td,
-  body[data-kdmp-theme="dark"] #modulePage .member-table td,
-  body[data-kdmp-theme="dark"] #modulePage .sav-table td,
-  body[data-kdmp-theme="dark"] #modulePage .loan-table td,
-  body[data-kdmp-theme="dark"] #modulePage .debt-table td{
-    background:#202a39!important;color:#f1f5f9!important;border-color:#3c4c63!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage tbody tr:hover td{
-    background:#2b3b50!important;
-  }
-
-  /* Input/select tetap terang supaya nilai dan placeholder terbaca */
-  body[data-kdmp-theme="dark"] #modulePage input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-  body[data-kdmp-theme="dark"] #modulePage select,
-  body[data-kdmp-theme="dark"] #modulePage textarea,
-  body[data-kdmp-theme="dark"] #modulePage .erp-input{
-    background:#f1f5f9!important;color:#111827!important;
-    border:1px solid #9aa9ba!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage input::placeholder,
-  body[data-kdmp-theme="dark"] #modulePage textarea::placeholder{
-    color:#64748b!important;opacity:1!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage option{
-    background:#f1f5f9!important;color:#111827!important;
-  }
-
-  /* Tombol dalam kartu/panel: biru cerah atau warna aksi, teks putih */
-  body[data-kdmp-theme="dark"] #modulePage .btn-primary,
-  body[data-kdmp-theme="dark"] #modulePage .export-button,
-  body[data-kdmp-theme="dark"] #modulePage .pending-loan-button,
-  body[data-kdmp-theme="dark"] #modulePage .erp-button:not(.secondary),
-  body[data-kdmp-theme="dark"] #modulePage .settings-btn:not(.secondary){
-    background:#3274b9!important;color:#fff!important;border-color:#5b94cb!important;
-  }
-  body[data-kdmp-theme="dark"] #modulePage button.secondary,
-  body[data-kdmp-theme="dark"] #modulePage .erp-button.secondary,
-  body[data-kdmp-theme="dark"] #modulePage .settings-btn.secondary,
-  body[data-kdmp-theme="dark"] #modulePage .simpanan-back-button{
-    background:#3b4657!important;color:#fff!important;border-color:#66758a!important;
-  }
-
-  /* Area dashboard utama dan kartu akses cepat */
-  body[data-kdmp-theme="dark"] #dashboard .stats>div,
-  body[data-kdmp-theme="dark"] #dashboard .stat-card,
-  body[data-kdmp-theme="dark"] #dashboard .dashboard-card,
-  body[data-kdmp-theme="dark"] #dashboard .quick-access,
-  body[data-kdmp-theme="dark"] #dashboard .quick-access button,
-  body[data-kdmp-theme="dark"] #dashboard .quick-actions button,
-  body[data-kdmp-theme="dark"] #dashboard .access-card,
-  body[data-kdmp-theme="dark"] #dashboard .chart-card,
-  body[data-kdmp-theme="dark"] #dashboard .recent-card{
-    background:#285783!important;color:#fff!important;border-color:#4779a8!important;
-  }
-  body[data-kdmp-theme="dark"] #dashboard .stats *,
-  body[data-kdmp-theme="dark"] #dashboard .quick-access *,
-  body[data-kdmp-theme="dark"] #dashboard .quick-actions *,
-  body[data-kdmp-theme="dark"] #dashboard .access-card *{
-    color:inherit;
-  }
-  body[data-kdmp-theme="dark"] .dashboard-chart-wrap .dashboard-chart-label,
-  body[data-kdmp-theme="dark"] .dashboard-chart-wrap .dashboard-legend{
-    color:#e2e8f0!important;
-  }
-
-  /* Badge status tidak kehilangan makna */
-  body[data-kdmp-theme="dark"] .erp-status,
-  body[data-kdmp-theme="dark"] .toko-status,
-  body[data-kdmp-theme="dark"] .debt-status{
-    font-weight:700!important;
-  }
-  body[data-kdmp-theme="dark"] .erp-status{background:#dcfce7!important;color:#166534!important}
-  body[data-kdmp-theme="dark"] .toko-status.selesai{background:#dcfce7!important;color:#166534!important}
-  body[data-kdmp-theme="dark"] .toko-status.gagal,
-  body[data-kdmp-theme="dark"] .toko-status.dibatalkan{background:#fee2e2!important;color:#991b1b!important}
-  body[data-kdmp-theme="dark"] .toko-status.diproses{background:#dbeafe!important;color:#1e40af!important}
-
-  /* Catatan / peringatan */
-  body[data-kdmp-theme="dark"] .financial-note,
-  body[data-kdmp-theme="dark"] .ledger-opening,
-  body[data-kdmp-theme="dark"] .export-format{
-    background:#263b55!important;color:#f8fafc!important;border-color:#45617f!important;
-  }
-  body[data-kdmp-theme="dark"] .export-format strong{color:#bfdbfe!important}
-  body[data-kdmp-theme="dark"] .report-total-row{background:#2b3b50!important;color:#fff!important}
-  body[data-kdmp-theme="dark"] .journal-detail-meta small,
-  body[data-kdmp-theme="dark"] .balance-detail-summary small{color:#cbd5e1!important}
-
-  /* Settings card tetap selaras, saklar terlihat */
-  body[data-kdmp-theme="dark"] .settings-theme-row{
-    background:#202a39!important;border-color:#52647c!important;
-  }
-  body[data-kdmp-theme="dark"] .settings-theme-state strong,
-  body[data-kdmp-theme="dark"] .settings-theme-state small{color:#fff!important}
-  body[data-kdmp-theme="dark"] .settings-card h3{color:#fff!important}
-  `;
-  document.head.appendChild(css);
-})();
