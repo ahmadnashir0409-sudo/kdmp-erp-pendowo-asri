@@ -110,3 +110,115 @@
     table-layout: auto;
   }
 }
+
+  .welcome h1 {
+    font-size: 21px;
+  }
+
+  .stats {
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 15px;
+  }
+
+  .stat-card h3 {
+    font-size: 16px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+  }
+
+  .top-actions {
+    gap: 8px;
+  }
+
+  .user-info {
+    display: none;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  #bankContent .erp-card {
+    padding: 17px;
+  }
+
+  #bankContent .form-grid,
+  #bankContent .financial-summary {
+    grid-template-columns: 1fr;
+  }
+
+  #bankContent .btn-primary {
+    width: 100%;
+  }
+
+  .erp-grid,
+  .financial-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .journal-line {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .login-card {
+    padding: 25px 20px;
+  }
+}
+
+/* JURNAL UMUM - RIWAYAT LEBIH RINGKAS */
+#journalContent .erp-table-wrap {
+  overflow-x: hidden;
+}
+
+#journalContent .erp-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+#journalContent .erp-table th,
+#journalContent .erp-table td {
+  padding: 8px 9px;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
+#journalContent .erp-table th:nth-child(1) { width: 14%; }
+#journalContent .erp-table th:nth-child(2) { width: 10%; }
+#journalContent .erp-table th:nth-child(3) { width: 25%; }
+#journalContent .erp-table th:nth-child(4) { width: 10%; }
+#journalContent .erp-table th:nth-child(5),
+#journalContent .erp-table th:nth-child(6) { width: 15%; }
+#journalContent .erp-table th:nth-child(7) { width: 11%; }
+
+#journalContent .journal-detail-button {
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  #journalContent .erp-table-wrap {
+    overflow-x: auto;
+  }
+
+  #journalContent .erp-table {
+    min-width: 680px;
+    table-layout: auto;
+  }
+}
