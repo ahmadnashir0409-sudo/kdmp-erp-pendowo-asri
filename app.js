@@ -4059,26 +4059,12 @@ async function saveTokoSale(){
     const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
     if(itemError)throw itemError;
 
-    // Kurangi stok secara atomik: update hanya jika stok masih sama dengan
-    // angka yang tadi dibaca. Dua kasir tidak bisa menjual stok terakhir bersamaan.
-    button.textContent="Mengunci dan memperbarui stok...";
+    // inventory_movements memicu pembaruan current_stock di database.
+    // Jangan mengurangi current_stock lagi dari JavaScript.
+    button.textContent="Mencatat mutasi stok...";
     for(const {product,quantity} of grouped.values()){
       const before=Number(product.current_stock||0);
       const after=before-quantity;
-      const {data:updatedProduct,error:updateError}=await supabaseClient
-        .from("inventory_products")
-        .update({current_stock:after})
-        .eq("id",product.id)
-        .eq("current_stock",before)
-        .select("id")
-        .maybeSingle();
-
-      if(updateError)throw updateError;
-      if(!updatedProduct){
-        throw new Error('Stok '+product.product_name+' baru saja berubah karena transaksi lain. Silakan muat ulang persediaan lalu coba lagi.');
-      }
-      stockChanges.push({product,before,after});
-
       const {data:movement,error:movementError}=await supabaseClient
         .from("inventory_movements")
         .insert({
@@ -4091,6 +4077,7 @@ async function saveTokoSale(){
         }).select("id").single();
       if(movementError)throw movementError;
       movementIds.push(movement.id);
+      stockChanges.push({product,before,after});
     }
 
     // Selesaikan transaksi hanya setelah seluruh barang dan mutasi stok berhasil.
@@ -8253,25 +8240,16 @@ window.saveInventoryMovement=async function(){
 
     if(movementError)throw movementError;
 
-    const updateData={current_stock:stockAfter};
-
+    // Trigger inventory_movements memperbarui current_stock.
+    // Di sini hanya harga beli yang perlu diperbarui secara terpisah.
     if(type==="masuk"&&cost>0){
-      updateData.purchase_price=cost;
-    }
-
-    const {error:updateError}=await supabaseClient
-      .from("inventory_products")
-      .update(updateData)
-      .eq("id",productId);
-
-    if(updateError){
-      if(movement?.id){
-        await supabaseClient.from("inventory_movements").delete().eq("id",movement.id);
+      const {error:updatePriceError}=await supabaseClient
+        .from("inventory_products")
+        .update({purchase_price:cost})
+        .eq("id",productId);
+      if(updatePriceError){
+        throw new Error("Mutasi stok tercatat, tetapi pembaruan harga beli gagal: "+updatePriceError.message);
       }
-      throw new Error(
-        "Pembaruan stok gagal dan catatan mutasi dibatalkan: "+
-        updateError.message
-      );
     }
 
     message.textContent=
