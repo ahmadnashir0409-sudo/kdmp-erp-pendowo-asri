@@ -8647,21 +8647,26 @@ kdmpSettingsStyle.textContent=`
 .settings-btn.secondary{background:#eef0f3;color:#4d5562}
 .settings-logo-preview{width:76px;height:76px;border:1px dashed #cbd0d8;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fafafa;color:#888;font-size:11px;margin-bottom:10px}
 .settings-logo-preview img{width:100%;height:100%;object-fit:contain}
-.settings-theme-options{display:flex;gap:12px;flex-wrap:wrap}
-.settings-theme-option{flex:1;min-width:130px;border:1px solid #dfe3e9;border-radius:10px;padding:14px;background:#fff;color:#333;text-align:left;cursor:pointer}
-.settings-theme-option.active{border:2px solid #a71925;background:#fff7f7}
-.settings-theme-option strong{display:block;margin-top:7px;font-size:13px}
-.settings-theme-option small{display:block;color:#858b98;margin-top:3px;font-size:11px}
+.settings-theme-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid #e2e5eb;border-radius:10px;background:#fafbfc;max-width:420px}
+.settings-theme-state{display:flex;align-items:center;gap:9px;min-width:0}
+.settings-theme-state .theme-icon{font-size:19px;line-height:1}
+.settings-theme-state strong{display:block;font-size:13px;color:#333}
+.settings-theme-state small{display:block;color:#858b98;margin-top:2px;font-size:11px}
+.settings-theme-switch{position:relative;flex:0 0 46px;width:46px;height:26px;border:0;border-radius:20px;background:#c5cad2;padding:0;cursor:pointer;transition:background .2s ease}
+.settings-theme-switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0003;transition:transform .2s ease}
+.settings-theme-switch[aria-checked="true"]{background:#a71925}
+.settings-theme-switch[aria-checked="true"]::after{transform:translateX(20px)}
+.settings-theme-switch:focus-visible{outline:3px solid #e6a0a7;outline-offset:3px}
 #settingsMessage{font-size:12px;margin-top:10px;min-height:17px}
 body[data-kdmp-theme="dark"]{--bg:#151922;--text:#edf0f5;--white:#202633;--border:#343c4b;--muted:#a4adbb;background:#151922;color:#edf0f5}
 body[data-kdmp-theme="dark"] .sidebar,body[data-kdmp-theme="dark"] .topbar,body[data-kdmp-theme="dark"] .settings-card,body[data-kdmp-theme="dark"] .erp-content,body[data-kdmp-theme="dark"] .erp-card,body[data-kdmp-theme="dark"] .card,body[data-kdmp-theme="dark"] .panel{background:#202633!important;color:#edf0f5!important;border-color:#343c4b!important}
 body[data-kdmp-theme="dark"] .menu button{color:#c2c9d4}
 body[data-kdmp-theme="dark"] .menu button:hover,body[data-kdmp-theme="dark"] .menu button.active{background:#42242b;color:#ffb8c0}
 body[data-kdmp-theme="dark"] .settings-card h3,body[data-kdmp-theme="dark"] .settings-field label{color:#edf0f5}
-body[data-kdmp-theme="dark"] .settings-help,body[data-kdmp-theme="dark"] .settings-theme-option small{color:#a4adbb}
-body[data-kdmp-theme="dark"] .settings-field input,body[data-kdmp-theme="dark"] .settings-field textarea{background:#151922;color:#edf0f5;border-color:#424b5b}
-body[data-kdmp-theme="dark"] .settings-theme-option{background:#151922;color:#edf0f5;border-color:#424b5b}
-body[data-kdmp-theme="dark"] .settings-theme-option.active{background:#42242b;border-color:#ff7b89}
+body[data-kdmp-theme="dark"] .settings-help,body[data-kdmp-theme="dark"] .settings-field input,body[data-kdmp-theme="dark"] .settings-field textarea{background:#151922;color:#edf0f5;border-color:#424b5b}
+body[data-kdmp-theme="dark"] .settings-theme-row{background:#151922;border-color:#424b5b}
+body[data-kdmp-theme="dark"] .settings-theme-state strong{color:#edf0f5}
+body[data-kdmp-theme="dark"] .settings-theme-state small{color:#a4adbb}
 body[data-kdmp-theme="dark"] table th{background:#252d3a!important;color:#dce2eb!important}
 body[data-kdmp-theme="dark"] table td{color:#e1e6ee;border-color:#343c4b!important}
 @media(max-width:700px){.settings-grid{grid-template-columns:1fr}.settings-card{padding:15px}}
@@ -8676,7 +8681,12 @@ function applyKDMPTheme(theme){
   const selected=theme==="dark"?"dark":"light";
   document.body.setAttribute("data-kdmp-theme",selected);
   try{localStorage.setItem("kdmp_erp_theme",selected);}catch(_){}
-  document.querySelectorAll(".settings-theme-option").forEach(button=>button.classList.toggle("active",button.dataset.theme===selected));
+  const toggle=document.getElementById("settingsThemeSwitch");
+  if(toggle)toggle.setAttribute("aria-checked",String(selected==="dark"));
+  const label=document.getElementById("settingsThemeLabel");
+  if(label)label.textContent=selected==="dark"?"Mode Gelap":"Mode Terang";
+  const icon=document.getElementById("settingsThemeIcon");
+  if(icon)icon.textContent=selected==="dark"?"🌙":"☀️";
 }
 (function initKDMPTheme(){
   let saved="light";
@@ -8714,9 +8724,12 @@ function setupSettings(){
       <div class="settings-card">
         <h3>🎨 Tampilan Aplikasi</h3>
         <p class="settings-help">Pilih tampilan terang atau gelap. Pilihan akan diingat pada perangkat dan browser ini.</p>
-        <div class="settings-theme-options">
-          <button type="button" class="settings-theme-option" data-theme="light"><span style="font-size:25px">☀️</span><strong>Mode Terang</strong><small>Tampilan cerah</small></button>
-          <button type="button" class="settings-theme-option" data-theme="dark"><span style="font-size:25px">🌙</span><strong>Mode Gelap</strong><small>Tampilan redup</small></button>
+        <div class="settings-theme-row">
+          <div class="settings-theme-state">
+            <span class="theme-icon" id="settingsThemeIcon">🌙</span>
+            <div><strong id="settingsThemeLabel">Mode Gelap</strong><small>Geser saklar untuk mengganti tema</small></div>
+          </div>
+          <button type="button" class="settings-theme-switch" id="settingsThemeSwitch" role="switch" aria-label="Ganti mode tampilan" aria-checked="false"></button>
         </div>
       </div>
       <div class="settings-card">
@@ -8751,11 +8764,19 @@ function setupSettings(){
       document.getElementById("settingsLogoPreview").textContent="Logo";document.getElementById("settingsLogoFile").value="";
       document.getElementById("settingsMessage").textContent="Profil default dipulihkan.";
     });
-    document.querySelectorAll(".settings-theme-option").forEach(button=>button.addEventListener("click",()=>applyKDMPTheme(button.dataset.theme)));
+    document.getElementById("settingsThemeSwitch").addEventListener("click",()=>{
+      const isDark=document.getElementById("settingsThemeSwitch").getAttribute("aria-checked")==="true";
+      applyKDMPTheme(isDark?"light":"dark");
+    });
   }
   section.style.display="block";
   let theme="light";try{theme=localStorage.getItem("kdmp_erp_theme")||"light";}catch(_){}
-  document.querySelectorAll(".settings-theme-option").forEach(button=>button.classList.toggle("active",button.dataset.theme===theme));
+  const toggle=document.getElementById("settingsThemeSwitch");
+  if(toggle)toggle.setAttribute("aria-checked",String(theme==="dark"));
+  const label=document.getElementById("settingsThemeLabel");
+  if(label)label.textContent=theme==="dark"?"Mode Gelap":"Mode Terang";
+  const icon=document.getElementById("settingsThemeIcon");
+  if(icon)icon.textContent=theme==="dark"?"🌙":"☀️";
 }
 
 const kdmpOriginalShowPageForSettings=window.showPage;
