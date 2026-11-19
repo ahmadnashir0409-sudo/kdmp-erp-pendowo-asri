@@ -3667,6 +3667,7 @@ tokoStyle.textContent = `
 document.head.appendChild(tokoStyle);
 
 let tokoItems = [];
+let tokoProductsCache = [];
 
 function setupToko(){
   const page=document.getElementById("modulePage");
@@ -3834,15 +3835,50 @@ function setupToko(){
     loadTokoHistory();
   };
 
-  addTokoItem();
+  loadTokoProducts();
   loadTokoHistory();
+}
+
+async function loadTokoProducts(){
+  const body=document.getElementById("tokoItemsBody");
+  if(body)body.innerHTML='<tr><td colspan="6">Memuat daftar barang persediaan...</td></tr>';
+
+  try{
+    const {data,error}=await supabaseClient
+      .from("inventory_products")
+      .select("id,product_code,product_name,unit,current_stock,selling_price,purchase_price")
+      .eq("is_active",true)
+      .order("product_name",{ascending:true});
+    if(error)throw error;
+
+    // Kasir hanya menawarkan barang yang benar-benar memiliki stok tersedia.
+    tokoProductsCache=(data||[]).filter(product=>Number(product.current_stock||0)>0);
+    tokoItems=[];
+    addTokoItem();
+    if(!tokoProductsCache.length){
+      const message=document.getElementById("tokoMessage");
+      if(message){
+        message.textContent="Belum ada barang aktif dengan stok tersedia. Tambahkan stok melalui menu Persediaan Barang.";
+        message.className="erp-message erp-error";
+      }
+    }
+  }catch(error){
+    console.error("Gagal memuat barang untuk kasir:",error);
+    if(body)body.innerHTML='<tr><td colspan="6">Gagal memuat daftar barang. Periksa koneksi dan hak akses Persediaan Barang.</td></tr>';
+    const message=document.getElementById("tokoMessage");
+    if(message){
+      message.textContent="Daftar barang tidak berhasil dimuat: "+(error.message||"Kesalahan tidak diketahui");
+      message.className="erp-message erp-error";
+    }
+  }
 }
 
 function addTokoItem(){
   tokoItems.push({
+    productId:"",
     name:"",
     quantity:1,
-    unit:"pcs",
+    unit:"",
     price:0
   });
   renderTokoItems();
@@ -3855,9 +3891,15 @@ function renderTokoItems(){
   body.innerHTML=tokoItems.map((item,index)=>`
     <tr>
       <td>
-        <input type="text" placeholder="Nama barang"
-          value="${escapeHTML(item.name)}"
-          oninput="updateTokoItem(${index},'name',this.value)">
+        <select aria-label="Pilih nama barang"
+          onchange="updateTokoItem(${index},'productId',this.value)">
+          <option value="">Pilih barang...</option>
+          ${tokoProductsCache.map(product=>`
+            <option value="${escapeHTML(product.id)}" ${item.productId===product.id?"selected":""}>
+              ${escapeHTML(product.product_code)} - ${escapeHTML(product.product_name)} (Stok: ${Number(product.current_stock||0)} ${escapeHTML(product.unit||"")})
+            </option>
+          `).join("")}
+        </select>
       </td>
       <td>
         <input type="number" min="0.001" step="0.001"
@@ -3865,13 +3907,13 @@ function renderTokoItems(){
           oninput="updateTokoItem(${index},'quantity',this.value)">
       </td>
       <td>
-        <input type="text" value="${escapeHTML(item.unit)}"
-          oninput="updateTokoItem(${index},'unit',this.value)">
+        <input type="text" value="${escapeHTML(item.unit)}" readonly
+          aria-label="Satuan dari master persediaan">
       </td>
       <td>
         <input type="number" min="0" step="1"
-          value="${item.price}"
-          oninput="updateTokoItem(${index},'price',this.value)">
+          value="${item.price}" readonly
+          aria-label="Harga jual dari master persediaan">
       </td>
       <td id="tokoLine${index}">${formatRupiah(item.quantity*item.price)}</td>
       <td>
@@ -3887,10 +3929,16 @@ function renderTokoItems(){
 window.updateTokoItem=function(index,field,value){
   if(!tokoItems[index])return;
 
-  if(field==="name" || field==="unit"){
-    tokoItems[index][field]=value;
-  }else{
-    tokoItems[index][field]=Math.max(0,Number(value)||0);
+  if(field==="productId"){
+    const product=tokoProductsCache.find(item=>item.id===value);
+    tokoItems[index].productId=product?.id||"";
+    tokoItems[index].name=product?.product_name||"";
+    tokoItems[index].unit=product?.unit||"";
+    tokoItems[index].price=Number(product?.selling_price||0);
+    renderTokoItems();
+    return;
+  }else if(field==="quantity"){
+    tokoItems[index].quantity=Math.max(0,Number(value)||0);
   }
 
   const line=document.getElementById("tokoLine"+index);
@@ -3952,7 +4000,7 @@ async function saveTokoSale(){
   const message=document.getElementById("tokoMessage");
   if(button.disabled)return;
   const totals=calculateTokoTotal();
-  const items=tokoItems.filter(item=>item.name.trim() && item.quantity>0 && item.price>=0);
+  const items=tokoItems.filter(item=>item.productId && item.name.trim() && item.quantity>0 && item.price>=0);
 
   if(!window.currentUser?.id){
     message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
@@ -3986,14 +4034,11 @@ async function saveTokoSale(){
       .eq("is_active",true);
     if(productError)throw productError;
 
-    const productByName=new Map((products||[]).map(p=>[
-      String(p.product_name||"").trim().toLocaleLowerCase("id-ID"),p
-    ]));
+    const productById=new Map((products||[]).map(p=>[p.id,p]));
     const resolvedItems=items.map(item=>{
-      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
-      if(!product)throw new Error('Barang "'+item.name+'" belum terdaftar di menu Persediaan Barang. Gunakan nama yang sama dengan master barang.');
-      if(item.unit.trim() && product.unit && item.unit.trim().toLowerCase()!==String(product.unit).toLowerCase())
-        throw new Error('Satuan barang "'+item.name+'" harus '+product.unit+'.');
+      const product=productById.get(item.productId);
+      if(!product || Number(product.current_stock||0)<=0)
+        throw new Error('Barang "'+item.name+'" sudah tidak tersedia atau stoknya habis. Muat ulang daftar barang.');
       const qty=Number(item.quantity);
       const entry=grouped.get(product.id)||{product,quantity:0};
       entry.quantity+=qty;
@@ -4004,6 +4049,12 @@ async function saveTokoSale(){
     // Periksa stok SEBELUM membuat header transaksi.
     // Jika stok kurang, catat percobaan langsung dengan status "gagal",
     // sehingga tidak ada baris "diproses" yang tertinggal.
+    // Harga transaksi mengikuti harga jual terbaru dari master persediaan.
+    const latestSubtotal=resolvedItems.reduce((sum,item)=>sum+Number(item.quantity||0)*Number(item.product.selling_price||0),0);
+    if(Math.abs(latestSubtotal-totals.subtotal)>0.005){
+      throw new Error("Harga jual barang berubah. Muat ulang form dan periksa kembali total transaksi.");
+    }
+
     const stockProblems=[];
     for(const {product,quantity} of grouped.values()){
       const available=Number(product.current_stock||0);
@@ -4047,15 +4098,15 @@ async function saveTokoSale(){
       throw new Error(stockProblems.join(" "));
     }
 
-    const detailItems=items.map(item=>{
-      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
+    const detailItems=resolvedItems.map(item=>{
+      const product=item.product;
       return {
         sale_id:createdSale.id,
         product_name:product.product_name,
         quantity:item.quantity,
-        unit:product.unit||item.unit||"pcs",
-        unit_price:item.price,
-        line_total:item.quantity*item.price
+        unit:product.unit||"pcs",
+        unit_price:Number(product.selling_price||0),
+        line_total:item.quantity*Number(product.selling_price||0)
       };
     });
     const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
