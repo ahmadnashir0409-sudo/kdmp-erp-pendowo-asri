@@ -7701,10 +7701,29 @@ inventoryStyle.textContent = `
 .inventory-btn.gray{background:#eee;color:#333}
 .inventory-btn:disabled{opacity:.6;cursor:wait}
 .inventory-search{max-width:350px;width:100%;padding:11px;border:1px solid #ddd;border-radius:7px}
-.inventory-table-wrap{overflow-x:auto;border:1px solid #eee;border-radius:9px}
-.inventory-table{width:100%;min-width:1040px;border-collapse:collapse}
-.inventory-table th,.inventory-table td{padding:10px 11px;border-bottom:1px solid #eee;text-align:left;font-size:12px;white-space:nowrap}
-.inventory-table th{background:#fafafa;color:#666;white-space:nowrap}
+.inventory-table-wrap{width:100%;max-width:100%;overflow-x:hidden;border:1px solid #eee;border-radius:9px}
+.inventory-table{width:100%;min-width:0;border-collapse:collapse;table-layout:fixed}
+.inventory-table th,.inventory-table td{padding:8px 6px;border-bottom:1px solid #eee;text-align:left;font-size:10px;line-height:1.35;vertical-align:middle;white-space:normal;overflow-wrap:anywhere}
+.inventory-table th{background:#fafafa;color:#666;font-weight:700}
+.inventory-products-table th:nth-child(1){width:8%}
+.inventory-products-table th:nth-child(2){width:13%}
+.inventory-products-table th:nth-child(3){width:10%}
+.inventory-products-table th:nth-child(4),.inventory-products-table th:nth-child(5){width:8%}
+.inventory-products-table th:nth-child(6){width:7%}
+.inventory-products-table th:nth-child(7){width:10%}
+.inventory-products-table th:nth-child(8){width:12%}
+.inventory-products-table th:nth-child(9){width:9%}
+.inventory-products-table th:nth-child(10){width:7%}
+.inventory-products-table td:last-child{white-space:nowrap}
+.inventory-products-table td button{padding:5px 7px!important;font-size:10px!important}
+.inventory-movements-table th:nth-child(1){width:12%}
+.inventory-movements-table th:nth-child(2){width:11%}
+.inventory-movements-table th:nth-child(3){width:16%}
+.inventory-movements-table th:nth-child(4){width:12%}
+.inventory-movements-table th:nth-child(5){width:8%}
+.inventory-movements-table th:nth-child(6){width:13%}
+.inventory-movements-table th:nth-child(7){width:13%}
+.inventory-movements-table th:nth-child(8){width:15%}
 .inventory-stock-opening{color:#64748b;font-variant-numeric:tabular-nums}
 .inventory-stock-closing{color:#166534;font-variant-numeric:tabular-nums}
 .inventory-badge{padding:5px 9px;border-radius:20px;background:#e8f8ef;color:#16834e;font-size:11px;font-weight:700}
@@ -7716,6 +7735,11 @@ inventoryStyle.textContent = `
 @media(max-width:900px){
  .inventory-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
  .inventory-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:700px){
+ .inventory-table-wrap{overflow-x:auto}
+ .inventory-table{min-width:760px;table-layout:auto}
+ .inventory-table th,.inventory-table td{padding:7px 6px;font-size:10px}
 }
 @media(max-width:550px){
  .inventory-grid{grid-template-columns:1fr}
@@ -7857,8 +7881,8 @@ function setupInventoryManagement(){
           oninput="filterInventoryProducts()">
       </div>
 
-      <div class="inventory-table-wrap">
-        <table class="inventory-table">
+      <div class="inventory-table-wrap inventory-products-table-wrap">
+        <table class="inventory-table inventory-products-table">
           <thead>
             <tr>
               <th>KODE</th>
@@ -7950,8 +7974,8 @@ function setupInventoryManagement(){
         </button>
       </div>
 
-      <div class="inventory-table-wrap">
-        <table class="inventory-table">
+      <div class="inventory-table-wrap inventory-movements-table-wrap">
+        <table class="inventory-table inventory-movements-table">
           <thead>
             <tr>
               <th>NOMOR</th>
