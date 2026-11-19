@@ -8760,6 +8760,29 @@ body[data-kdmp-theme="dark"] .inventory-search::placeholder{
 body[data-kdmp-theme="dark"] .inventory-stock-closing{color:#166534!important}
 @media(max-width:700px){.settings-grid{grid-template-columns:1fr}.settings-card{padding:15px}}
 `;
+
+const aboutBrandStyle=document.createElement("style");
+aboutBrandStyle.textContent=`
+.about-brand-card{display:flex;align-items:flex-start;gap:18px;overflow:hidden;position:relative;background:linear-gradient(135deg,#fff 0%,#fff8f8 100%);border-color:#f0d9dc}
+.about-brand-mark{flex:0 0 58px;width:58px;height:58px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#b91c2c,#761421);color:#fff;font-size:29px;font-weight:800;box-shadow:0 8px 20px rgba(137,20,34,.18)}
+.about-brand-content{min-width:0}
+.about-brand-eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:800;color:#a71925}
+.about-brand-content h3{font-size:25px;letter-spacing:1px;margin:5px 0 2px;color:#252a34}
+.about-brand-tagline{margin:0 0 12px;font-size:12px;font-weight:700;color:#a71925}
+.about-brand-description{max-width:760px;margin:0;color:#687080;font-size:13px;line-height:1.65}
+.about-brand-divider{height:1px;background:#eadde0;margin:16px 0}
+.about-brand-credit{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:6px 0;font-size:12px}
+.about-brand-credit span{color:#858b98;min-width:115px}
+.about-brand-credit strong{color:#252a34}
+.about-brand-footer{margin:14px 0 0;color:#9298a3;font-size:11px;font-style:italic}
+body[data-kdmp-theme="dark"] .about-brand-card{background:linear-gradient(135deg,#202633 0%,#2b222b 100%);border-color:#45404b}
+body[data-kdmp-theme="dark"] .about-brand-content h3,body[data-kdmp-theme="dark"] .about-brand-credit strong{color:#edf0f5}
+body[data-kdmp-theme="dark"] .about-brand-description{color:#c0c7d2}
+body[data-kdmp-theme="dark"] .about-brand-divider{background:#45404b}
+@media(max-width:600px){.about-brand-card{gap:13px;padding:15px}.about-brand-mark{flex-basis:48px;width:48px;height:48px;border-radius:13px;font-size:24px}.about-brand-content h3{font-size:22px}.about-brand-credit{display:block}.about-brand-credit span{display:block;margin-bottom:2px}}
+`;
+document.head.appendChild(aboutBrandStyle);
+
 document.head.appendChild(kdmpSettingsStyle);
 
 function getKDMPProfile(){
@@ -8824,6 +8847,19 @@ function setupSettings(){
       <div class="settings-card">
         <h3>ℹ️ Informasi Penyimpanan</h3>
         <p class="settings-help">Versi awal ini menyimpan profil dan pilihan tema di browser/perangkat yang digunakan. Sinkronisasi profil ke Supabase untuk seluruh pengguna akan dibuat pada tahap integrasi berikutnya.</p>
+      </div>
+      <div class="settings-card about-brand-card">
+        <div class="about-brand-mark">D</div>
+        <div class="about-brand-content">
+          <span class="about-brand-eyebrow">ABOUT THIS APPLICATION</span>
+          <h3>DAGBOEK</h3>
+          <p class="about-brand-tagline">ERP & Financial Management System</p>
+          <p class="about-brand-description">DAGBOEK dikembangkan sebagai sistem pengelolaan operasional dan keuangan yang membantu pencatatan, pemantauan, serta pengambilan keputusan secara lebih terstruktur.</p>
+          <div class="about-brand-divider"></div>
+          <div class="about-brand-credit"><span>Dikembangkan oleh</span><strong>Ahmad Nashirudin</strong></div>
+          <div class="about-brand-credit"><span>Studio pengembang</span><strong>Nusa Pixel</strong></div>
+          <p class="about-brand-footer">Dibuat dengan semangat untuk menghadirkan solusi digital yang bermanfaat.</p>
+        </div>
       </div>`;
     parent.appendChild(section);
     const profile=getKDMPProfile();
