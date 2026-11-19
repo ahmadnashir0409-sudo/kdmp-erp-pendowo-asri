@@ -1188,3 +1188,25 @@ footer {
 .reference-note{margin-top:17px;padding:13px 15px;border:1px solid #f0e2bd;border-radius:9px;background:#fffaf0;color:#755b26;font-size:11px;line-height:1.6}
 @media(max-width:900px){.reference-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.reference-hero{align-items:flex-start;padding:17px}.reference-hero-icon{width:48px;height:48px;flex-basis:48px;font-size:23px}.reference-hero h2{font-size:18px}.reference-toolbar{grid-template-columns:1fr}.reference-cards{grid-template-columns:1fr}.reference-card{min-height:0}.reference-meta{flex-direction:column}.reference-detail{padding:16px}.reference-detail-block{grid-template-columns:1fr;gap:8px}.reference-detail-block p{grid-column:1}.reference-detail-block button{justify-self:start}}
+
+
+/* About DAGBOEK - Nusa Pixel */
+
+.about-brand-card{display:flex;align-items:flex-start;gap:18px;overflow:hidden;position:relative;background:linear-gradient(135deg,#fff 0%,#fff8f8 100%);border-color:#f0d9dc}
+.about-brand-mark{flex:0 0 58px;width:58px;height:58px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#b91c2c,#761421);color:#fff;font-size:29px;font-weight:800;box-shadow:0 8px 20px rgba(137,20,34,.18)}
+.about-brand-content{min-width:0}
+.about-brand-eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:800;color:#a71925}
+.about-brand-content h3{font-size:25px;letter-spacing:1px;margin:5px 0 2px;color:#252a34}
+.about-brand-tagline{margin:0 0 12px;font-size:12px;font-weight:700;color:#a71925}
+.about-brand-description{max-width:760px;margin:0;color:#687080;font-size:13px;line-height:1.65}
+.about-brand-divider{height:1px;background:#eadde0;margin:16px 0}
+.about-brand-credit{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:6px 0;font-size:12px}
+.about-brand-credit span{color:#858b98;min-width:115px}
+.about-brand-credit strong{color:#252a34}
+.about-brand-footer{margin:14px 0 0;color:#9298a3;font-size:11px;font-style:italic}
+body[data-kdmp-theme="dark"] .about-brand-card{background:linear-gradient(135deg,#202633 0%,#2b222b 100%);border-color:#45404b}
+body[data-kdmp-theme="dark"] .about-brand-content h3,body[data-kdmp-theme="dark"] .about-brand-credit strong{color:#edf0f5}
+body[data-kdmp-theme="dark"] .about-brand-description{color:#c0c7d2}
+body[data-kdmp-theme="dark"] .about-brand-divider{background:#45404b}
+@media(max-width:600px){.about-brand-card{gap:13px;padding:15px}.about-brand-mark{flex-basis:48px;width:48px;height:48px;border-radius:13px;font-size:24px}.about-brand-content h3{font-size:22px}.about-brand-credit{display:block}.about-brand-credit span{display:block;margin-bottom:2px}}
+
