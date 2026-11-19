@@ -8669,6 +8669,46 @@ body[data-kdmp-theme="dark"] .settings-theme-state strong{color:#edf0f5}
 body[data-kdmp-theme="dark"] .settings-theme-state small{color:#a4adbb}
 body[data-kdmp-theme="dark"] table th{background:#252d3a!important;color:#dce2eb!important}
 body[data-kdmp-theme="dark"] table td{color:#e1e6ee;border-color:#343c4b!important}
+/* Persediaan: panel abu-abu lembut dengan teks gelap agar data tetap terbaca */
+body[data-kdmp-theme="dark"] .inventory-card,
+body[data-kdmp-theme="dark"] .inventory-panel,
+body[data-kdmp-theme="dark"] .inventory-table-wrap{
+  background:#d9dce2!important;
+  border-color:#c2c7d0!important;
+  color:#17191e!important;
+}
+body[data-kdmp-theme="dark"] .inventory-card small,
+body[data-kdmp-theme="dark"] .inventory-card strong,
+body[data-kdmp-theme="dark"] .inventory-panel,
+body[data-kdmp-theme="dark"] .inventory-panel h3,
+body[data-kdmp-theme="dark"] .inventory-field label,
+body[data-kdmp-theme="dark"] .inventory-table td,
+body[data-kdmp-theme="dark"] .inventory-stock-opening{
+  color:#17191e!important;
+}
+body[data-kdmp-theme="dark"] .inventory-table th{
+  background:#c5cad3!important;
+  color:#20242b!important;
+  border-color:#b7bdc7!important;
+}
+body[data-kdmp-theme="dark"] .inventory-table td{
+  background:#d9dce2!important;
+  color:#17191e!important;
+  border-color:#c2c7d0!important;
+}
+body[data-kdmp-theme="dark"] .inventory-field input,
+body[data-kdmp-theme="dark"] .inventory-field select,
+body[data-kdmp-theme="dark"] .inventory-field textarea,
+body[data-kdmp-theme="dark"] .inventory-search{
+  background:#eef0f3!important;
+  color:#17191e!important;
+  border-color:#b8bec8!important;
+}
+body[data-kdmp-theme="dark"] .inventory-field input::placeholder,
+body[data-kdmp-theme="dark"] .inventory-search::placeholder{
+  color:#626975!important;
+}
+body[data-kdmp-theme="dark"] .inventory-stock-closing{color:#166534!important}
 @media(max-width:700px){.settings-grid{grid-template-columns:1fr}.settings-card{padding:15px}}
 `;
 document.head.appendChild(kdmpSettingsStyle);
