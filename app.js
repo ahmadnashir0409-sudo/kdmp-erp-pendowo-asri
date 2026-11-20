@@ -8941,7 +8941,7 @@ function setupSettings(){
         <div class="settings-grid">
           <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com"></div>
           <div class="settings-field"><label for="inviteUserPassword">Password Awal</label><input id="inviteUserPassword" type="password" minlength="6" maxlength="72" autocomplete="new-password" placeholder="Tentukan password pengguna"></div>
-          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin">Admin</option><option value="keuangan">Keuangan</option><option value="kasir">Kasir</option><option value="gudang">Gudang</option><option value="manajer">Manager — akses penuh</option></select></div>
+          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin">Admin</option><option value="keuangan">Keuangan</option><option value="kasir">Kasir</option><option value="gudang">Gudang</option></select></div>
         </div>
         <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Kirim Undangan</button></div>
         <div id="inviteUserMessage" aria-live="polite"></div>
@@ -9038,17 +9038,20 @@ function setupSettings(){
       inviteButton.textContent="Mengirim undangan...";
       message.textContent="Memeriksa akses Manajer dan mengirim email...";
       try{
-        const {data:membership,error:membershipError}=await supabaseClient
+        const {data:memberships,error:membershipError}=await supabaseClient
           .from("cooperative_memberships")
           .select("cooperative_id")
           .eq("user_id",user.id)
           .eq("role","manajer")
           .eq("status","active")
-          .maybeSingle();
-        if(membershipError)throw new Error("Gagal memeriksa koperasi: "+membershipError.message);
-        if(!membership?.cooperative_id)throw new Error("Akun ini belum terdaftar sebagai Manajer aktif koperasi.");
+          .limit(2);
+        if(membershipError)throw new Error("Gagal memeriksa akses Manajer: "+membershipError.message);
+        if(!memberships?.length)throw new Error("Akun ini belum terdaftar sebagai Manajer aktif koperasi.");
+        if(memberships.length>1)throw new Error("Akun Manajer terdaftar di lebih dari satu koperasi. Pemilihan koperasi perlu diaktifkan sebelum undangan dikirim agar pengguna masuk ke koperasi yang benar.");
+        const cooperativeId=memberships[0].cooperative_id;
+        if(!cooperativeId)throw new Error("ID koperasi tidak ditemukan pada keanggotaan Manajer.");
         const {data,error}=await supabaseClient.functions.invoke("invite-user",{
-          body:{cooperative_id:membership.cooperative_id,email,password,role}
+          body:{cooperative_id:cooperativeId,email,password,role}
         });
         if(error){
           let detail="";
