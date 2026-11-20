@@ -7750,9 +7750,9 @@ inventoryStyle.textContent = `
 .inventory-btn.gray{background:#eee;color:#333}
 .inventory-btn:disabled{opacity:.6;cursor:wait}
 .inventory-search{max-width:350px;width:100%;padding:11px;border:1px solid #ddd;border-radius:7px}
-.inventory-table-wrap{width:100%;max-width:100%;overflow-x:hidden;border:1px solid #eee;border-radius:9px}
+.inventory-table-wrap{width:100%;max-width:100%;overflow-x:auto;border:1px solid #eee;border-radius:9px}
 .inventory-table{width:100%;min-width:0;border-collapse:collapse;table-layout:fixed}
-.inventory-table th,.inventory-table td{padding:8px 6px;border-bottom:1px solid #eee;text-align:left;font-size:10px;line-height:1.35;vertical-align:middle;white-space:normal;overflow-wrap:anywhere}
+.inventory-table th,.inventory-table td{padding:7px 5px;border-bottom:1px solid #eee;text-align:left;font-size:9px;line-height:1.3;vertical-align:middle;white-space:normal;overflow-wrap:anywhere}
 .inventory-table th{background:#fafafa;color:#666;font-weight:700}
 .inventory-products-table th:nth-child(1){width:8%}
 .inventory-products-table th:nth-child(2){width:13%}
@@ -7765,14 +7765,17 @@ inventoryStyle.textContent = `
 .inventory-products-table th:nth-child(10){width:7%}
 .inventory-products-table td:last-child{white-space:nowrap}
 .inventory-products-table td button{padding:5px 7px!important;font-size:10px!important}
-.inventory-movements-table th:nth-child(1){width:12%}
-.inventory-movements-table th:nth-child(2){width:11%}
-.inventory-movements-table th:nth-child(3){width:16%}
-.inventory-movements-table th:nth-child(4){width:12%}
-.inventory-movements-table th:nth-child(5){width:8%}
-.inventory-movements-table th:nth-child(6){width:13%}
-.inventory-movements-table th:nth-child(7){width:13%}
-.inventory-movements-table th:nth-child(8){width:15%}
+.inventory-movements-table th:nth-child(1){width:10%}
+.inventory-movements-table th:nth-child(2){width:8%}
+.inventory-movements-table th:nth-child(3){width:14%}
+.inventory-movements-table th:nth-child(4){width:10%}
+.inventory-movements-table th:nth-child(5){width:7%}
+.inventory-movements-table th:nth-child(6){width:10%}
+.inventory-movements-table th:nth-child(7){width:10%}
+.inventory-movements-table th:nth-child(8){width:21%}
+.inventory-movements-table th:nth-child(9){width:10%}
+.inventory-movements-table td:nth-child(9){white-space:nowrap}
+.inventory-movements-table td:nth-child(9) .inventory-btn{padding:6px 8px;font-size:10px;white-space:nowrap}
 .inventory-stock-opening{color:#64748b;font-variant-numeric:tabular-nums}
 .inventory-stock-closing{color:#166534;font-variant-numeric:tabular-nums}
 .inventory-badge{padding:5px 9px;border-radius:20px;background:#e8f8ef;color:#16834e;font-size:11px;font-weight:700}
