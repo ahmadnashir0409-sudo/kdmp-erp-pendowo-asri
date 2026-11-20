@@ -3999,157 +3999,216 @@ function makeTokoSaleNumber(){
 async function saveTokoSale(){
   const button=document.getElementById("tokoSave");
   const message=document.getElementById("tokoMessage");
-  if(!button||!message||button.disabled)return;
-
+  if(button.disabled)return;
   const totals=calculateTokoTotal();
-  const items=tokoItems.filter(item=>
-    item.productId && item.name.trim() &&
-    Number(item.quantity)>0 && Number.isFinite(Number(item.quantity)) &&
-    Number(item.price)>=0 && Number.isFinite(Number(item.price))
-  );
+  const items=tokoItems.filter(item=>item.productId && item.name.trim() && item.quantity>0 && item.price>=0);
 
   if(!window.currentUser?.id){
     message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
-    message.className="erp-message erp-error";
-    return;
+    message.className="erp-message erp-error"; return;
   }
-
-  if(window.currentUser.role!=="manajer"){
-    message.textContent="Akses tidak diizinkan. Hanya Manajer yang dapat menyimpan transaksi toko.";
-    message.className="erp-message erp-error";
-    return;
-  }
-
   if(!items.length){
     message.textContent="Masukkan minimal satu barang dengan nama dan jumlah.";
-    message.className="erp-message erp-error";
-    return;
+    message.className="erp-message erp-error"; return;
   }
-
   if(totals.discount>totals.subtotal || totals.paid<totals.total || totals.total<=0){
     message.textContent=totals.discount>totals.subtotal
       ? "Diskon tidak boleh lebih besar dari subtotal."
       : totals.paid<totals.total
         ? "Uang diterima belum mencukupi total belanja."
         : "Total transaksi harus lebih dari nol.";
-    message.className="erp-message erp-error";
-    return;
+    message.className="erp-message erp-error"; return;
   }
-
-  const paymentMethod=document.getElementById("tokoPayment").value;
-  if(!["tunai","transfer","qris"].includes(paymentMethod)){
-    message.textContent="Metode pembayaran tidak valid.";
-    message.className="erp-message erp-error";
-    return;
-  }
-
-  // Kirim ID produk, bukan nama bebas. Database mengambil nama, kode,
-  // satuan, stok, dan HPP dari master persediaan yang sebenarnya.
-  const rpcItems=items.map(item=>({
-    product_id:item.productId,
-    quantity:Number(item.quantity),
-    unit_price:Number(item.price)
-  }));
-
-  const saleNumber=makeTokoSaleNumber();
-  const salePayload={
-    sale_number:saleNumber,
-    customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
-    payment_method:paymentMethod,
-    subtotal:Number(totals.subtotal),
-    discount:Number(totals.discount),
-    total:Number(totals.total),
-    paid_amount:Number(totals.paid),
-    change_amount:Number(totals.change),
-    notes:document.getElementById("tokoNotes").value.trim()||null
-  };
 
   button.disabled=true;
-  button.textContent="Memproses penjualan...";
-  message.textContent="Menyimpan transaksi, memperbarui stok, dan membuat jurnal secara bersamaan...";
-  message.className="erp-message";
-
-  let saleId=null;
+  button.textContent="Memeriksa stok...";
+  let createdSaleId=null;
+  const stockChanges=[];
+  const movementIds=[];
+  let grouped=new Map();
+  let saleNumber="";
   try{
-    const {data,error}=await supabaseClient.rpc("proses_penjualan_toko_atomik",{
-      p_sale:salePayload,
-      p_items:rpcItems
+    // Ambil master barang; nama harus sama persis dengan Persediaan Barang.
+    const {data:products,error:productError}=await supabaseClient
+      .from("inventory_products")
+      .select("id,product_code,product_name,unit,current_stock,purchase_price,selling_price")
+      .eq("is_active",true);
+    if(productError)throw productError;
+
+    const productByName=new Map((products||[]).map(p=>[
+      String(p.product_name||"").trim().toLocaleLowerCase("id-ID"),p
+    ]));
+    const resolvedItems=items.map(item=>{
+      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
+      if(!product)throw new Error('Barang "'+item.name+'" belum terdaftar di menu Persediaan Barang. Gunakan nama yang sama dengan master barang.');
+      if(item.unit.trim() && product.unit && item.unit.trim().toLowerCase()!==String(product.unit).toLowerCase())
+        throw new Error('Satuan barang "'+item.name+'" harus '+product.unit+'.');
+      const qty=Number(item.quantity);
+      const entry=grouped.get(product.id)||{product,quantity:0};
+      entry.quantity+=qty;
+      grouped.set(product.id,entry);
+      return {...item,product};
     });
 
-    if(error)throw error;
-    saleId=data;
-    if(!saleId)throw new Error("Database tidak mengembalikan ID transaksi. Periksa riwayat transaksi sebelum mencoba ulang.");
+    // Periksa stok SEBELUM membuat header transaksi.
+    // Jika stok kurang, catat percobaan langsung dengan status "gagal",
+    // sehingga tidak ada baris "diproses" yang tertinggal.
+    const stockProblems=[];
+    for(const {product,quantity} of grouped.values()){
+      const available=Number(product.current_stock||0);
+      if(quantity>available){
+        stockProblems.push(
+          'Stok '+product.product_name+' tidak mencukupi. Stok tersedia '+available+' '+product.unit+'.'
+        );
+      }
+    }
 
-    // RPC sukses berarti header, detail, mutasi stok, dan jurnal sudah commit
-    // dalam satu transaksi database. Kegagalan pemuatan struk tidak membatalkan penjualan.
-    message.textContent="Transaksi berhasil disimpan: "+saleNumber+". Stok dan jurnal sudah diperbarui.";
-    message.className="erp-message erp-success";
-
-    let receiptSale={
-      id:saleId,
+    saleNumber=makeTokoSaleNumber();
+    const sale={
       sale_number:saleNumber,
-      sale_date:new Date().toISOString(),
-      customer_name:salePayload.customer_name,
-      subtotal:salePayload.subtotal,
-      discount:salePayload.discount,
-      total:salePayload.total,
-      paid_amount:salePayload.paid_amount,
-      change_amount:salePayload.change_amount
+      customer_name:document.getElementById("tokoCustomer").value.trim()||"Pelanggan Umum",
+      payment_method:document.getElementById("tokoPayment").value,
+      subtotal:totals.subtotal, discount:totals.discount, total:totals.total,
+      paid_amount:totals.paid, change_amount:totals.change,
+      status:stockProblems.length ? "gagal" : "diproses",
+      notes:document.getElementById("tokoNotes").value.trim()||null,
+      created_by:window.currentUser.id
     };
-    let receiptItems=items.map(item=>{
-      const product=tokoProductsCache.find(p=>p.id===item.productId);
+
+    button.textContent="Menyimpan transaksi...";
+    const {data:createdSale,error:saleError}=await supabaseClient
+      .from("store_sales").insert(sale).select().single();
+    if(saleError)throw saleError;
+    createdSaleId=createdSale.id;
+
+    // Bila stok kurang, percobaan sudah tersimpan sebagai Gagal.
+    // Hentikan sebelum rincian, pengurangan stok, atau jurnal dibuat.
+    if(stockProblems.length){
+      const {data:failedSale,error:failedInsertError}=await supabaseClient
+        .from("store_sales")
+        .update({status:"gagal"})
+        .eq("id",createdSaleId)
+        .eq("status","gagal")
+        .select("id")
+        .maybeSingle();
+      if(failedInsertError)throw failedInsertError;
+      if(!failedSale)throw new Error("Percobaan tercatat, tetapi status Gagal belum dapat dikonfirmasi.");
+      throw new Error(stockProblems.join(" "));
+    }
+
+    const detailItems=items.map(item=>{
+      const product=productByName.get(item.name.trim().toLocaleLowerCase("id-ID"));
       return {
-        product_name:product?.product_name||item.name,
-        quantity:Number(item.quantity),
-        unit:product?.unit||item.unit||"pcs",
-        unit_price:Number(item.price),
-        line_total:Number(item.quantity)*Number(item.price)
+        sale_id:createdSale.id,
+        product_name:product.product_name,
+        quantity:item.quantity,
+        unit:product.unit||item.unit||"pcs",
+        unit_price:item.price,
+        line_total:item.quantity*item.price
       };
     });
+    const {error:itemError}=await supabaseClient.from("store_sale_items").insert(detailItems);
+    if(itemError)throw itemError;
 
-    try{
-      const {data:storedSale,error:saleReadError}=await supabaseClient
-        .from("store_sales")
-        .select("*")
-        .eq("id",saleId)
-        .single();
-      if(!saleReadError&&storedSale)receiptSale=storedSale;
-
-      const {data:storedItems,error:itemsReadError}=await supabaseClient
-        .from("store_sale_items")
-        .select("*")
-        .eq("sale_id",saleId)
-        .order("created_at",{ascending:true});
-      if(!itemsReadError&&storedItems?.length)receiptItems=storedItems;
-    }catch(receiptReadError){
-      console.warn("Transaksi tersimpan, tetapi data struk tidak berhasil dimuat:",receiptReadError);
+    // inventory_movements memicu pembaruan current_stock di database.
+    // Jangan mengurangi current_stock lagi dari JavaScript.
+    button.textContent="Mencatat mutasi stok...";
+    for(const {product,quantity} of grouped.values()){
+      const before=Number(product.current_stock||0);
+      const after=before-quantity;
+      const {data:movement,error:movementError}=await supabaseClient
+        .from("inventory_movements")
+        .insert({
+          movement_number:inventoryNumber("JUAL"), product_id:product.id,
+          movement_type:"keluar", quantity, stock_before:before, stock_after:after,
+          unit_cost:Number(product.purchase_price||0),
+          movement_date:todayDate(), reference_number:saleNumber,
+          notes:"Pengeluaran stok otomatis dari transaksi penjualan toko",
+          created_by:window.currentUser.id
+        }).select("id").single();
+      if(movementError)throw movementError;
+      movementIds.push(movement.id);
+      stockChanges.push({product,before,after});
     }
 
+    // Selesaikan transaksi hanya setelah seluruh barang dan mutasi stok berhasil.
+    const {data:completedSale,error:completeError}=await supabaseClient
+      .from("store_sales")
+      .update({status:"selesai"})
+      .eq("id",createdSaleId)
+      .eq("status","diproses")
+      .select("id")
+      .maybeSingle();
+    if(completeError)throw completeError;
+    if(!completedSale)throw new Error("Status transaksi tidak dapat diselesaikan. Transaksi dibatalkan.");
+
+    // Jurnal otomatis. Jika jurnal gagal, transaksi penjualan tetap selesai
+    // dan peringatannya ditampilkan agar bisa ditindaklanjuti.
+    const totalHpp=Array.from(grouped.values()).reduce(
+      (sum,entry)=>sum+Number(entry.quantity||0)*Number(entry.product.purchase_price||0),0
+    );
+    let journalNotice="";
+    const {error:journalError}=await supabaseClient.rpc("catat_jurnal_penjualan_toko",{
+      p_nomor_transaksi:saleNumber,
+      p_tanggal:todayDate(),
+      p_metode_pembayaran:sale.payment_method,
+      p_total_penjualan:Number(totals.total||0),
+      p_total_hpp:totalHpp,
+      p_keterangan:"Penjualan toko KDMP "+saleNumber
+    });
+    if(journalError){
+      console.error("Jurnal otomatis penjualan toko gagal:",journalError);
+      journalNotice=" Namun jurnal otomatis belum terbentuk: "+journalError.message;
+    }
+
+    message.textContent="Transaksi berhasil disimpan, stok diperbarui, dan status penjualan Selesai: "+saleNumber+journalNotice;
+    message.className="erp-message "+(journalNotice?"erp-error":"erp-success");
     resetTokoForm();
-    try{
-      await loadTokoHistory();
-      if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
-      if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
-    }catch(refreshError){
-      console.warn("Transaksi berhasil, tetapi tampilan perlu dimuat ulang:",refreshError);
-    }
-
-    printTokoReceipt(receiptSale,receiptItems);
+    await loadTokoHistory();
+    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
+    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
+    printTokoReceipt(createdSale,detailItems);
   }catch(error){
-    console.error("Transaksi toko gagal:",error);
-    const errorMessage=error?.message||"Terjadi kesalahan yang tidak diketahui.";
-    message.textContent="Transaksi tidak berhasil disimpan: "+errorMessage;
-    message.className="erp-message erp-error";
-
-    // Tidak ada rollback manual dari browser. Jika RPC gagal, PostgreSQL
-    // membatalkan seluruh perubahan transaksi dalam satu database transaction.
-    try{
-      await loadTokoHistory();
-      if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
-      if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
-    }catch(refreshError){
-      console.warn("Gagal memperbarui tampilan setelah transaksi gagal:",refreshError);
+    // Kembalikan stok hanya jika nilainya masih sesuai hasil pengurangan
+    // transaksi ini, agar tidak menimpa perubahan dari transaksi lain.
+    for(const change of stockChanges.reverse()){
+      const {data:rolledBack,error:rollbackError}=await supabaseClient
+        .from("inventory_products")
+        .update({current_stock:change.before})
+        .eq("id",change.product.id)
+        .eq("current_stock",change.after)
+        .select("id")
+        .maybeSingle();
+      if(rollbackError||!rolledBack){
+        console.error("Rollback stok perlu pemeriksaan manual:",change.product.product_name,rollbackError);
+      }
     }
+    if(movementIds.length){
+      const {error:movementDeleteError}=await supabaseClient
+        .from("inventory_movements").delete().in("id",movementIds);
+      if(movementDeleteError)console.error("Gagal menghapus mutasi rollback:",movementDeleteError);
+    }
+    let statusWarning="";
+    if(createdSaleId){
+      // Jika proses gagal setelah transaksi dibuat, pastikan status menjadi Gagal.
+      const {data:failedSale,error:failedStatusError}=await supabaseClient
+        .from("store_sales")
+        .update({status:"gagal"})
+        .eq("id",createdSaleId)
+        .select("id")
+        .maybeSingle();
+      if(failedStatusError){
+        console.error("Gagal mengubah status transaksi:",failedStatusError);
+        statusWarning=" PERHATIAN: status gagal tidak berhasil disimpan ("+failedStatusError.message+").";
+      }else if(!failedSale){
+        statusWarning=" PERHATIAN: database tidak mengonfirmasi perubahan status menjadi Gagal.";
+      }
+    }
+    message.textContent="Transaksi gagal dan tidak dihitung sebagai penjualan: "+(error.message||"Terjadi kesalahan")+statusWarning;
+    message.className="erp-message erp-error";
+    await loadTokoHistory();
+    if(typeof loadInventoryProducts==="function")await loadInventoryProducts();
+    if(typeof loadInventoryMovements==="function")await loadInventoryMovements();
   }finally{
     button.disabled=false;
     button.textContent="Simpan Transaksi";
@@ -7976,10 +8035,11 @@ function setupInventoryManagement(){
               <th>HARGA SATUAN</th>
               <th>REFERENSI</th>
               <th>KETERANGAN</th>
+              <th>AKSI</th>
             </tr>
           </thead>
           <tbody id="invMovementBody">
-            <tr><td colspan="8">Memuat riwayat...</td></tr>
+            <tr><td colspan="9">Memuat riwayat...</td></tr>
           </tbody>
         </table>
       </div>
@@ -8397,7 +8457,7 @@ window.loadInventoryMovements=async function(){
   const body=document.getElementById("invMovementBody");
   if(!body)return;
 
-  body.innerHTML='<tr><td colspan="8">Memuat riwayat...</td></tr>';
+  body.innerHTML='<tr><td colspan="9">Memuat riwayat...</td></tr>';
 
   const {data,error}=await supabaseClient
     .from("inventory_movements")
@@ -8409,8 +8469,12 @@ window.loadInventoryMovements=async function(){
       quantity,
       unit_cost,
       movement_date,
+      stock_before,
+      stock_after,
       reference_number,
       notes,
+      created_by,
+      created_at,
       inventory_products(product_code,product_name,unit)
     `)
     .order("movement_date",{ascending:false})
@@ -8418,7 +8482,7 @@ window.loadInventoryMovements=async function(){
     .limit(200);
 
   if(error){
-    body.innerHTML=`<tr><td colspan="8">${inventoryEscape(error.message)}</td></tr>`;
+    body.innerHTML=`<tr><td colspan="9">${inventoryEscape(error.message)}</td></tr>`;
     document.getElementById("invMovementListMessage").textContent=
       "Gagal memuat riwayat mutasi.";
     return;
@@ -8435,7 +8499,7 @@ window.loadInventoryMovements=async function(){
   };
 
   if(!movements.length){
-    body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:22px">Belum ada riwayat mutasi barang.</td></tr>';
+    body.innerHTML='<tr><td colspan="9" style="text-align:center;padding:22px">Belum ada riwayat mutasi barang.</td></tr>';
   }else{
     body.innerHTML=movements.map(item=>`
       <tr>
@@ -8452,12 +8516,85 @@ window.loadInventoryMovements=async function(){
         <td>${inventoryMoney(item.unit_cost)}</td>
         <td>${inventoryEscape(item.reference_number||"-")}</td>
         <td>${inventoryEscape(item.notes||"-")}</td>
+        <td><button type="button" class="inventory-btn gray" onclick="showInventoryMovementDetail('${inventoryEscape(item.id)}')">Detail</button></td>
       </tr>
     `).join("");
   }
 
   document.getElementById("invMovementListMessage").textContent=
     "Menampilkan "+movements.length+" riwayat mutasi terakhir.";
+};
+
+// Detail mutasi stok: hanya membaca data, tidak mengubah atau menghapus riwayat.
+window.showInventoryMovementDetail=async function(movementId){
+  if(!movementId)return;
+  const {data:item,error}=await supabaseClient
+    .from("inventory_movements")
+    .select(`
+      id, movement_number, product_id, movement_type, quantity, unit_cost,
+      movement_date, stock_before, stock_after, reference_number, notes,
+      created_by, created_at,
+      inventory_products(product_code,product_name,unit)
+    `)
+    .eq("id",movementId)
+    .single();
+
+  if(error||!item){
+    alert("Detail mutasi tidak dapat dimuat: "+(error?.message||"Data tidak ditemukan."));
+    return;
+  }
+
+  const labels={
+    stok_awal:"Stok Awal", masuk:"Barang Masuk", keluar:"Barang Keluar",
+    penyesuaian_masuk:"Penyesuaian Masuk", penyesuaian_keluar:"Penyesuaian Keluar"
+  };
+  const product=item.inventory_products||{};
+  const unit=product.unit||"";
+  const dateValue=item.created_at||item.movement_date;
+  const dateText=dateValue?new Date(dateValue).toLocaleString("id-ID"):"-";
+  const fields=[
+    ["Nomor Mutasi",item.movement_number],
+    ["Tanggal Mutasi",item.movement_date],
+    ["Waktu Pencatatan",dateText],
+    ["Kode Barang",product.product_code],
+    ["Nama Barang",product.product_name],
+    ["Jenis Mutasi",labels[item.movement_type]||item.movement_type],
+    ["Jumlah",Number(item.quantity).toLocaleString("id-ID")+" "+unit],
+    ["Stok Sebelum",item.stock_before==null?"Belum tersedia":Number(item.stock_before).toLocaleString("id-ID")+" "+unit],
+    ["Stok Sesudah",item.stock_after==null?"Belum tersedia":Number(item.stock_after).toLocaleString("id-ID")+" "+unit],
+    ["Harga Satuan",inventoryMoney(item.unit_cost)],
+    ["Nilai Mutasi",inventoryMoney(Number(item.quantity||0)*Number(item.unit_cost||0))],
+    ["Nomor Referensi",item.reference_number||"-"],
+    ["ID Pengguna Pencatat",item.created_by||"-"],
+    ["Keterangan",item.notes||"-"]
+  ];
+
+  let modal=document.getElementById("inventoryMovementDetailModal");
+  if(!modal){
+    modal=document.createElement("div");
+    modal.id="inventoryMovementDetailModal";
+    modal.style.cssText="position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px;";
+    modal.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="inventoryMovementDetailTitle" style="background:#fff;width:min(680px,100%);max-height:90vh;overflow:auto;border-radius:14px;padding:20px;box-shadow:0 15px 50px rgba(0,0,0,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
+        <h3 id="inventoryMovementDetailTitle" style="margin:0">Detail Mutasi Stok</h3>
+        <button type="button" onclick="closeInventoryMovementDetail()" aria-label="Tutup detail" style="border:0;border-radius:8px;padding:8px 12px;cursor:pointer;background:#f1f1f1">✕</button>
+      </div>
+      <div id="inventoryMovementDetailContent"></div>
+      <p style="font-size:12px;color:#777;margin:14px 0 0">Informasi ini bersifat riwayat/audit. Detail mutasi tidak dapat diedit atau dihapus dari panel ini.</p>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px"><button type="button" class="inventory-btn gray" onclick="closeInventoryMovementDetail()">Tutup</button></div>
+    </div>`;
+    modal.addEventListener("click",event=>{if(event.target===modal)window.closeInventoryMovementDetail();});
+    document.body.appendChild(modal);
+  }
+  document.getElementById("inventoryMovementDetailContent").innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">${fields.map(([label,value])=>
+    `<div style="padding:11px;border:1px solid #eee;border-radius:9px;min-width:0"><div style="font-size:11px;color:#777;margin-bottom:5px">${inventoryEscape(label)}</div><div style="font-size:13px;font-weight:600;overflow-wrap:anywhere">${inventoryEscape(value==null||value===""?"-":String(value))}</div></div>`
+  ).join("")}</div>`;
+  modal.style.display="flex";
+};
+
+window.closeInventoryMovementDetail=function(){
+  const modal=document.getElementById("inventoryMovementDetailModal");
+  if(modal)modal.style.display="none";
 };
 
 // Hubungkan modul ke navigasi utama.
