@@ -8788,6 +8788,11 @@ kdmpSettingsStyle.textContent=`
 .settings-field label{font-size:12px;font-weight:700;color:#606775}
 .settings-field input,.settings-field textarea{width:100%;border:1px solid #dfe3e9;border-radius:8px;padding:10px 11px;font:inherit;font-size:13px;background:#fff;color:#252a34}
 .settings-field textarea{min-height:75px;resize:vertical}
+.settings-field select{width:100%;border:1px solid #dfe3e9;border-radius:8px;padding:10px 11px;font:inherit;font-size:13px;background:#fff;color:#252a34}
+#inviteUserMessage{font-size:12px;margin-top:12px;line-height:1.5;min-height:18px}
+#inviteUserMessage.success{color:#13834f}
+#inviteUserMessage.error{color:#b42318}
+.settings-btn:disabled{opacity:.6;cursor:wait}
 .settings-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:8px}
 .settings-btn{border:0;border-radius:8px;padding:10px 15px;background:#a71925;color:#fff;font-weight:700;font-size:12px;cursor:pointer}
 .settings-btn.secondary{background:#eef0f3;color:#4d5562}
@@ -8930,6 +8935,16 @@ function setupSettings(){
         <div class="settings-actions"><button type="button" class="settings-btn" id="settingsSaveProfile">Simpan Profil</button><button type="button" class="settings-btn secondary" id="settingsResetProfile">Pulihkan Default</button></div>
         <div id="settingsMessage"></div>
       </div>
+      <div class="settings-card" id="settingsInviteCard">
+        <h3>👥 Undang Pengguna Koperasi</h3>
+        <p class="settings-help">Undang admin, petugas keuangan, kasir, atau petugas gudang. Tautan undangan akan dikirim ke email yang didaftarkan.</p>
+        <div class="settings-grid">
+          <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com"></div>
+          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin">Admin</option><option value="keuangan">Keuangan</option><option value="kasir">Kasir</option><option value="gudang">Gudang</option></select></div>
+        </div>
+        <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Kirim Undangan</button></div>
+        <div id="inviteUserMessage" aria-live="polite"></div>
+      </div>
       <div class="settings-card">
         <h3>🎨 Tampilan Aplikasi</h3>
         <p class="settings-help">Pilih tampilan terang atau gelap. Pilihan akan diingat pada perangkat dan browser ini.</p>
@@ -8989,6 +9004,61 @@ function setupSettings(){
     document.getElementById("settingsThemeSwitch").addEventListener("click",()=>{
       const isDark=document.getElementById("settingsThemeSwitch").getAttribute("aria-checked")==="true";
       applyKDMPTheme(isDark?"light":"dark");
+    });
+    const inviteButton=document.getElementById("inviteUserSend");
+    inviteButton.addEventListener("click",async()=>{
+      const emailInput=document.getElementById("inviteUserEmail");
+      const roleInput=document.getElementById("inviteUserRole");
+      const message=document.getElementById("inviteUserMessage");
+      const email=emailInput.value.trim().toLowerCase();
+      const role=roleInput.value;
+      message.className="";
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+        message.textContent="Masukkan alamat email yang valid.";
+        message.className="error";
+        emailInput.focus();
+        return;
+      }
+      const user=window.currentUser;
+      if(!user?.id){
+        message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
+        message.className="error";
+        return;
+      }
+      inviteButton.disabled=true;
+      inviteButton.textContent="Mengirim undangan...";
+      message.textContent="Memeriksa akses Manajer dan mengirim email...";
+      try{
+        const {data:membership,error:membershipError}=await supabaseClient
+          .from("cooperative_memberships")
+          .select("cooperative_id")
+          .eq("user_id",user.id)
+          .eq("role","manajer")
+          .eq("status","active")
+          .maybeSingle();
+        if(membershipError)throw new Error("Gagal memeriksa koperasi: "+membershipError.message);
+        if(!membership?.cooperative_id)throw new Error("Akun ini belum terdaftar sebagai Manajer aktif koperasi.");
+        const {data,error}=await supabaseClient.functions.invoke("invite-user",{
+          body:{cooperative_id:membership.cooperative_id,email,role}
+        });
+        if(error){
+          let detail="";
+          try{detail=await error.context.clone().text();}catch(_){}
+          let parsed=null;try{parsed=JSON.parse(detail);}catch(_){}
+          throw new Error(parsed?.message||detail||error.message||"Undangan gagal dikirim.");
+        }
+        if(!data?.success)throw new Error(data?.message||"Undangan gagal dikirim.");
+        message.textContent="Undangan berhasil dikirim ke "+email+". Minta pengguna memeriksa Inbox dan folder Spam.";
+        message.className="success";
+        emailInput.value="";
+      }catch(error){
+        console.error("Invite user:",error);
+        message.textContent=error.message||"Terjadi kesalahan saat mengirim undangan.";
+        message.className="error";
+      }finally{
+        inviteButton.disabled=false;
+        inviteButton.textContent="Kirim Undangan";
+      }
     });
   }
   section.style.display="block";
