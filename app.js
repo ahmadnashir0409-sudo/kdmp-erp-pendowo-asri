@@ -8937,10 +8937,11 @@ function setupSettings(){
       </div>
       <div class="settings-card" id="settingsInviteCard">
         <h3>👥 Undang Pengguna Koperasi</h3>
-        <p class="settings-help">Undang admin, petugas keuangan, kasir, atau petugas gudang. Tautan undangan akan dikirim ke email yang didaftarkan.</p>
+        <p class="settings-help">Buat akun pengguna yang hanya dapat dibuat atas persetujuan Manajer. Tentukan email, password awal, dan hak akses pengguna.</p>
         <div class="settings-grid">
           <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com"></div>
-          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin">Admin</option><option value="keuangan">Keuangan</option><option value="kasir">Kasir</option><option value="gudang">Gudang</option></select></div>
+          <div class="settings-field"><label for="inviteUserPassword">Password Awal</label><input id="inviteUserPassword" type="password" minlength="6" maxlength="72" autocomplete="new-password" placeholder="Tentukan password pengguna"></div>
+          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin">Admin</option><option value="keuangan">Keuangan</option><option value="kasir">Kasir</option><option value="gudang">Gudang</option><option value="manajer">Manager — akses penuh</option></select></div>
         </div>
         <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Kirim Undangan</button></div>
         <div id="inviteUserMessage" aria-live="polite"></div>
@@ -9008,15 +9009,23 @@ function setupSettings(){
     const inviteButton=document.getElementById("inviteUserSend");
     inviteButton.addEventListener("click",async()=>{
       const emailInput=document.getElementById("inviteUserEmail");
+      const passwordInput=document.getElementById("inviteUserPassword");
       const roleInput=document.getElementById("inviteUserRole");
       const message=document.getElementById("inviteUserMessage");
       const email=emailInput.value.trim().toLowerCase();
+      const password=passwordInput.value;
       const role=roleInput.value;
       message.className="";
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
         message.textContent="Masukkan alamat email yang valid.";
         message.className="error";
         emailInput.focus();
+        return;
+      }
+      if(password.length<6){
+        message.textContent="Password awal minimal 6 karakter.";
+        message.className="error";
+        passwordInput.focus();
         return;
       }
       const user=window.currentUser;
@@ -9039,7 +9048,7 @@ function setupSettings(){
         if(membershipError)throw new Error("Gagal memeriksa koperasi: "+membershipError.message);
         if(!membership?.cooperative_id)throw new Error("Akun ini belum terdaftar sebagai Manajer aktif koperasi.");
         const {data,error}=await supabaseClient.functions.invoke("invite-user",{
-          body:{cooperative_id:membership.cooperative_id,email,role}
+          body:{cooperative_id:membership.cooperative_id,email,password,role}
         });
         if(error){
           let detail="";
@@ -9048,9 +9057,10 @@ function setupSettings(){
           throw new Error(parsed?.message||detail||error.message||"Undangan gagal dikirim.");
         }
         if(!data?.success)throw new Error(data?.message||"Undangan gagal dikirim.");
-        message.textContent="Undangan berhasil dikirim ke "+email+". Minta pengguna memeriksa Inbox dan folder Spam.";
+        message.textContent="Akun berhasil dibuat dan email akses dikirim ke "+email+". Minta pengguna memeriksa Inbox dan folder Spam.";
         message.className="success";
         emailInput.value="";
+        passwordInput.value="";
       }catch(error){
         console.error("Invite user:",error);
         message.textContent=error.message||"Terjadi kesalahan saat mengirim undangan.";
