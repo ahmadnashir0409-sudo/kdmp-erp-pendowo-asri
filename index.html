@@ -1,273 +1,138 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
 
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#a71925">
-  <title>KDMP ERP | Pendowo Asri</title>
-  <link rel="stylesheet" href="style.css">
-</head>
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, x-client-info, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
-<body>
-<div class="layout">
+const allowedRoles = ["admin", "keuangan", "kasir", "gudang", "manajer"];
 
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <div class="brand-logo">KD</div>
-      <div>
-        <h2>KDMP ERP</h2>
-        <p>Pendowo Asri Management</p>
-      </div>
-    </div>
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
-    <div class="menu-title">MENU UTAMA</div>
-    <nav class="menu">
-      <button class="active" onclick="showPage('dashboard', this)">
-        <span class="menu-icon">▦</span> Dashboard
-      </button>
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char] ?? char);
+}
 
-      <div class="menu-title">AKUNTANSI</div>
-      <button onclick="showPage('keuangan', this)"><span class="menu-icon">💰</span> Pencatatan Keuangan</button>
-      <button onclick="showPage('coa', this)"><span class="menu-icon">📚</span> Chart of Accounts</button>
-      <button onclick="showPage('jurnal', this)"><span class="menu-icon">📖</span> Jurnal Umum</button>
-      <button onclick="showPage('buku-besar', this)"><span class="menu-icon">📒</span> Buku Besar</button>
-      <button onclick="showPage('laporan', this)"><span class="menu-icon">📊</span> Laporan Keuangan</button>
-      <button onclick="showPage('utang-piutang', this)"><span class="menu-icon">💳</span> Utang & Piutang</button>
-      <button onclick="showPage('bank', this)"><span class="menu-icon">🏦</span> Rekonsiliasi Bank</button>
-      <button onclick="showPage('invoice', this)"><span class="menu-icon">🧾</span> Invoice</button>
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return jsonResponse({ success: false, message: "Method tidak diizinkan." }, 405);
 
-      <div class="menu-title">OPERASIONAL KOPERASI</div>
-      <button onclick="showPage('toko', this)"><span class="menu-icon">🛒</span> Transaksi Toko</button>
-      <button onclick="showPage('simpanan', this)"><span class="menu-icon">👥</span> Simpanan & Pinjaman</button>
-      <button onclick="showPage('persediaan', this)"><span class="menu-icon">📦</span> Persediaan Barang</button>
+  let createdUserId: string | null = null;
+  let membershipId: string | null = null;
+  let adminClient: ReturnType<typeof createClient> | null = null;
 
-      <div class="menu-title">MANAJEMEN</div>
-      <button onclick="showPage('bulanan', this)"><span class="menu-icon">📅</span> Laporan Bulanan</button>
-      <button onclick="showPage('monitoring', this)"><span class="menu-icon">🛡️</span> Monitoring Manajer</button>
-      <button onclick="showPage('rumus-kamus', this)"><span class="menu-icon">📚</span> Rumus Excel & Kamus Akuntansi</button>
-      <button onclick="showPage('pengaturan', this)"><span class="menu-icon">⚙️</span> Pengaturan</button>
-    </nav>
-  </aside>
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const publishableRaw = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
+    const secretRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    const emailFrom = Deno.env.get("INVITE_EMAIL_FROM");
+    const appLoginUrl = Deno.env.get("APP_LOGIN_URL");
 
-  <main class="main">
-    <header class="topbar">
-      <div class="topbar-left">
-        <button class="mobile-menu" onclick="toggleSidebar()">☰</button>
-        <div>
-          <h2 id="pageTitle">Dashboard</h2>
-          <p>KDMP Pendowo Asri</p>
-        </div>
-      </div>
-      <div class="top-actions">
-        <div class="avatar">M</div>
-        <div class="user-info">Manajer<small>Administrator</small></div>
-      </div>
-    </header>
+    if (!supabaseUrl || !publishableRaw || !secretRaw || !resendApiKey || !emailFrom || !appLoginUrl) {
+      return jsonResponse({
+        success: false,
+        message: "Konfigurasi server belum lengkap. Perlu API email (Resend), alamat pengirim, dan link aplikasi.",
+      }, 500);
+    }
 
-    <div class="content">
+    const publishableKey = JSON.parse(publishableRaw).default;
+    const secretKey = JSON.parse(secretRaw).default;
+    if (!publishableKey || !secretKey) return jsonResponse({ success: false, message: "API key Supabase tidak ditemukan." }, 500);
 
-      <!-- DASHBOARD -->
-      <section id="dashboard" class="page">
+    const authorization = req.headers.get("Authorization");
+    if (!authorization?.startsWith("Bearer ")) return jsonResponse({ success: false, message: "Silakan login terlebih dahulu." }, 401);
 
-        <div class="welcome">
-          <div>
-            <span style="font-size:12px;font-weight:700;color:#a71925;letter-spacing:1px">
-              MANAGEMENT OVERVIEW
-            </span>
-            <h1>Dashboard KDMP 👋</h1>
-            <p>
-              Pantau kondisi keuangan dan aktivitas operasional
-              Koperasi Desa Merah Putih Pendowo Asri.
-            </p>
-          </div>
-        </div>
+    const userClient = createClient(supabaseUrl, publishableKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: authorization } },
+    });
+    const { data: { user }, error: userError } = await userClient.auth.getUser(authorization.slice(7));
+    if (userError || !user) return jsonResponse({ success: false, message: "Sesi login tidak valid. Silakan login ulang." }, 401);
 
-        <!-- RINGKASAN KEUANGAN -->
-        <div class="stats">
+    const body = await req.json();
+    const cooperativeId = String(body.cooperative_id || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const role = String(body.role || "").trim().toLowerCase();
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-          <div class="stat-card">
-            <div class="stat-head">
-              <span class="stat-label">Total Pemasukan</span>
-              <div class="stat-icon green-bg">↗</div>
-            </div>
-            <h3 id="dashboardIncome">Rp 0</h3>
-            <div class="stat-note positive">Total pemasukan tercatat</div>
-          </div>
+    if (!uuidPattern.test(cooperativeId)) return jsonResponse({ success: false, message: "ID koperasi tidak valid." }, 400);
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonResponse({ success: false, message: "Alamat email tidak valid." }, 400);
+    if (password.length < 6 || password.length > 72) return jsonResponse({ success: false, message: "Password harus 6 sampai 72 karakter." }, 400);
+    if (!allowedRoles.includes(role)) return jsonResponse({ success: false, message: "Role tidak diizinkan." }, 400);
 
-          <div class="stat-card">
-            <div class="stat-head">
-              <span class="stat-label">Total Pengeluaran</span>
-              <div class="stat-icon red-bg">↘</div>
-            </div>
-            <h3 id="dashboardExpense">Rp 0</h3>
-            <div class="stat-note negative">Total pengeluaran tercatat</div>
-          </div>
+    adminClient = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
-          <div class="stat-card">
-            <div class="stat-head">
-              <span class="stat-label">Saldo Kas & Bank</span>
-              <div class="stat-icon blue-bg">🏦</div>
-            </div>
-            <h3 id="dashboardCash">Rp 0</h3>
-            <div class="stat-note">Saldo dari jurnal terposting</div>
-          </div>
+    const { data: managerMembership, error: managerError } = await adminClient
+      .from("cooperative_memberships").select("id")
+      .eq("cooperative_id", cooperativeId).eq("user_id", user.id)
+      .eq("role", "manajer").eq("status", "active").maybeSingle();
+    if (managerError) return jsonResponse({ success: false, message: "Gagal memeriksa hak akses Manajer." }, 500);
+    if (!managerMembership) return jsonResponse({ success: false, message: "Hanya Manajer aktif koperasi ini yang boleh membuat akun." }, 403);
 
-          <div class="stat-card">
-            <div class="stat-head">
-              <span class="stat-label">Total Transaksi</span>
-              <div class="stat-icon orange-bg">📋</div>
-            </div>
-            <h3 id="dashboardTransactionCount">0</h3>
-            <div class="stat-note">Transaksi keuangan tercatat</div>
-          </div>
+    const { data: cooperative, error: cooperativeError } = await adminClient
+      .from("cooperatives").select("id, name").eq("id", cooperativeId)
+      .eq("status", "active").maybeSingle();
+    if (cooperativeError || !cooperative) return jsonResponse({ success: false, message: "Koperasi tidak ditemukan atau tidak aktif." }, 404);
 
-        </div>
+    // Buat akun langsung dengan password yang ditentukan Manajer.
+    const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { cooperative_name: cooperative.name, invited_by: user.id },
+    });
+    if (createError || !created.user) {
+      const message = createError?.message || "Akun pengguna gagal dibuat.";
+      if (/already|registered|exists/i.test(message)) {
+        return jsonResponse({ success: false, message: "Email ini sudah memiliki akun DAGBOEK. Gunakan akun yang ada atau alamat email lain." }, 409);
+      }
+      return jsonResponse({ success: false, message: "Gagal membuat akun: " + message }, 400);
+    }
+    createdUserId = created.user.id;
 
-        <!-- GRAFIK DAN AKSES CEPAT -->
-        <div class="panels">
+    const { data: membership, error: membershipError } = await adminClient
+      .from("cooperative_memberships").insert({
+        cooperative_id: cooperativeId,
+        user_id: createdUserId,
+        role,
+        status: "active",
+      }).select("id").single();
+    if (membershipError || !membership) throw new Error("Akun dibuat, tetapi hak akses koperasi gagal disimpan: " + (membershipError?.message || "unknown error"));
+    membershipId = membership.id;
 
-          <div class="panel">
-            <div class="panel-header">
-              <div>
-                <h3>Ringkasan Keuangan</h3>
-                <p>Perbandingan pemasukan dan pengeluaran</p>
-              </div>
+    const safeName = escapeHtml(cooperative.name);
+    const safeEmail = escapeHtml(email);
+    const safePassword = escapeHtml(password);
+    const safeUrl = escapeHtml(appLoginUrl);
+    const roleLabel = role === "manajer" ? "Manager" : role.charAt(0).toUpperCase() + role.slice(1);
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#222;line-height:1.6"><div style="max-width:560px;margin:auto;padding:24px"><h2>Akun DAGBOEK Anda telah dibuat</h2><p>Anda telah diberi akses ke <b>${safeName}</b>.</p><p><b>Email:</b> ${safeEmail}<br><b>Password awal:</b> ${safePassword}<br><b>Jabatan:</b> ${escapeHtml(roleLabel)}</p><p><a href="${safeUrl}" style="display:inline-block;background:#a7192d;color:white;padding:12px 20px;text-decoration:none;border-radius:8px">Masuk ke DAGBOEK</a></p><p>Simpan informasi akun ini dengan aman dan segera ganti password setelah login pertama.</p></div></body></html>`;
 
-              <select class="period" id="dashboardPeriod">
-                <option value="1">Bulan ini</option>
-                <option value="3">3 Bulan</option>
-                <option value="6">6 Bulan</option>
-                <option value="12">1 Tahun</option>
-              </select>
-            </div>
+    const mailResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: emailFrom, to: [email], subject: `Akun DAGBOEK ${cooperative.name}`, html }),
+    });
+    if (!mailResponse.ok) {
+      const mailError = await mailResponse.text();
+      throw new Error("Akun sudah dibuat, tetapi email gagal dikirim. Periksa konfigurasi email. " + mailError.slice(0, 300));
+    }
 
-            <div class="chart" id="dashboardChart">
-              <div class="chart-group">
-                <div class="bar income" style="height:0%"></div>
-                <div class="bar expense" style="height:0%"></div>
-                <span class="chart-label">Jan</span>
-              </div>
-              <div class="chart-group">
-                <div class="bar income" style="height:0%"></div>
-                <div class="bar expense" style="height:0%"></div>
-                <span class="chart-label">Feb</span>
-              </div>
-              <div class="chart-group">
-                <div class="bar income" style="height:0%"></div>
-                <div class="bar expense" style="height:0%"></div>
-                <span class="chart-label">Mar</span>
-              </div>
-              <div class="chart-group">
-                <div class="bar income" style="height:0%"></div>
-                <div class="bar expense" style="height:0%"></div>
-                <span class="chart-label">Apr</span>
-              </div>
-              <div class="chart-group">
-                <div class="bar income" style="height:0%"></div>
-                <div class="bar expense" style="height:0%"></div>
-                <span class="chart-label">Mei</span>
-              </div>
-              <div class="chart-group">
-                <div class="bar income" style="height:0%"></div>
-                <div class="bar expense" style="height:0%"></div>
-                <span class="chart-label">Jun</span>
-              </div>
-            </div>
-
-            <div class="legend">
-              <span><i class="dot" style="background:#16a36a"></i> Pemasukan</span>
-              <span><i class="dot" style="background:#d34b55"></i> Pengeluaran</span>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header">
-              <div>
-                <h3>Akses Cepat</h3>
-                <p>Pintasan aktivitas koperasi</p>
-              </div>
-            </div>
-
-            <div class="quick-menu">
-              <button onclick="showPage('keuangan')">
-                <span>💰</span>Catat Keuangan
-              </button>
-              <button onclick="showPage('jurnal')">
-                <span>📖</span>Jurnal Umum
-              </button>
-              <button onclick="showPage('invoice')">
-                <span>🧾</span>Buat Invoice
-              </button>
-              <button onclick="showPage('toko')">
-                <span>🛒</span>Transaksi Toko
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- TRANSAKSI TERBARU -->
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h3>Transaksi Terbaru</h3>
-              <p>Lima transaksi keuangan terakhir yang tercatat</p>
-            </div>
-
-            <button class="period" onclick="showPage('keuangan')">
-              Lihat Semua →
-            </button>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>TANGGAL</th>
-                  <th>JENIS</th>
-                  <th>KETERANGAN</th>
-                  <th>JUMLAH</th>
-                  <th>STATUS</th>
-                </tr>
-              </thead>
-
-              <tbody id="dashboardRecentTransactions">
-                <tr>
-                  <td colspan="5" style="text-align:center;color:#999;padding:30px">
-                    Memuat transaksi...
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- MODULE PAGES -->
-      <section id="modulePage" class="page module-page">
-
-        <!-- Metadata dipertahankan untuk kompatibilitas app.js -->
-        <div hidden>
-          <span id="moduleIcon">📚</span>
-          <h3 id="moduleName">Modul</h3>
-          <p id="moduleDescription">Modul KDMP ERP</p>
-        </div>
-
-      </section>
-
-    </div>
-
-    <footer>
-      © 2026 KDMP Pendowo Asri | ERP & Financial Management System
-    </footer>
-  </main>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script type="module" src="app.js"></script>
-<script type="module" src="utang-piutang.js"></script>
-
-</body>
-</html>
+    return jsonResponse({ success: true, message: "Akun berhasil dibuat dan detail akses dikirim ke email pengguna.", email, cooperative: cooperative.name, role });
+  } catch (error) {
+    console.error("Invite-user error:", error);
+    // Jika proses penyimpanan atau pengiriman email gagal, batalkan akun baru agar tidak ada akun tanpa proses lengkap.
+    if (adminClient && membershipId) await adminClient.from("cooperative_memberships").delete().eq("id", membershipId);
+    if (adminClient && createdUserId) await adminClient.auth.admin.deleteUser(createdUserId);
+    return jsonResponse({ success: false, message: error instanceof Error ? error.message : "Terjadi kesalahan pada server." }, 500);
+  }
+});
