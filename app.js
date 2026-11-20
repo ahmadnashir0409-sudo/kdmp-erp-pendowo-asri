@@ -957,7 +957,7 @@ async function loadLedger() {
     const allLines=[];let from=0;const pageSize=500;
     while(true) {
       const {data,error}=await supabaseClient.from("journal_lines")
-        .select("account_id,journal_id,debit,kredit,journal_entries!inner(tanggal,nomor_jurnal,keterangan,status)")
+        .select("account_id,journal_id,debit,kredit,journal_entries!inner(tanggal,nomor_jurnal,keterangan,status,created_at)")
         .eq("account_id",account.id).eq("journal_entries.status","posted")
         .lte("journal_entries.tanggal",end).range(from,from+pageSize-1);
       if(error)throw error;
@@ -967,8 +967,14 @@ async function loadLedger() {
     }
     const movements=allLines.map(line=>{
       const j=line.journal_entries;
-      return {journalId:line.journal_id,date:j.tanggal,number:j.nomor_jurnal,description:j.keterangan,debit:Number(line.debit),credit:Number(line.kredit)};
-    }).sort((a,b)=>a.date.localeCompare(b.date)||a.number.localeCompare(b.number));
+      return {journalId:line.journal_id,date:j.tanggal,createdAt:j.created_at||"",number:j.nomor_jurnal,description:j.keterangan,debit:Number(line.debit),credit:Number(line.kredit)};
+    }).sort((a,b)=>{
+      const dateCompare=String(a.date).localeCompare(String(b.date));
+      if(dateCompare!==0)return dateCompare;
+      const timeCompare=String(a.createdAt).localeCompare(String(b.createdAt));
+      if(timeCompare!==0)return timeCompare;
+      return String(a.number).localeCompare(String(b.number));
+    });
     const openingLines=movements.filter(m=>m.date<start);
     const periodLines=movements.filter(m=>m.date>=start&&m.date<=end);
     const openingNet=openingLines.reduce((s,m)=>s+signedLedgerAmount(m.debit,m.credit,account.saldo_normal),0);
@@ -981,8 +987,17 @@ async function loadLedger() {
     document.getElementById("ledgerAccountInfo").textContent=`${account.kode_akun} - ${account.nama_akun} | ${capitalize(account.kategori)} | Saldo normal ${capitalize(account.saldo_normal)} | Periode ${start} s.d. ${end}`;
     body.replaceChildren();
     if(!periodLines.length) body.innerHTML='<tr><td colspan="7">Tidak ada mutasi pada periode ini.</td></tr>';
-    else periodLines.forEach(m=>{
-      running+=signedLedgerAmount(m.debit,m.credit,account.saldo_normal);
+    else {
+      // Hitung saldo berjalan secara kronologis (tertua ke terbaru),
+      // simpan saldo setiap transaksi, lalu tampilkan terbaru di bagian atas.
+      const balanceAfterMovement=new Map();
+      periodLines.forEach(m=>{
+        running+=signedLedgerAmount(m.debit,m.credit,account.saldo_normal);
+        balanceAfterMovement.set(m.journalId,running);
+      });
+
+      [...periodLines].reverse().forEach(m=>{
+      const balanceAfter=balanceAfterMovement.get(m.journalId);
       const row=document.createElement("tr");
       row.className="ledger-clickable-row";
       row.title="Klik untuk membuka detail jurnal";
@@ -999,7 +1014,7 @@ async function loadLedger() {
           openJournalDetail(m.journalId);
         }
       });
-      [m.date,m.number,m.description,formatRupiah(m.debit),formatRupiah(m.credit),displayLedgerBalance(running,account.saldo_normal)].forEach(value=>{
+      [m.date,m.number,m.description,formatRupiah(m.debit),formatRupiah(m.credit),displayLedgerBalance(balanceAfter,account.saldo_normal)].forEach(value=>{
         const cell=document.createElement("td");cell.textContent=value;row.appendChild(cell);
       });
       const actionCell=document.createElement("td");
@@ -1011,7 +1026,8 @@ async function loadLedger() {
       actionCell.appendChild(detailButton);
       row.appendChild(actionCell);
       body.appendChild(row);
-    });
+      });
+    }
     document.getElementById("ledgerClosing").textContent=displayLedgerBalance(running,account.saldo_normal);
     message.textContent=`Buku Besar berhasil dimuat. ${periodLines.length} mutasi ditemukan.`;
     message.className="erp-message erp-success";
