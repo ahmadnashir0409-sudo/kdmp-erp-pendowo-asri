@@ -9,6 +9,7 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - Penjualan toko dialihkan ke RPC `proses_penjualan_toko_atomik`.
 - Jalur rollback JavaScript yang menimpa `current_stock` dan mencoba menghapus baris mutasi dihapus dari alur penjualan.
 - Identitas UI awal diselaraskan menjadi DAGBOEK by Nusa Pixel.
+- Tipografi Inter/Playfair Display, sidebar charcoal, aksen heritage gold, dan fondasi dark mode yang lebih terbaca ditambahkan.
 - Pilihan role undangan diselaraskan dengan role database: `admin_keuangan`, `kasir`, `admin_gudang`, `pengurus`.
 - Tema dasar charcoal/heritage gold dan peningkatan keterbacaan dark mode ditambahkan.
 
@@ -16,7 +17,9 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - `app.js`: pemeriksaan sintaks JavaScript lulus.
 - `utang-piutang.js`: pemeriksaan sintaks JavaScript lulus.
 - RPC penjualan atomik diuji dalam transaksi database sementara yang diakhiri dengan `ROLLBACK`.
+- RPC pembatalan transaksi diuji setelah membuat penjualan uji: dua mutasi (keluar dan pengembalian), satu jurnal pembalik, status dibatalkan, dan stok kembali ke nilai awal. Seluruh data uji di-`ROLLBACK`.
 - Pengujian membuktikan header, detail, mutasi, dan jurnal terbentuk dalam transaksi yang sama; setelah rollback stok kembali ke nilai awal dan tidak ada data uji tertinggal.
+- Migration integritas/RPC berhasil diuji sintaks dan eksekusinya dalam transaksi yang diakhiri `ROLLBACK`; migration belum diterapkan ke database produksi.
 - Seluruh 19 jurnal posted yang ada saat audit seimbang.
 
 ## Temuan kritis
