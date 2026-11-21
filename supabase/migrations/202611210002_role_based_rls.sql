@@ -23,6 +23,10 @@ AS $function$
     WHERE cm.cooperative_id = p_cooperative_id
       AND cm.user_id = auth.uid()
       AND cm.status = 'active'
+      AND EXISTS (
+        SELECT 1 FROM public.profiles pr
+        WHERE pr.id = cm.user_id AND pr.role = cm.role
+      )
       AND (p_required_role IS NULL OR cm.role = p_required_role)
   );
 $function$;
