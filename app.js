@@ -390,8 +390,8 @@ loginScreen.id = "loginScreen";
 loginScreen.innerHTML = `
   <div class="login-card">
     <div class="login-logo">D</div>
-    <h2>DAGBOEK</h2>
-    <p>by NUSA PIXEL · Pendowo Asri Management System</p>
+    <h2>KDMP</h2>
+    <p>by NUSA PIXEL · Cooperative Management System</p>
     <form id="loginForm">
       <label>Email</label><input type="email" id="loginEmail" required autocomplete="username">
       <label>Password</label><input type="password" id="loginPassword" required autocomplete="current-password">
@@ -401,7 +401,7 @@ loginScreen.innerHTML = `
     </form>
     <form id="passwordRecoveryPanel" hidden>
       <h3>Buat Password Baru</h3>
-      <p>Gunakan password pribadi yang kuat untuk akun DAGBOEK.</p>
+      <p>Gunakan password pribadi yang kuat untuk akun KDMP.</p>
       <label>Password Baru</label><input type="password" id="newAccountPassword" minlength="10" required autocomplete="new-password">
       <label>Ulangi Password Baru</label><input type="password" id="confirmAccountPassword" minlength="10" required autocomplete="new-password">
       <button type="submit" id="updatePasswordButton">Simpan Password Baru</button>
@@ -8955,9 +8955,9 @@ function setupSettings(){
         <div class="about-brand-mark">D</div>
         <div class="about-brand-content">
           <span class="about-brand-eyebrow">ABOUT THIS APPLICATION</span>
-          <h3>DAGBOEK</h3>
+          <h3>KDMP by Nusa Pixel</h3>
           <p class="about-brand-tagline">ERP & Financial Management System</p>
-          <p class="about-brand-description">DAGBOEK dikembangkan sebagai sistem pengelolaan operasional dan keuangan yang membantu pencatatan, pemantauan, serta pengambilan keputusan secara lebih terstruktur.</p>
+          <p class="about-brand-description">KDMP dikembangkan oleh Nusa Pixel sebagai sistem pengelolaan operasional dan keuangan yang membantu pencatatan, pemantauan, serta pengambilan keputusan secara lebih terstruktur.</p>
           <div class="about-brand-divider"></div>
           <div class="about-brand-credit"><span>Dikembangkan oleh</span><strong>Ahmad Nashirudin</strong></div>
           <div class="about-brand-credit"><span>Studio pengembang</span><strong>Nusa Pixel</strong></div>
@@ -9166,7 +9166,7 @@ function setupReferenceLibrary(){
     section.innerHTML=`
       <div class="reference-hero">
         <div class="reference-hero-icon">📚</div>
-        <div><span class="reference-eyebrow">PUSAT REFERENSI DAGBOEK</span><h2>Rumus Excel & Kamus Akuntansi</h2><p>Temukan rumus spreadsheet dan pahami istilah akuntansi dengan contoh yang dekat dengan kegiatan koperasi.</p></div>
+        <div><span class="reference-eyebrow">PUSAT REFERENSI KDMP</span><h2>Rumus Excel & Kamus Akuntansi</h2><p>Temukan rumus spreadsheet dan pahami istilah akuntansi dengan contoh yang dekat dengan kegiatan koperasi.</p></div>
       </div>
       <div class="reference-tabs" role="tablist" aria-label="Jenis referensi">
         <button type="button" class="reference-tab active" data-reference-tab="excel" role="tab" aria-selected="true">📊 Rumus Excel</button>
@@ -9324,7 +9324,7 @@ function initDabuAssistant(){
     <header class="dabu-header">
       <div class="dabu-brand">
         <span class="dabu-brand-orb">D</span>
-        <span><strong>DABU</strong><small>DAGBOEK AI ASSISTANT</small></span>
+        <span><strong>DABU</strong><small>KDMP AI ASSISTANT</small></span>
       </div>
       <div class="dabu-header-actions">
         <button type="button" id="dabuNewChat" title="Percakapan baru" aria-label="Percakapan baru">＋</button>
@@ -9333,7 +9333,7 @@ function initDabuAssistant(){
     </header>
     <div id="dabuMessages" class="dabu-messages" aria-live="polite"></div>
     <form id="dabuForm" class="dabu-form">
-      <textarea id="dabuInput" rows="2" maxlength="2500" placeholder="Tanya tentang stok, jurnal, laporan, atau cara menggunakan DAGBOEK..." aria-label="Pesan untuk DABU"></textarea>
+      <textarea id="dabuInput" rows="2" maxlength="2500" placeholder="Tanya tentang stok, jurnal, laporan, atau cara menggunakan KDMP..." aria-label="Pesan untuk DABU"></textarea>
       <button id="dabuSend" type="submit" aria-label="Kirim pesan">➤</button>
     </form>
     <div class="dabu-footnote">DABU hanya membaca data sesuai hak akses akun. Belum dapat mengubah transaksi.</div>
