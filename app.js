@@ -9127,6 +9127,20 @@ const referenceExcelData = [
   {name:"LEFT",category:"Pengolahan Teks",syntax:"=LEFT(text, [num_chars])",example:"=LEFT(A2,4)",description:"Mengambil sejumlah karakter dari sisi kiri teks.",use:"Mengambil awalan kode akun atau kode barang."},
   {name:"RIGHT",category:"Pengolahan Teks",syntax:"=RIGHT(text, [num_chars])",example:"=RIGHT(A2,3)",description:"Mengambil sejumlah karakter dari sisi kanan teks.",use:"Mengambil akhiran nomor dokumen."},
   {name:"CONCAT",category:"Pengolahan Teks",syntax:"=CONCAT(text1, [text2], …)",example:'=CONCAT(A2," - ",B2)',description:"Menggabungkan teks dari beberapa sel atau nilai.",use:"Menggabungkan kode dan nama akun/barang."}
+
+  {name:"Shortcut: AutoSum",category:"Shortcut Excel",syntax:"Alt + =",example:"Pilih sel di bawah angka lalu tekan Alt + = untuk memasukkan SUM otomatis.",description:"Memasukkan rumus SUM secara otomatis untuk menjumlahkan rentang angka yang berdekatan.",use:"Menjumlahkan pemasukan, pengeluaran, penjualan, atau saldo."},
+  {name:"Shortcut: Insert Function",category:"Shortcut Excel",syntax:"Shift + F3",example:"Pilih sel hasil, tekan Shift + F3, lalu cari fungsi SUMIF atau AVERAGE.",description:"Membuka dialog Insert Function untuk mencari dan memilih fungsi Excel.",use:"Mencari fungsi tanpa harus menghafal sintaks."},
+  {name:"Shortcut: Absolute Reference",category:"Shortcut Excel",syntax:"F4",example:"Saat mengedit formula, pilih referensi C2 lalu tekan F4 hingga menjadi $C$2.",description:"Mengubah referensi sel menjadi absolut atau campuran.",use:"Mengunci sel tarif atau parameter saat formula disalin."},
+  {name:"Shortcut: Show Formulas",category:"Shortcut Excel",syntax:"Ctrl + ~",example:"Tekan Ctrl + ~ untuk menampilkan formula pada lembar kerja.",description:"Menampilkan formula, bukan hasil perhitungannya.",use:"Mengaudit rumus pada tabel rekap."},
+  {name:"Shortcut: Calculate Workbook",category:"Shortcut Excel",syntax:"F9",example:"Tekan F9 untuk menghitung ulang workbook.",description:"Menghitung ulang formula pada workbook.",use:"Memperbarui hasil saat mode kalkulasi manual digunakan."},
+  {name:"Shortcut: Current Date",category:"Shortcut Excel",syntax:"Ctrl + ;",example:"Tekan Ctrl + ; pada kolom tanggal pencatatan.",description:"Memasukkan tanggal hari ini sebagai nilai tetap.",use:"Mencatat tanggal transaksi dengan cepat."},
+  {name:"Shortcut: Current Time",category:"Shortcut Excel",syntax:"Ctrl + Shift + ;",example:"Tekan Ctrl + Shift + ; pada kolom waktu penerimaan.",description:"Memasukkan waktu saat ini sebagai nilai tetap.",use:"Mencatat waktu proses administrasi."},
+  {name:"Shortcut: Fill Down",category:"Shortcut Excel",syntax:"Ctrl + D",example:"Pilih C2:C100 lalu tekan Ctrl + D untuk menyalin formula ke bawah.",description:"Menyalin isi atau formula dari sel teratas ke sel di bawahnya.",use:"Mengisi formula per baris pada daftar transaksi."},
+  {name:"Shortcut: Create Table",category:"Shortcut Excel",syntax:"Ctrl + T",example:"Pilih daftar transaksi, tekan Ctrl + T, lalu konfirmasi header.",description:"Mengubah rentang data menjadi Excel Table dengan filter.",use:"Merapikan data transaksi agar mudah difilter."},
+  {name:"Shortcut: Quick Filter",category:"Shortcut Excel",syntax:"Ctrl + Shift + L",example:"Pilih tabel transaksi lalu tekan Ctrl + Shift + L.",description:"Mengaktifkan atau menonaktifkan filter pada rentang data.",use:"Menyaring transaksi berdasarkan tanggal, jenis, atau status."},
+  {name:"Shortcut: Paste Values",category:"Shortcut Excel",syntax:"Ctrl + Alt + V, lalu V, Enter",example:"Salin hasil formula, tekan Ctrl + Alt + V, pilih Values, lalu Enter.",description:"Menempelkan hasil nilai saja tanpa formula sumber.",use:"Mengunci hasil rekap sebelum dibagikan."},
+  {name:"Shortcut: New Line in Cell",category:"Shortcut Excel",syntax:"Alt + Enter",example:"Saat mengisi keterangan transaksi, tekan Alt + Enter.",description:"Membuat baris baru di dalam sel yang sama.",use:"Menulis keterangan panjang dalam satu sel."}
+
 ];
 
 const referenceAccountingData = [
