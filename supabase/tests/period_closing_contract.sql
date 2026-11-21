@@ -4,10 +4,9 @@
 -- Synthetic PostgreSQL objects only. No Supabase production connection or data.
 CREATE SCHEMA close_test;
 CREATE SCHEMA auth;
-CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
   SELECT '11111111-1111-4111-8111-111111111111'::uuid;
-$;
-
+$$;
 CREATE TABLE close_test.periods (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cooperative_id uuid NOT NULL,
