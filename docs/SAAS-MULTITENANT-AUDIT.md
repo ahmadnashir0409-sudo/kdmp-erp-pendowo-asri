@@ -128,3 +128,16 @@ Supabase security advisors returned two Auth configuration warnings: email OTP e
 - Make all human-readable unique values tenant-scoped where appropriate.
 - Do not implement Super Admin as a profile role or user-editable metadata claim.
 - Do not modify production schema, policies, functions, Auth settings, or data until a staging validation plan and explicit production approval exist.
+
+
+## Frontend source audit correction and findings
+
+The current `app.js` dynamically injects a password recovery flow (request reset email, handle `PASSWORD_RECOVERY`, and update the password). The earlier statement that the login page had no recovery flow was inaccurate: the UI is injected by JavaScript rather than being present in `index.html`. No recovery email or password operation was triggered during this audit.
+
+Additional findings from the current branch source:
+- `loadUserProfile()` reads `profiles.role`, stores it as `window.currentUser.role`, applies `KDMP_ROLE_PAGES`, and selects a role-dependent default page.
+- Module actions and menu visibility contain role checks throughout `app.js`; these conflict with the equal-module-access requirement and need to be replaced consistently, not only by hiding menu buttons.
+- Settings currently stores cooperative name, contact details, logo, and theme in browser `localStorage`, so cooperative identity is device-local rather than server-owned tenant data.
+- The current “Tambah Pengguna Koperasi” UI is still the old manager invitation flow and exposes operational role selection. It must be replaced with the separate Nusa Pixel Super Admin control center.
+- A likely runtime defect exists in the current invite handler: after obtaining `authenticatedUser` from `auth.getUser()`, the membership query references `user.id` rather than `authenticatedUser.id`. The identifier `user` is not defined in that handler scope. This should be corrected as part of the invitation-flow replacement, not patched as an isolated workaround.
+- The frontend currently has no tenant-selection/bootstrap state and many queries assume a single cooperative. Tenant identity must be loaded from a trusted server-side membership context before any business module is enabled.
