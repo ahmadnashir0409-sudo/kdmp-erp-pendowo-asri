@@ -231,16 +231,16 @@ WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
 -- Cooperative directory and invitations. Membership writes are reserved for server-side invitation flow.
 CREATE POLICY cooperatives_member_read ON public.cooperatives
 FOR SELECT TO authenticated
-USING (public.has_active_cooperative_membership(id));
+USING (private.has_active_cooperative_membership(id));
 CREATE POLICY cooperatives_manager_update ON public.cooperatives
 FOR UPDATE TO authenticated
-USING (public.has_active_cooperative_membership(id,'manajer'))
-WITH CHECK (public.has_active_cooperative_membership(id,'manajer'));
+USING (private.has_active_cooperative_membership(id,'manajer'))
+WITH CHECK (private.has_active_cooperative_membership(id,'manajer'));
 
 CREATE POLICY cooperative_memberships_self_or_manager_read ON public.cooperative_memberships
 FOR SELECT TO authenticated
-USING (user_id = (select auth.uid()) OR public.has_active_cooperative_membership(cooperative_id,'manajer'));
+USING (user_id = (select auth.uid()) OR private.has_active_cooperative_membership(cooperative_id,'manajer'));
 
 CREATE POLICY cooperative_invitations_manager_read ON public.cooperative_invitations
 FOR SELECT TO authenticated
-USING (public.has_active_cooperative_membership(cooperative_id,'manajer'));
+USING (private.has_active_cooperative_membership(cooperative_id,'manajer'));
