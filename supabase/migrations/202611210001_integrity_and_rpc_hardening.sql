@@ -71,7 +71,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.record_invoice_journal(p_invoice_id uuid)
  RETURNS jsonb
@@ -150,7 +150,7 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'journal_id', v_journal_id, 'journal_number', v_journal_number, 'duplicate', false);
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.record_invoice_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_payment_method text, p_notes text DEFAULT NULL::text)
  RETURNS jsonb
@@ -278,7 +278,7 @@ BEGIN
     'journal_number', v_journal_number
   );
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.pay_loan_installment(p_payment_number text, p_installment_id uuid, p_amount numeric, p_payment_method text DEFAULT 'tunai'::text, p_notes text DEFAULT NULL::text)
  RETURNS jsonb
@@ -386,7 +386,7 @@ BEGIN
     'status', v_new_status
   );
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.catat_jurnal_penjualan_toko(p_nomor_transaksi text, p_tanggal date, p_metode_pembayaran text, p_total_penjualan numeric, p_total_hpp numeric, p_keterangan text)
  RETURNS uuid
