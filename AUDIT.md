@@ -22,6 +22,7 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - RPC pembatalan transaksi diuji setelah membuat penjualan uji: dua mutasi (keluar dan pengembalian), satu jurnal pembalik, status dibatalkan, dan stok kembali ke nilai awal. Seluruh data uji di-`ROLLBACK`.
 - Pengujian membuktikan header, detail, mutasi, dan jurnal terbentuk dalam transaksi yang sama; setelah rollback stok kembali ke nilai awal dan tidak ada data uji tertinggal.
 - Simulasi role Kasir dengan kedua migration aktif sementara membuktikan kasir dapat membuat penjualan atomik dan membaca header/detail/mutasi yang terkait. Setelah `ROLLBACK`, role manajer, stok, dan tabel produksi kembali seperti semula.
+- Simulasi role Admin Gudang membuktikan trigger mutasi mengabaikan nilai `stock_before`/`stock_after` dari klien dan menyimpan snapshot terkunci yang benar. Percobaan update langsung ke `current_stock` ditolak selama migration aktif. Setelah `ROLLBACK`, stok dan data uji kembali seperti semula.
 - Migration integritas/RPC berhasil diuji sintaks dan eksekusinya dalam transaksi yang diakhiri `ROLLBACK`; migration belum diterapkan ke database produksi.
 - Seluruh 19 jurnal posted yang ada saat audit seimbang.
 
