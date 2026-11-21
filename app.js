@@ -454,6 +454,7 @@ async function loadUserProfile(user) {
   }
   if (avatar) avatar.textContent = profile.nama_lengkap.charAt(0).toUpperCase();
   addLogoutButton();
+  initDabuAssistant();
   applyRoleMenuVisibility();
   const allowedPages=KDMP_ROLE_PAGES[profile.role]||["dashboard","rumus-kamus"];
   const defaultPage=allowedPages.includes("dashboard")?"dashboard":(allowedPages[0]||"dashboard");
@@ -9222,3 +9223,173 @@ window.showPage=function(page,button){
   }
   return kdmpShowPageBeforeRoleGuard(page,button);
 };
+
+
+// DABU — persistent, read-only AI assistant for DAGBOEK.
+function initDabuAssistant(){
+  const userId=window.currentUser?.id;
+  if(!userId||document.getElementById("dabuLauncher"))return;
+
+  const storageKey="dagboek_dabu_conversation_"+userId;
+  let conversationId=localStorage.getItem(storageKey)||null;
+  let isSending=false;
+  let historyLoaded=false;
+
+  const launcher=document.createElement("button");
+  launcher.id="dabuLauncher";
+  launcher.className="dabu-launcher";
+  launcher.type="button";
+  launcher.setAttribute("aria-label","Buka asisten DABU");
+  launcher.innerHTML='<span class="dabu-launcher-orb">D</span><span class="dabu-launcher-label">Tanya DABU</span>';
+
+  const panel=document.createElement("section");
+  panel.id="dabuPanel";
+  panel.className="dabu-panel";
+  panel.hidden=true;
+  panel.innerHTML=`
+    <header class="dabu-header">
+      <div class="dabu-brand">
+        <span class="dabu-brand-orb">D</span>
+        <span><strong>DABU</strong><small>DAGBOEK AI ASSISTANT</small></span>
+      </div>
+      <div class="dabu-header-actions">
+        <button type="button" id="dabuNewChat" title="Percakapan baru" aria-label="Percakapan baru">＋</button>
+        <button type="button" id="dabuClose" title="Tutup" aria-label="Tutup">×</button>
+      </div>
+    </header>
+    <div id="dabuMessages" class="dabu-messages" aria-live="polite"></div>
+    <form id="dabuForm" class="dabu-form">
+      <textarea id="dabuInput" rows="2" maxlength="2500" placeholder="Tanya tentang stok, jurnal, laporan, atau cara menggunakan DAGBOEK..." aria-label="Pesan untuk DABU"></textarea>
+      <button id="dabuSend" type="submit" aria-label="Kirim pesan">➤</button>
+    </form>
+    <div class="dabu-footnote">DABU hanya membaca data sesuai hak akses akun. Belum dapat mengubah transaksi.</div>
+  `;
+
+  document.body.append(launcher,panel);
+  const messagesEl=panel.querySelector("#dabuMessages");
+  const input=panel.querySelector("#dabuInput");
+  const sendButton=panel.querySelector("#dabuSend");
+  const form=panel.querySelector("#dabuForm");
+
+  function scrollMessages(){messagesEl.scrollTop=messagesEl.scrollHeight;}
+
+  function addMessage(role,content){
+    const row=document.createElement("div");
+    row.className="dabu-message "+role;
+    const bubble=document.createElement("div");
+    bubble.className="dabu-bubble";
+    bubble.textContent=content;
+    row.appendChild(bubble);
+
+    if(role==="assistant"&&("speechSynthesis" in window)&&("SpeechSynthesisUtterance" in window)){
+      const speak=document.createElement("button");
+      speak.type="button";
+      speak.className="dabu-speak";
+      speak.textContent="🔊 Bacakan";
+      speak.addEventListener("click",()=>{
+        const utterance=new SpeechSynthesisUtterance(content);
+        utterance.lang="id-ID";
+        const voices=window.speechSynthesis.getVoices();
+        const voice=voices.find(v=>v.lang?.toLowerCase().startsWith("id")&&/female|perempuan|google/i.test(v.name))
+          ||voices.find(v=>v.lang?.toLowerCase().startsWith("id"));
+        if(voice)utterance.voice=voice;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      });
+      row.appendChild(speak);
+    }
+
+    messagesEl.appendChild(row);
+    scrollMessages();
+  }
+
+  function showGreeting(){
+    messagesEl.replaceChildren();
+    addMessage("assistant","Halo! Aku DABU, asisten DAGBOEK. Aku bisa bantu menjelaskan stok, jurnal, transaksi, laporan, dan cara menggunakan modul. Aku hanya membaca data sesuai hak akses akun.");
+  }
+
+  async function loadHistory(){
+    if(historyLoaded)return;
+    historyLoaded=true;
+    if(!conversationId){showGreeting();return;}
+    const {data,error}=await supabaseClient
+      .from("dabu_messages")
+      .select("role,content")
+      .eq("conversation_id",conversationId)
+      .order("created_at",{ascending:true})
+      .limit(40);
+    if(error||!data?.length){showGreeting();return;}
+    messagesEl.replaceChildren();
+    data.forEach(item=>addMessage(item.role,item.content));
+  }
+
+  async function sendMessage(event){
+    event.preventDefault();
+    if(isSending)return;
+    const message=input.value.trim();
+    if(!message)return;
+    if(message.length>2500){addMessage("assistant","Pesan terlalu panjang. Maksimal 2.500 karakter.");return;}
+
+    isSending=true;
+    sendButton.disabled=true;
+    input.disabled=true;
+    addMessage("user",message);
+    input.value="";
+    const loading=document.createElement("div");
+    loading.className="dabu-message assistant";
+    loading.innerHTML='<div class="dabu-bubble dabu-thinking"><span></span><span></span><span></span> DABU sedang berpikir</div>';
+    messagesEl.appendChild(loading);
+    scrollMessages();
+
+    try{
+      const {data,error}=await supabaseClient.functions.invoke("dabu-assistant",{
+        body:{message,conversation_id:conversationId}
+      });
+      loading.remove();
+      if(error){
+        let friendly="DABU belum bisa menjawab. Periksa koneksi dan konfigurasi AI.";
+        try{
+          const detail=await error.context?.json?.();
+          if(detail?.error)friendly=detail.error;
+        }catch{}
+        addMessage("assistant",friendly);
+      }else if(data?.answer){
+        conversationId=data.conversation_id||conversationId;
+        if(conversationId)localStorage.setItem(storageKey,conversationId);
+        addMessage("assistant",data.answer);
+      }else{
+        addMessage("assistant","DABU menerima respons kosong. Coba kirim pertanyaan sekali lagi.");
+      }
+    }catch(error){
+      loading.remove();
+      addMessage("assistant","Koneksi ke DABU terputus. Coba lagi sebentar.");
+      console.warn("DABU request failed:",error);
+    }finally{
+      isSending=false;
+      sendButton.disabled=false;
+      input.disabled=false;
+      input.focus();
+    }
+  }
+
+  launcher.addEventListener("click",async()=>{
+    panel.hidden=!panel.hidden;
+    launcher.setAttribute("aria-expanded",String(!panel.hidden));
+    if(!panel.hidden){await loadHistory();input.focus();}
+  });
+  panel.querySelector("#dabuClose").addEventListener("click",()=>{
+    panel.hidden=true;
+    launcher.setAttribute("aria-expanded","false");
+  });
+  panel.querySelector("#dabuNewChat").addEventListener("click",()=>{
+    conversationId=null;
+    historyLoaded=true;
+    localStorage.removeItem(storageKey);
+    showGreeting();
+    input.focus();
+  });
+  form.addEventListener("submit",sendMessage);
+  input.addEventListener("keydown",event=>{
+    if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();form.requestSubmit();}
+  });
+}
