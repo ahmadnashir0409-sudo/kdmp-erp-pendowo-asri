@@ -1,8 +1,12 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 
 -- Standalone lifecycle contract test for manual accounting-period closing.
 -- Synthetic PostgreSQL objects only. No Supabase production connection or data.
 CREATE SCHEMA close_test;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $
+  SELECT '11111111-1111-4111-8111-111111111111'::uuid;
+$;
 
 CREATE TABLE close_test.periods (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -113,7 +117,7 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'PERIOD_NOT_FOUND'; END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(v_period.cooperative_id::text, 0));
 
-  IF v_period.status <> 'open' THEN
+  IF v_period.status NOT IN ('open','reopened') THEN
     RAISE EXCEPTION 'PERIOD_NOT_OPEN';
   END IF;
 
@@ -170,6 +174,14 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(v_period.cooperative_id::text, 0));
 
   IF v_period.status <> 'closed' THEN RAISE EXCEPTION 'PERIOD_NOT_CLOSED'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM close_test.periods
+    WHERE cooperative_id=v_period.cooperative_id
+      AND period_start > v_period.period_end
+      AND status IN ('open','closed')
+  ) THEN
+    RAISE EXCEPTION 'LATER_PERIOD_EXISTS';
+  END IF;
 
   UPDATE close_test.periods
   SET status='reopened',version=version+1,closed_at=NULL,closed_by=NULL
@@ -202,9 +214,9 @@ BEFORE UPDATE OR DELETE ON close_test.events
 FOR EACH ROW EXECUTE FUNCTION close_test.reject_event_mutation();
 
 -- Fixture: two independent cooperatives.
-SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid AS coop_alpha \\gset
-SELECT 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid AS coop_beta \\gset
-SELECT '11111111-1111-4111-8111-111111111111'::uuid AS actor \\gset
+SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid AS coop_alpha \gset
+SELECT 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid AS coop_beta \gset
+SELECT '11111111-1111-4111-8111-111111111111'::uuid AS actor \gset
 
 DO $$
 BEGIN
@@ -221,10 +233,10 @@ $$;
 
 SELECT close_test.create_period(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-01-01','2026-01-31'
-) AS alpha_jan \\gset
+) AS alpha_jan \gset
 SELECT close_test.create_period(
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-01-01','2026-01-31'
-) AS beta_jan \\gset
+) AS beta_jan \gset
 
 SELECT close_test.finalize_period(
   :'alpha_jan'::uuid, :'actor'::uuid,
@@ -295,15 +307,46 @@ BEGIN
     IF SQLERRM <> 'REOPEN_REASON_REQUIRED' THEN RAISE; END IF;
   END;
 
+  BEGIN
+    PERFORM close_test.reopen_period(v_period,
+      '11111111-1111-4111-8111-111111111111','Koreksi bukti transaksi');
+    RAISE EXCEPTION 'Reopen with a later period should have been rejected';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'LATER_PERIOD_EXISTS' THEN RAISE; END IF;
+  END;
+END;
+$;
+
+-- Beta has no later period, so it can be reopened and re-closed as a new version.
+DO $
+DECLARE v_period uuid;
+BEGIN
+  SELECT id INTO v_period FROM close_test.periods
+  WHERE cooperative_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    AND period_end='2026-01-31';
+  PERFORM close_test.finalize_period(v_period,
+    '11111111-1111-4111-8111-111111111111','{"trial_balance":{"debit":50,"credit":50}}'::jsonb);
+  BEGIN
+    PERFORM close_test.reopen_period(v_period,
+      '11111111-1111-4111-8111-111111111111','');
+    RAISE EXCEPTION 'Empty reopen reason should have been rejected';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'REOPEN_REASON_REQUIRED' THEN RAISE; END IF;
+  END;
   PERFORM close_test.reopen_period(v_period,
     '11111111-1111-4111-8111-111111111111','Koreksi bukti transaksi');
   IF (SELECT status FROM close_test.periods WHERE id=v_period) <> 'reopened' THEN
     RAISE EXCEPTION 'Period was not reopened';
   END IF;
+  PERFORM close_test.finalize_period(v_period,
+    '11111111-1111-4111-8111-111111111111','{"trial_balance":{"debit":50,"credit":50},"revision":2}'::jsonb);
+  IF (SELECT version FROM close_test.periods WHERE id=v_period) <> 2 THEN
+    RAISE EXCEPTION 'Re-close did not advance version';
+  END IF;
 END;
-$$;
+$;
 
-DO $$
+DO $
 DECLARE v_period uuid;
 BEGIN
   SELECT id INTO v_period FROM close_test.periods
@@ -316,18 +359,22 @@ BEGIN
     IF SQLERRM <> 'PERIOD_SNAPSHOT_IMMUTABLE' THEN RAISE; END IF;
   END;
 END;
-$$;
+$;
 
-DO $$
+DO $
 DECLARE v_events integer; v_snapshots integer;
 BEGIN
   SELECT count(*) INTO v_events FROM close_test.events
-  WHERE cooperative_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-  SELECT count(*) INTO v_snapshots FROM close_test.snapshots;
-  IF v_events <> 4 THEN RAISE EXCEPTION 'Expected 4 Alpha events, got %',v_events; END IF;
-  IF v_snapshots <> 1 THEN RAISE EXCEPTION 'Expected 1 immutable snapshot, got %',v_snapshots; END IF;
+  WHERE cooperative_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  SELECT count(*) INTO v_snapshots FROM close_test.snapshots
+  WHERE period_id IN (
+    SELECT id FROM close_test.periods
+    WHERE cooperative_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  );
+  IF v_events <> 4 THEN RAISE EXCEPTION 'Expected 4 Beta events, got %',v_events; END IF;
+  IF v_snapshots <> 2 THEN RAISE EXCEPTION 'Expected 2 versioned snapshots, got %',v_snapshots; END IF;
 END;
-$$;
+$;
 
 DROP SCHEMA close_test CASCADE;
-\\echo 'PASS: manual period lifecycle, required first start, sequential periods, backdate lock, tenant boundary, idempotent close guard, audited reopen, immutable snapshots/events'
+\echo 'PASS: manual period lifecycle, required first start, sequential periods, backdate lock, tenant boundary, idempotent close guard, audited reopen, immutable snapshots/events'
