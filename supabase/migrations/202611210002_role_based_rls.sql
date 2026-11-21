@@ -7,7 +7,11 @@
 -- pengurus: read-only financial/operational overview
 -- Prepared for review; do not apply to production until role tests pass.
 
-CREATE OR REPLACE FUNCTION public.has_active_cooperative_membership(
+CREATE SCHEMA IF NOT EXISTS private;
+REVOKE ALL ON SCHEMA private FROM PUBLIC, anon;
+GRANT USAGE ON SCHEMA private TO authenticated;
+
+CREATE OR REPLACE FUNCTION private.has_active_cooperative_membership(
   p_cooperative_id uuid,
   p_required_role text DEFAULT NULL
 )
@@ -31,8 +35,8 @@ AS $function$
   );
 $function$;
 
-REVOKE ALL ON FUNCTION public.has_active_cooperative_membership(uuid,text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.has_active_cooperative_membership(uuid,text) TO authenticated;
+REVOKE ALL ON FUNCTION private.has_active_cooperative_membership(uuid,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.has_active_cooperative_membership(uuid,text) TO authenticated;
 
 DO $$
 DECLARE
@@ -227,16 +231,16 @@ WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
 -- Cooperative directory and invitations. Membership writes are reserved for server-side invitation flow.
 CREATE POLICY cooperatives_member_read ON public.cooperatives
 FOR SELECT TO authenticated
-USING (public.has_active_cooperative_membership(id));
+USING (private.has_active_cooperative_membership(id));
 CREATE POLICY cooperatives_manager_update ON public.cooperatives
 FOR UPDATE TO authenticated
-USING (public.has_active_cooperative_membership(id,'manajer'))
-WITH CHECK (public.has_active_cooperative_membership(id,'manajer'));
+USING (private.has_active_cooperative_membership(id,'manajer'))
+WITH CHECK (private.has_active_cooperative_membership(id,'manajer'));
 
 CREATE POLICY cooperative_memberships_self_or_manager_read ON public.cooperative_memberships
 FOR SELECT TO authenticated
-USING (user_id = (select auth.uid()) OR public.has_active_cooperative_membership(cooperative_id,'manajer'));
+USING (user_id = (select auth.uid()) OR private.has_active_cooperative_membership(cooperative_id,'manajer'));
 
 CREATE POLICY cooperative_invitations_manager_read ON public.cooperative_invitations
 FOR SELECT TO authenticated
-USING (public.has_active_cooperative_membership(cooperative_id,'manajer'));
+USING (private.has_active_cooperative_membership(cooperative_id,'manajer'));

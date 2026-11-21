@@ -1,6 +1,11 @@
 -- DAGBOEK integrity and RPC access hardening
 -- Prepared for review; not yet applied to production.
-CREATE OR REPLACE FUNCTION public.process_inventory_movement()
+CREATE SCHEMA IF NOT EXISTS private;
+REVOKE ALL ON SCHEMA private FROM PUBLIC, anon;
+GRANT USAGE ON SCHEMA private TO authenticated;
+ALTER FUNCTION public.process_inventory_movement() SET SCHEMA private;
+
+CREATE OR REPLACE FUNCTION private.process_inventory_movement()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -546,7 +551,7 @@ $function$;
 REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.auto_journal_invoice() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.auto_journal_invoice_payment() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.process_inventory_movement() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.process_inventory_movement() FROM PUBLIC, anon, authenticated;
 -- Clients may edit product metadata but never write stock columns directly.
 REVOKE INSERT, UPDATE ON TABLE public.inventory_products FROM PUBLIC, anon, authenticated;
 GRANT INSERT (product_code, product_name, category, unit, purchase_price, selling_price, minimum_stock, description, is_active, created_by, notes) ON TABLE public.inventory_products TO authenticated;
