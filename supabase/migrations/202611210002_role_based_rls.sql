@@ -7,7 +7,11 @@
 -- pengurus: read-only financial/operational overview
 -- Prepared for review; do not apply to production until role tests pass.
 
-CREATE OR REPLACE FUNCTION public.has_active_cooperative_membership(
+CREATE SCHEMA IF NOT EXISTS private;
+REVOKE ALL ON SCHEMA private FROM PUBLIC, anon;
+GRANT USAGE ON SCHEMA private TO authenticated;
+
+CREATE OR REPLACE FUNCTION private.has_active_cooperative_membership(
   p_cooperative_id uuid,
   p_required_role text DEFAULT NULL
 )
@@ -31,8 +35,8 @@ AS $function$
   );
 $function$;
 
-REVOKE ALL ON FUNCTION public.has_active_cooperative_membership(uuid,text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.has_active_cooperative_membership(uuid,text) TO authenticated;
+REVOKE ALL ON FUNCTION private.has_active_cooperative_membership(uuid,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.has_active_cooperative_membership(uuid,text) TO authenticated;
 
 DO $$
 DECLARE
