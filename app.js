@@ -8060,7 +8060,6 @@ window.saveInventoryProduct=async function(){
 
       message.textContent="Data barang berhasil diperbarui.";
     }else{
-      payload.current_stock=0;
       payload.created_by=window.currentUser?.id||null;
 
       const {data:product,error}=await supabaseClient
