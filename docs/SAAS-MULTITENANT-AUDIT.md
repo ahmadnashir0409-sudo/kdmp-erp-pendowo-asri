@@ -72,3 +72,59 @@ Tutup Buku is not included in this migration. It requires a separate functional/
 The user explicitly designated `ahmadnashir0409@gmail.com` as the Nusa Pixel product-owner/Super Admin account. A read-only lookup confirms that this email exists in Supabase Auth, is email-confirmed, and has auth user ID `440b4978-8a65-4248-bfaa-48359288947b`.
 
 This is the account identity to use for the protected Super Admin bootstrap. Do not change its password or alter auth state as part of this project work. The owner has forgotten the current password; the account should regain access through the normal Supabase password-recovery flow before final Super Admin activation. The app login page currently has no visible forgot-password/reset-password flow in index.html, so a recovery email should be initiated through the Supabase Auth dashboard or a deliberately implemented secure recovery flow.
+
+
+## Extended database/function audit (2026-11-21)
+
+### Complete public table inventory
+The live public schema contains 31 application tables. Only `cooperative_invitations` and `cooperative_memberships` currently have `cooperative_id`. The remaining 29 tables need an explicit ownership decision before tenant enforcement:
+- Core cooperative records: `accounts`, `cooperative_members`, `cooperative_finance_settings`, `business_partners`.
+- Finance/accounting: `financial_transactions`, `journal_entries`, `journal_lines`, `ar_ap_documents`, `ar_ap_payments`, `bank_reconciliations`, `bank_reconciliation_items`.
+- Inventory/POS/invoice: `inventory_products`, `inventory_movements`, `store_sales`, `store_sale_items`, `invoices`, `invoice_items`, `invoice_payments`.
+- Savings/loans: `member_loans`, `loan_installments`, `loan_installment_payments`, `member_savings_transactions`.
+- Operations and DABU: `operational_daily_logs`, `dabu_conversations`, `dabu_messages`, `dabu_user_memory`.
+- Identity: `profiles` is global identity/profile data and should not simply receive a tenant ID; membership is the tenant relationship. DABU records need an explicit ownership policy (user-owned, tenant-owned, or both) before adding tenant scoping.
+
+### Relationship and uniqueness implications
+Current business foreign keys are mostly single-column ID references. For tenant safety, parent-child relationships must be strengthened so child rows cannot point to another tenant's parent. Important chains include:
+- journal_lines -> journal_entries and accounts;
+- financial_transactions -> accounts and journal_entries;
+- inventory_movements -> inventory_products;
+- store_sale_items -> store_sales and inventory_products;
+- invoice_items/invoice_payments -> invoices, plus invoice_items -> inventory_products;
+- ar_ap_payments -> ar_ap_documents -> business_partners;
+- bank_reconciliation_items -> bank_reconciliations and journal_lines; bank_reconciliations -> accounts;
+- member_loans -> cooperative_members -> loan_installments -> loan_installment_payments;
+- member_savings_transactions -> cooperative_members.
+Existing unique keys on human-readable numbers/codes are global (e.g. account code, invoice number, sale number, product code, member number, loan number). These should generally become tenant-scoped unique keys after duplicate checks, while primary UUID keys remain globally unique. Existing composite unique constraints in DABU and membership structures should be verified in raw pg_constraint metadata because information_schema's key-column join repeats columns for some composite keys.
+
+### Policy inventory
+There are 30 application-table policy groups in the current public schema. One `accounts` policy is unconditionally permissive (`qual = true`); most other business policies are role-gated. These policies need replacement with tenant membership + active license checks and the requested equal-module-access model. The existing profiles policy is manager-centric and must be redesigned separately so users can maintain only their own safe profile fields, without granting profile role escalation.
+
+### Trigger and function inventory
+Public-table triggers currently include:
+- inventory_movements BEFORE INSERT -> `private.process_inventory_movement()`;
+- journal_entries BEFORE INSERT/UPDATE -> `private.check_journal_balance()`;
+- posted journal immutability triggers on journal_entries and journal_lines.
+
+There are 15 private functions in the live schema. Tenant-sensitive SECURITY DEFINER routines requiring explicit review include:
+- `auto_journal_invoice`, `auto_journal_invoice_payment`;
+- `batalkan_transaksi_toko`, `proses_penjualan_toko_atomik`, `catat_jurnal_penjualan_toko`;
+- `catat_transaksi_keuangan`;
+- `record_invoice_journal`, `record_invoice_payment`;
+- `pay_loan_installment`;
+- `process_inventory_movement`.
+Several currently query `accounts` by `kode_akun` without tenant context, and role-gated routines still check operational profile roles. These must be changed to resolve the caller's active cooperative and tenant-scoped account IDs; operational job titles must not gate module actions. Trigger functions must derive tenant from their source row and verify all linked records share it. No public views were found during this audit.
+
+### Existing invitation function
+The active `invite-user` Edge Function is version 6. It currently requires a caller with `profiles.role = manajer` plus an active manager membership, accepts an operational role, creates an Auth user, profile, and membership as separate service-role operations, and attempts compensating deletes on failure. It is not suitable for the Nusa Pixel licensing control plane. Replace only after designing a Super Admin-only, idempotent provisioning workflow with license checks and explicit recovery for partial failures. Do not deploy this replacement to production before staging validation.
+
+### Security advisor snapshot
+Supabase security advisors returned two Auth configuration warnings: email OTP expiry exceeds one hour, and leaked-password protection is disabled. These are Auth configuration findings, not tenant migration blockers; review and adjust deliberately in a separate security-hardening step.
+
+### Implementation constraints
+- Preserve every existing row and historical inventory/journal movement.
+- Do not migrate DABU memory blindly into a cooperative tenant; decide whether user memories remain user-scoped.
+- Make all human-readable unique values tenant-scoped where appropriate.
+- Do not implement Super Admin as a profile role or user-editable metadata claim.
+- Do not modify production schema, policies, functions, Auth settings, or data until a staging validation plan and explicit production approval exist.
