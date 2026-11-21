@@ -70,3 +70,11 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d dagboek_test \
             -v ON_ERROR_STOP=1 \
             -f supabase/tests/tenant_isolation_smoke.sql
+
+      - name: Run manual period closing contract test
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d dagboek_test \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/period_closing_contract.sql
