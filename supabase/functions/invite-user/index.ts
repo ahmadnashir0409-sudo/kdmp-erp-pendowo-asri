@@ -15,18 +15,6 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[char] ?? char);
-}
-
-function makeTemporaryPassword() {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ success: false, message: "Method tidak diizinkan." }, 405);
@@ -39,15 +27,8 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const publishableRaw = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") ?? "";
     const secretRaw = Deno.env.get("SUPABASE_SECRET_KEYS") ?? "";
-    const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
-    const emailFrom = Deno.env.get("INVITE_EMAIL_FROM") ?? "";
-    const appLoginUrl = Deno.env.get("APP_LOGIN_URL") ?? "";
-
-    if (!supabaseUrl || !publishableRaw || !secretRaw || !resendApiKey || !emailFrom || !appLoginUrl) {
-      return jsonResponse({
-        success: false,
-        message: "Konfigurasi server belum lengkap. Periksa secret Supabase, Resend, alamat pengirim, dan link aplikasi.",
-      }, 500);
+    if (!supabaseUrl || !publishableRaw || !secretRaw) {
+      return jsonResponse({ success: false, message: "Konfigurasi server Supabase belum lengkap." }, 500);
     }
 
     let publishableKey = "";
@@ -58,10 +39,12 @@ Deno.serve(async (req: Request) => {
     } catch {
       return jsonResponse({ success: false, message: "Format secret key Supabase tidak valid." }, 500);
     }
-    if (!publishableKey || !secretKey) return jsonResponse({ success: false, message: "API key Supabase tidak ditemukan." }, 500);
+    if (!publishableKey || !secretKey) {
+      return jsonResponse({ success: false, message: "API key Supabase tidak ditemukan." }, 500);
+    }
 
     const authorization = req.headers.get("Authorization") ?? "";
-    const token = authorization.replace(/^Bearer\s+/i, "").trim();
+    const token = authorization.replace(/^Bearer\\s+/i, "").trim();
     if (!token) return jsonResponse({ success: false, message: "Silakan login terlebih dahulu." }, 401);
 
     const userClient = createClient(supabaseUrl, publishableKey, {
@@ -69,18 +52,20 @@ Deno.serve(async (req: Request) => {
       global: { headers: { Authorization: authorization } },
     });
     const { data: authData, error: authError } = await userClient.auth.getUser(token);
-    if (authError || !authData?.user) return jsonResponse({ success: false, message: "Sesi login tidak valid. Silakan login ulang." }, 401);
+    if (authError || !authData?.user) {
+      return jsonResponse({ success: false, message: "Sesi login tidak valid. Silakan login ulang." }, 401);
+    }
 
     const body = await req.json();
     const cooperativeId = String(body?.cooperative_id ?? "").trim();
     const email = String(body?.email ?? "").trim().toLowerCase();
-    const fullName = String(body?.nama_lengkap ?? "").trim();
+    const password = typeof body?.password === "string" ? body.password : "";
     const role = String(body?.role ?? "").trim().toLowerCase();
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
     if (!uuidPattern.test(cooperativeId)) return jsonResponse({ success: false, message: "ID koperasi tidak valid." }, 400);
-    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonResponse({ success: false, message: "Alamat email tidak valid." }, 400);
-    if (!fullName || fullName.length > 120) return jsonResponse({ success: false, message: "Nama lengkap wajib diisi, maksimal 120 karakter." }, 400);
+    if (email.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return jsonResponse({ success: false, message: "Alamat email tidak valid." }, 400);
+    if (password.length < 8 || password.length > 72) return jsonResponse({ success: false, message: "Password harus terdiri dari 8 sampai 72 karakter." }, 400);
     if (!allowedRoles.has(role)) return jsonResponse({ success: false, message: "Role tidak diizinkan." }, 400);
 
     adminClient = createClient(supabaseUrl, secretKey, {
@@ -90,7 +75,7 @@ Deno.serve(async (req: Request) => {
     const { data: managerProfile, error: managerProfileError } = await adminClient
       .from("profiles").select("role").eq("id", authData.user.id).maybeSingle();
     if (managerProfileError || managerProfile?.role !== "manajer") {
-      return jsonResponse({ success: false, message: "Hanya akun dengan role Manajer yang boleh mengundang pengguna." }, 403);
+      return jsonResponse({ success: false, message: "Hanya akun dengan role Manajer yang boleh membuat pengguna." }, 403);
     }
 
     const { data: managerMembership, error: managerError } = await adminClient
@@ -106,15 +91,19 @@ Deno.serve(async (req: Request) => {
     const { data: cooperative, error: cooperativeError } = await adminClient
       .from("cooperatives").select("id,name")
       .eq("id", cooperativeId).eq("status", "active").maybeSingle();
-    if (cooperativeError || !cooperative) return jsonResponse({ success: false, message: "Koperasi tidak ditemukan atau tidak aktif." }, 404);
+    if (cooperativeError || !cooperative) {
+      return jsonResponse({ success: false, message: "Koperasi tidak ditemukan atau tidak aktif." }, 404);
+    }
 
-    const temporaryPassword = makeTemporaryPassword();
+    // Kolom nama profil tetap diisi otomatis dari bagian email sebelum @;
+    // form tidak meminta atau menyimpan nama terpisah.
+    const profileName = email.split("@")[0].slice(0, 120);
     const { data: created, error: createError } = await adminClient.auth.admin.createUser({
       email,
-      password: temporaryPassword,
+      password,
       email_confirm: true,
       user_metadata: {
-        nama_lengkap: fullName,
+        nama_lengkap: profileName,
         cooperative_name: cooperative.name,
         invited_by: authData.user.id,
         role,
@@ -123,15 +112,16 @@ Deno.serve(async (req: Request) => {
     if (createError || !created.user) {
       const detail = createError?.message ?? "Akun pengguna gagal dibuat.";
       if (/already|registered|exists/i.test(detail)) {
-        return jsonResponse({ success: false, message: "Email ini sudah memiliki akun DAGBOEK. Gunakan akun yang ada atau alamat email lain." }, 409);
+        return jsonResponse({ success: false, message: "Email ini sudah memiliki akun. Gunakan akun yang ada atau alamat email lain." }, 409);
       }
+      console.error("Create user error:", detail);
       return jsonResponse({ success: false, message: "Gagal membuat akun pengguna." }, 400);
     }
     createdUserId = created.user.id;
 
     const { error: profileError } = await adminClient.from("profiles").upsert({
       id: createdUserId,
-      nama_lengkap: fullName,
+      nama_lengkap: profileName,
       role,
     }, { onConflict: "id" });
     if (profileError) throw new Error("Profil pengguna gagal disiapkan: " + profileError.message);
@@ -143,61 +133,23 @@ Deno.serve(async (req: Request) => {
         role,
         status: "active",
       }).select("id").single();
-    if (membershipError || !membership) throw new Error("Hak akses koperasi gagal disimpan: " + (membershipError?.message ?? "unknown error"));
-    membershipId = membership.id;
-
-    const { data: recoveryData, error: recoveryError } = await adminClient.auth.admin.generateLink({
-      type: "recovery",
-      email,
-      options: { redirectTo: appLoginUrl },
-    });
-    const actionLink = recoveryData?.properties?.action_link;
-    if (recoveryError || !actionLink) throw new Error("Tautan pembuatan password gagal dibuat.");
-
-    const safeName = escapeHtml(fullName);
-    const safeEmail = escapeHtml(email);
-    const safeCooperative = escapeHtml(cooperative.name);
-    const roleLabels: Record<string, string> = { manajer: "Manajer — Hak Akses Penuh", admin_keuangan: "Admin Keuangan", kasir: "Kasir", admin_gudang: "Admin Gudang", pengurus: "Pengurus" };
-    const safeRole = escapeHtml(roleLabels[role] ?? role);
-    const safeActionLink = escapeHtml(actionLink);
-    const safeLoginUrl = escapeHtml(appLoginUrl);
-
-    const html = `<!doctype html><html lang="id"><body style="font-family:Arial,sans-serif;color:#202a3c;line-height:1.65;background:#f7f6f1;padding:24px">
-      <div style="max-width:560px;margin:auto;padding:28px;background:#fff;border:1px solid #e7dfcf;border-radius:14px">
-        <h2 style="color:#172033;margin-top:0">Undangan akun KDMP by Nusa Pixel</h2>
-        <p>Halo <b>${safeName}</b>, Manajer telah mengundang Anda bergabung ke <b>${safeCooperative}</b>.</p>
-        <p><b>Email akun:</b> ${safeEmail}<br><b>Hak akses:</b> ${safeRole}</p>
-        <p>Gunakan tombol berikut untuk membuat password pribadi. Tautan ini bersifat pribadi dan hanya boleh digunakan oleh penerima undangan.</p>
-        <p><a href="${safeActionLink}" style="display:inline-block;background:#172033;color:#f4dfaa;padding:13px 22px;text-decoration:none;border-radius:8px;font-weight:bold">Buat Password Saya</a></p>
-        <p>Setelah membuat password, masuk ke KDMP melalui <a href="${safeLoginUrl}">halaman login</a>.</p>
-        <p style="font-size:12px;color:#7b8495">Jika Anda tidak mengenal undangan ini, abaikan email ini dan hubungi Manajer koperasi.</p>
-      </div></body></html>`;
-
-    const mailResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: emailFrom,
-        to: [email],
-        subject: `Undangan DAGBOEK — ${cooperative.name}`,
-        html,
-      }),
-    });
-    if (!mailResponse.ok) {
-      console.error("Resend invite error:", (await mailResponse.text()).slice(0, 300));
-      throw new Error("Email undangan gagal dikirim. Periksa konfigurasi email dan coba lagi.");
+    if (membershipError || !membership) {
+      throw new Error("Hak akses koperasi gagal disimpan: " + (membershipError?.message ?? "unknown error"));
     }
+    membershipId = membership.id;
 
     return jsonResponse({
       success: true,
-      message: "Undangan aman berhasil dikirim. Pengguna dapat membuat password pribadinya melalui email.",
+      message: "Akun pengguna berhasil dibuat dan password awal telah ditetapkan.",
       email,
       cooperative: cooperative.name,
       role,
-    });
+    }, 201);
   } catch (error) {
-    console.error("Invite-user error:", error);
-    if (adminClient && membershipId) await adminClient.from("cooperative_memberships").delete().eq("id", membershipId);
+    console.error("Create-user error:", error);
+    if (adminClient && membershipId) {
+      await adminClient.from("cooperative_memberships").delete().eq("id", membershipId);
+    }
     if (adminClient && createdUserId) {
       await adminClient.from("profiles").delete().eq("id", createdUserId);
       await adminClient.auth.admin.deleteUser(createdUserId);
