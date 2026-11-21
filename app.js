@@ -454,6 +454,13 @@ async function loadUserProfile(user) {
   }
   if (avatar) avatar.textContent = profile.nama_lengkap.charAt(0).toUpperCase();
   addLogoutButton();
+  applyRoleMenuVisibility();
+  const allowedPages=KDMP_ROLE_PAGES[profile.role]||["dashboard","rumus-kamus"];
+  const defaultPage=allowedPages.includes("dashboard")?"dashboard":(allowedPages[0]||"dashboard");
+  const defaultButton=[...document.querySelectorAll(".menu button")].find(button=>
+    button.getAttribute("onclick")?.includes("'"+defaultPage+"'")
+  );
+  window.showPage(defaultPage,defaultButton);
 }
 
 function addLogoutButton() {
@@ -9150,4 +9157,42 @@ window.showPage=function(page,button){
   if(reference)reference.style.display="none";
   referencePreviousShowPage(page,button);
   if(page==="rumus-kamus")setupReferenceLibrary();
+};
+
+
+// Centralized frontend page permissions. Database RLS remains the security boundary.
+const KDMP_ROLE_PAGES={
+  manajer:Object.keys(modules),
+  admin_keuangan:[
+    "dashboard","keuangan","coa","jurnal","buku-besar","laporan",
+    "utang-piutang","bank","invoice","simpanan","bulanan","rumus-kamus"
+  ],
+  kasir:["toko","rumus-kamus"],
+  admin_gudang:["persediaan","rumus-kamus"],
+  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","monitoring","rumus-kamus"]
+};
+
+function kdmpCanAccessPage(page,role=window.currentUser?.role){
+  const allowed=KDMP_ROLE_PAGES[role]||[];
+  return allowed.includes(page);
+}
+
+function applyRoleMenuVisibility(){
+  const role=window.currentUser?.role;
+  document.querySelectorAll(".menu button").forEach(button=>{
+    const match=button.getAttribute("onclick")?.match(/showPage\(['"]([^'"]+)['"]/);
+    if(!match)return;
+    button.hidden=!kdmpCanAccessPage(match[1],role);
+  });
+  const inviteCard=document.getElementById("settingsInviteCard");
+  if(inviteCard)inviteCard.hidden=role!=="manajer";
+}
+
+const kdmpShowPageBeforeRoleGuard=window.showPage;
+window.showPage=function(page,button){
+  if(!kdmpCanAccessPage(page)){
+    console.warn("Akses menu ditolak untuk role:",window.currentUser?.role,"halaman:",page);
+    return;
+  }
+  return kdmpShowPageBeforeRoleGuard(page,button);
 };
