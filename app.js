@@ -8931,7 +8931,7 @@ function setupSettings(){
         <div class="settings-grid">
           <div class="settings-field"><label for="inviteUserName">Nama Lengkap</label><input id="inviteUserName" maxlength="120" autocomplete="name" placeholder="Nama pengguna"></div>
           <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com"></div>
-          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin_keuangan">Admin Keuangan</option><option value="kasir">Kasir</option><option value="admin_gudang">Admin Gudang</option><option value="pengurus">Pengurus</option></select></div>
+          <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="manajer">Manajer — Hak Akses Penuh</option><option value="admin_keuangan">Admin Keuangan</option><option value="kasir">Kasir</option><option value="admin_gudang">Admin Gudang</option><option value="pengurus">Pengurus</option></select></div>
         </div>
         <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Kirim Undangan</button></div>
         <div id="inviteUserMessage" aria-live="polite"></div>

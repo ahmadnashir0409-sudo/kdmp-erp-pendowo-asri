@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const allowedRoles = new Set(["admin_keuangan", "kasir", "admin_gudang", "pengurus"]);
+const allowedRoles = new Set(["manajer", "admin_keuangan", "kasir", "admin_gudang", "pengurus"]);
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -157,18 +157,19 @@ Deno.serve(async (req: Request) => {
     const safeName = escapeHtml(fullName);
     const safeEmail = escapeHtml(email);
     const safeCooperative = escapeHtml(cooperative.name);
-    const safeRole = escapeHtml(role.replaceAll("_", " "));
+    const roleLabels: Record<string, string> = { manajer: "Manajer — Hak Akses Penuh", admin_keuangan: "Admin Keuangan", kasir: "Kasir", admin_gudang: "Admin Gudang", pengurus: "Pengurus" };
+    const safeRole = escapeHtml(roleLabels[role] ?? role);
     const safeActionLink = escapeHtml(actionLink);
     const safeLoginUrl = escapeHtml(appLoginUrl);
 
     const html = `<!doctype html><html lang="id"><body style="font-family:Arial,sans-serif;color:#202a3c;line-height:1.65;background:#f7f6f1;padding:24px">
       <div style="max-width:560px;margin:auto;padding:28px;background:#fff;border:1px solid #e7dfcf;border-radius:14px">
-        <h2 style="color:#172033;margin-top:0">Undangan akun DAGBOEK</h2>
+        <h2 style="color:#172033;margin-top:0">Undangan akun KDMP by Nusa Pixel</h2>
         <p>Halo <b>${safeName}</b>, Manajer telah mengundang Anda bergabung ke <b>${safeCooperative}</b>.</p>
         <p><b>Email akun:</b> ${safeEmail}<br><b>Hak akses:</b> ${safeRole}</p>
         <p>Gunakan tombol berikut untuk membuat password pribadi. Tautan ini bersifat pribadi dan hanya boleh digunakan oleh penerima undangan.</p>
         <p><a href="${safeActionLink}" style="display:inline-block;background:#172033;color:#f4dfaa;padding:13px 22px;text-decoration:none;border-radius:8px;font-weight:bold">Buat Password Saya</a></p>
-        <p>Setelah membuat password, masuk ke DAGBOEK melalui <a href="${safeLoginUrl}">halaman login</a>.</p>
+        <p>Setelah membuat password, masuk ke KDMP melalui <a href="${safeLoginUrl}">halaman login</a>.</p>
         <p style="font-size:12px;color:#7b8495">Jika Anda tidak mengenal undangan ini, abaikan email ini dan hubungi Manajer koperasi.</p>
       </div></body></html>`;
 
