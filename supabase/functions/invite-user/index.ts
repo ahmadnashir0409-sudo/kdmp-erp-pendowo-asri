@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const authorization = req.headers.get("Authorization") ?? "";
-    const token = authorization.replace(/^Bearer\\s+/i, "").trim();
+    const token = authorization.replace(/^Bearer\s+/i, "").trim();
     if (!token) return jsonResponse({ success: false, message: "Silakan login terlebih dahulu." }, 401);
 
     const userClient = createClient(supabaseUrl, publishableKey, {
@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
     if (!uuidPattern.test(cooperativeId)) return jsonResponse({ success: false, message: "ID koperasi tidak valid." }, 400);
-    if (email.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return jsonResponse({ success: false, message: "Alamat email tidak valid." }, 400);
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonResponse({ success: false, message: "Alamat email tidak valid." }, 400);
     if (password.length < 8 || password.length > 72) return jsonResponse({ success: false, message: "Password harus terdiri dari 8 sampai 72 karakter." }, 400);
     if (!allowedRoles.has(role)) return jsonResponse({ success: false, message: "Role tidak diizinkan." }, 400);
 
