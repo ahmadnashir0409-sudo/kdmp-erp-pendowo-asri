@@ -1,60 +1,61 @@
-# Audit Awal DAGBOEK / KDMP ERP
+# Audit dan Stabilisasi DAGBOEK / KDMP ERP
 Tanggal: 21 November 2026
-Cabang kerja: `work/dagboek-stabilization-2026-11-21`
+Repository: `ahmadnashir0409-sudo/kdmp-erp-pendowo-asri`
+Project Supabase: `srfhamdyewblyuangxzz`
 
-## Ringkasan
-Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca-saja pada database produksi. Perubahan kode awal disimpan di cabang kerja terpisah dan belum dipublikasikan ke `main`.
+## Status pengerjaan
+Empat migration stabilisasi telah diterapkan ke database produksi setelah diuji dalam transaksi sementara yang diakhiri `ROLLBACK`. Perubahan kode utama telah digabungkan ke `main`.
 
-## Perubahan kode pada cabang ini
-- Penjualan toko dialihkan ke RPC `proses_penjualan_toko_atomik`.
-- Jalur rollback JavaScript yang menimpa `current_stock` dan mencoba menghapus baris mutasi dihapus dari alur penjualan.
-- Identitas UI awal diselaraskan menjadi DAGBOEK by Nusa Pixel.
-- Tipografi Inter/Playfair Display, sidebar charcoal, aksen heritage gold, dan fondasi dark mode yang lebih terbaca ditambahkan.
-- Navigasi dan form utama diberi role guard untuk manajer, admin keuangan, kasir, admin gudang, dan pengurus.
-- Empat migration disiapkan: integritas/RPC, RLS berbasis role, private RPC wrappers, dan RLS/performance cleanup. Semuanya lolos uji eksekusi dalam transaksi rollback.
-- Implementasi SECURITY DEFINER dipindahkan ke schema `private`; endpoint RPC publik yang dibutuhkan aplikasi menjadi wrapper SECURITY INVOKER. Fungsi jurnal POS lama yang tidak lagi dipakai dipindahkan ke private.
-- Policy SELECT ganda dikonsolidasikan, 26 indeks foreign-key disiapkan, dan dua indeks persediaan duplikat yang tidak digunakan dihapus melalui migration terpisah.
-- Pilihan role undangan diselaraskan dengan role database: `admin_keuangan`, `kasir`, `admin_gudang`, `pengurus`.
-- Tema dasar charcoal/heritage gold dan peningkatan keterbacaan dark mode ditambahkan.
+### Perubahan yang sudah masuk
+- Penjualan toko menggunakan RPC atomik untuk menyimpan header, detail, mutasi stok, dan jurnal dalam satu transaksi database.
+- Pembatalan transaksi menggunakan RPC yang membuat mutasi pengembalian dan jurnal pembalik.
+- `current_stock` dilindungi dari UPDATE langsung oleh pengguna aplikasi; nilai stok berubah melalui trigger mutasi.
+- Trigger menyimpan `stock_before` dan `stock_after` dari nilai yang dikunci di database, bukan nilai yang dikirim klien.
+- Fungsi internal `SECURITY DEFINER` dipindahkan ke schema `private`; endpoint API yang diperlukan aplikasi menggunakan wrapper `SECURITY INVOKER`.
+- Role-based RLS diterapkan untuk modul utama: manajer, admin keuangan, kasir, admin gudang, dan pengurus.
+- Menu dan form utama diberi pemeriksaan role di frontend.
+- Identitas produk diselaraskan menjadi DAGBOEK by Nusa Pixel dengan sidebar charcoal, aksen heritage gold, tipografi Inter/Playfair Display, dan perbaikan dasar dark mode.
+- Empat migration mencakup integritas/RPC, RLS role, private RPC wrappers, dan RLS/performance cleanup.
 
-## Hasil pengujian
-- `app.js`: pemeriksaan sintaks JavaScript lulus.
-- `utang-piutang.js`: pemeriksaan sintaks JavaScript lulus.
-- RPC penjualan atomik diuji dalam transaksi database sementara yang diakhiri dengan `ROLLBACK`.
-- RPC pembatalan transaksi diuji setelah membuat penjualan uji: dua mutasi (keluar dan pengembalian), satu jurnal pembalik, status dibatalkan, dan stok kembali ke nilai awal. Seluruh data uji di-`ROLLBACK`.
-- Pengujian membuktikan header, detail, mutasi, dan jurnal terbentuk dalam transaksi yang sama; setelah rollback stok kembali ke nilai awal dan tidak ada data uji tertinggal.
-- Simulasi role Kasir dengan kedua migration aktif sementara membuktikan kasir dapat membuat penjualan atomik dan membaca header/detail/mutasi yang terkait. Setelah `ROLLBACK`, role manajer, stok, dan tabel produksi kembali seperti semula.
-- Simulasi role Admin Gudang membuktikan trigger mutasi mengabaikan nilai `stock_before`/`stock_after` dari klien dan menyimpan snapshot terkunci yang benar. Percobaan update langsung ke `current_stock` ditolak selama migration aktif. Setelah `ROLLBACK`, stok dan data uji kembali seperti semula.
-- Private RPC wrapper diuji: Kasir berhasil membuat penjualan melalui wrapper SECURITY INVOKER; fungsi invoice mengembalikan hasil duplicate yang benar melalui wrapper. Kedua pengujian diakhiri `ROLLBACK`.
-- Migration integritas/RPC berhasil diuji sintaks dan eksekusinya dalam transaksi yang diakhiri `ROLLBACK`; migration belum diterapkan ke database produksi.
-- Seluruh 19 jurnal posted yang ada saat audit seimbang.
+## Hasil verifikasi
+- `app.js` dan `utang-piutang.js` lulus pemeriksaan sintaks JavaScript.
+- Penjualan dan pembatalan diuji melalui wrapper publik. Header, detail, dua mutasi, jurnal pembalik, dan status pembatalan berhasil; stok kembali ke nilai awal.
+- Simulasi role Kasir berhasil membuat penjualan dan membaca header/detail/mutasi sesuai policy.
+- Simulasi role Admin Gudang membuktikan snapshot mutasi ditentukan database dan UPDATE langsung `current_stock` ditolak.
+- Semua pengujian database diakhiri `ROLLBACK`; tidak ada data uji tertinggal.
+- Semua 19 jurnal posted yang ada saat audit seimbang.
+- Tidak ada fungsi `SECURITY DEFINER` yang tersisa di schema `public`; jumlah fungsi tersebut di schema publik adalah nol.
+- Hak UPDATE kolom `inventory_products.current_stock` untuk role authenticated sudah dicabut.
+- Performance Advisor tidak lagi melaporkan foreign key tanpa indeks, policy SELECT ganda, indeks duplikat, atau auth init-plan. Yang tersisa hanya info indeks belum terpakai; indeks tersebut tidak dihapus otomatis.
 
-## Temuan kritis
-1. **Keamanan RLS belum konsisten dengan role aplikasi.** Sejumlah tabel operasional memakai kebijakan `true` untuk seluruh pengguna authenticated. Contoh mencakup invoice, anggota, simpanan/pinjaman, persediaan, penjualan, mitra, dan log operasional. Pembatasan tombol di frontend bukan pengganti RLS.
-2. **Fungsi SECURITY DEFINER terlalu terbuka.** Advisor Supabase menemukan beberapa RPC dapat dieksekusi role anon dan/atau authenticated. Perlu audit hak eksekusi dan pemeriksaan role di dalam fungsi.
-3. **Mutasi persediaan memiliki celah audit.** Trigger `process_inventory_movement` menghitung stok dari `current_stock`, tetapi belum menimpa `NEW.stock_before` dan `NEW.stock_after` dengan nilai yang benar-benar dikunci di database.
-4. **Ada celah urutan mutasi historis.** Aqua botol memiliki satu transisi stok yang tidak tercatat; Beras 10 KG memiliki dua transisi yang tidak tercatat. Nilai `current_stock` saat ini sama dengan `stock_after` mutasi terakhir. Data historis tidak boleh diubah untuk menutup celah ini.
-5. **Beberapa penjualan selesai tidak memiliki jurnal penjualan.** Empat transaksi historis perlu ditelusuri. Dua invoice historis juga tidak memiliki jurnal invoice yang terdeteksi.
-6. **Simpanan dan angsuran belum terhubung ke jurnal.** Fungsi pembayaran angsuran memperbarui pembayaran dan status jadwal, tetapi tidak membuat jurnal. Transaksi simpanan yang ada juga belum memiliki jurnal terkait.
-7. **Undang pengguna belum siap.** Edge Function `invite-user` belum ada; tabel membership/invitation belum memiliki policy RLS; form role sebelumnya tidak sesuai constraint database. Pilihan role pada cabang ini sudah diperbaiki, tetapi alur undangan belum diaktifkan.
-8. **Multi-koperasi belum diterapkan pada data operasional.** Tabel `cooperatives` dan `cooperative_memberships` sudah ada, tetapi tabel inti transaksi belum memiliki `cooperative_id`. Saat ini instalasi berisi satu koperasi.
-9. **Pengaturan profil koperasi masih lokal.** Nama, email, alamat, telepon, dan logo disimpan di localStorage, bukan disinkronkan ke Supabase.
-10. **Dashboard belum mencakup seluruh sumber transaksi.** KPI pemasukan/pengeluaran dan grafik utama saat ini dihitung dari `financial_transactions`; penjualan toko dan modul simpanan/pinjaman tidak tercakup sebagai satu ringkasan operasional.
-11. **DABU belum diimplementasikan.** Belum ada Edge Function AI, tabel memori, UI assistant, atau konfigurasi provider AI.
-12. **Tutup buku dan pengujian otomatis belum tersedia.** Belum ditemukan rangkaian test otomatis untuk alur lintas modul.
+## Temuan yang masih perlu dibereskan
+
+1. **Riwayat mutasi lama memiliki celah.** Aqua botol memiliki satu transisi stok yang tidak tercatat; Beras 10 KG memiliki dua transisi yang tidak tercatat. `current_stock` saat ini sama dengan snapshot mutasi terakhir. Tidak ada riwayat lama yang diubah.
+2. **Jurnal historis belum lengkap.** Empat transaksi penjualan dan dua invoice lama tidak memiliki jurnal terkait yang terdeteksi. Perlu rekonsiliasi dan jurnal koreksi baru, bukan mengedit riwayat.
+3. **Simpanan dan pinjaman belum terintegrasi penuh dengan akuntansi.** Transaksi simpanan dan pembayaran angsuran yang ada belum memiliki jurnal terkait. Sebelum membuat jurnal otomatis, perlu menetapkan pemetaan akun simpanan dan pembagian angsuran pokok/jasa.
+4. **Invoice belum atomik sepenuhnya.** Header, detail, dan jurnal masih diproses melalui beberapa langkah. Dampak invoice penjualan/pembelian terhadap kuantitas persediaan juga perlu ditetapkan agar tidak terjadi pengurangan stok ganda dengan POS.
+5. **Undangan staf belum aktif.** Pilihan role form sudah cocok dengan constraint database dan policy membership sudah tersedia, tetapi Edge Function `invite-user` belum dibuat/deploy.
+6. **Multi-koperasi belum lengkap.** Tabel koperasi dan membership tersedia, tetapi tabel transaksi inti belum memiliki `cooperative_id`. Instalasi ini masih beroperasi sebagai satu koperasi.
+7. **Pengaturan profil koperasi masih lokal.** Nama, email, alamat, telepon, dan logo masih disimpan di localStorage, belum disinkronkan ke Supabase.
+8. **Dashboard belum mencakup seluruh sumber transaksi.** KPI pemasukan/pengeluaran dan grafik utama masih mengandalkan `financial_transactions`; POS, simpanan, dan pinjaman belum disatukan ke ringkasan.
+9. **DABU belum diimplementasikan.** Belum ada UI assistant, Edge Function AI, tabel memori, atau secret provider AI.
+10. **Tutup buku dan regression test lintas modul belum tersedia.**
+11. **Dua pengaturan Auth perlu diselesaikan di Supabase Dashboard.** OTP email masih berlaku lebih dari satu jam dan leaked-password protection belum aktif. Tool project yang tersedia tidak menyediakan pengubahan kedua setting tersebut.
+
+## Status Supabase Advisor
+- **Security:** hanya dua peringatan konfigurasi Auth (OTP expiry dan leaked-password protection). Tidak ada lagi peringatan fungsi SECURITY DEFINER di schema publik.
+- **Performance:** tidak ada lagi peringatan foreign key tanpa indeks, multiple permissive policies, duplicate indexes, atau auth init-plan. Masih ada info indeks belum terpakai, yang tidak otomatis berarti indeks harus dihapus.
 
 ## Aturan keselamatan data
-- `current_stock` tetap menjadi satu-satunya sumber stok operasional.
-- Kolom legacy `stock` tidak digunakan oleh kode aktif; jangan jadikan sumber hitung.
-- Jangan menghapus atau mengedit riwayat mutasi yang sudah ada.
-- Jangan mengoreksi saldo historis otomatis. Setiap koreksi harus berupa transaksi penyesuaian baru yang disetujui dan dapat diaudit.
-- Perubahan database produksi dilakukan setelah migration diuji dan dampaknya diverifikasi.
+- `current_stock` adalah satu-satunya sumber stok operasional.
+- Kolom legacy `stock` bukan sumber hitung.
+- Jangan menghapus atau mengedit riwayat mutasi lama.
+- Jangan mengoreksi saldo historis otomatis. Koreksi harus berupa transaksi baru yang dapat diaudit.
+- Perubahan database selanjutnya harus diuji dan diverifikasi sebelum diterapkan ke produksi.
 
 ## Urutan pengerjaan berikutnya
-1. Selesaikan perbaikan trigger mutasi dan hardening RPC/RLS.
-2. Buat role matrix yang konsisten antara menu, RPC, dan RLS.
-3. Audit dan rapikan jurnal invoice, penjualan, simpanan, dan pinjaman tanpa mengubah transaksi lama.
-4. Benahi dashboard dan sinkronisasi pengaturan.
-5. Implementasikan undangan pengguna dan fondasi multi-koperasi.
-6. Implementasikan DABU melalui server-side Edge Function; API key AI harus disimpan sebagai secret server, bukan di frontend.
-7. Tambahkan tutup buku, audit trail, dan regression tests lintas modul.
+1. Implementasikan DABU sebagai Edge Function server-side dan UI assistant; API key harus disimpan sebagai secret Supabase, bukan di frontend.
+2. Selesaikan jurnal simpanan/pinjaman dan invoice dengan pemetaan akun yang benar.
+3. Bangun Edge Function undangan staf dan uji role dengan akun staf nyata.
+4. Benahi dashboard, pengaturan profil koperasi, dan fondasi multi-koperasi.
+5. Tambahkan tutup buku, audit trail, dan regression tests lintas modul.
