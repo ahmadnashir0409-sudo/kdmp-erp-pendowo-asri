@@ -4036,8 +4036,8 @@ async function saveTokoSale(){
     return;
   }
 
-  if(window.currentUser.role!=="manajer"){
-    message.textContent="Transaksi toko saat ini hanya dapat disimpan oleh Manajer.";
+  if(!["manajer","kasir"].includes(window.currentUser.role)){
+    message.textContent="Transaksi toko hanya dapat disimpan oleh Manajer atau Kasir.";
     message.className="erp-message erp-error";
     return;
   }
