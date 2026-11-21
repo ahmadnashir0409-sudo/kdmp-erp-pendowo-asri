@@ -163,3 +163,91 @@ Do not combine every phase into one unreviewable migration. Keep rollback and da
 - No production DDL, RLS policy, function, Auth setting, or data mutation has been performed.
 - Do not deploy the replacement invitation function until the protected control-plane schema exists and staging tests pass.
 - Do not implement Tutup Buku in this workstream; discuss its accounting behavior separately after the license/invitation flow is complete.
+
+
+## DABU AI architecture and hybrid commercial model
+
+### Product decision (2026-11-21)
+
+DABU will use a **hybrid entitlement model** for multi-KDMP:
+
+- Every eligible KDMP receives a configurable basic monthly AI allowance included with its DAGBOEK plan.
+- A KDMP that needs more usage can purchase an additional quota/top-up or a higher AI allowance plan.
+- The basic allowance, paid allowance, model access, and usage limits are controlled centrally by Nusa Pixel Super Admin.
+- No KDMP can consume another KDMP's allowance or paid balance.
+- The Rp25,000/month limit is the initial pilot operating budget target, not a promise of unlimited usage and not the permanent per-tenant allowance. The pilot must stay within this cap until Nusa Pixel explicitly changes it.
+- Initial pilot allocation proposal: up to Rp20,000 estimated API spend, with Rp5,000 held as a safety buffer for exchange-rate variance, token-estimation error, and provider billing differences. This is a control target, not a guaranteed provider-side hard cap.
+
+### Model-routing policy
+
+- Phase 1: use one verified, low-cost text model for all requests. Do not ship an unverified model identifier. Confirm current API model availability and pricing from official provider documentation before enabling it.
+- Keep model name, per-token price assumptions, output limit, and routing rules in server-side configuration, not in app.js.
+- Phase 2: optionally add a stronger model for explicitly classified complex accounting/reporting questions. It must have a separate per-tenant allowance and stricter limits. Do not silently route every message to the expensive model.
+- Do not claim DABU can execute transactions. The initial assistant remains read-only; any future write-capable tools require separate authorization, approval, audit, and idempotency design.
+
+### Tenant quota and billing ledger
+
+Create a dedicated AI usage/billing subsystem, separate from cooperative accounting journals:
+
+- dabu_plan_entitlements: plan code, included monthly units/budget, allowed model tier, monthly reset rule, active dates, and configuration version.
+- dabu_tenant_wallets (or equivalent balance ledger): cooperative_id, purchased units/credit, currency, status, and timestamps. Treat ledger entries as immutable; calculate balance from credits/debits or maintain a transactionally reconciled balance.
+- dabu_usage_events: cooperative_id, user_id, request_id/idempotency key, conversation_id, model, input/output/cached token counts when available, estimated cost, provider-reported cost when available, entitlement bucket (included/top-up), status, and timestamps.
+- dabu_credit_transactions: immutable grant, purchase, expiry, adjustment, and consumption records with actor and reason. Never let the browser write these rows directly.
+- dabu_monthly_usage: optional aggregate/cache only; source of truth remains immutable usage and credit ledger records.
+- Use integer minor currency units (for IDR, whole rupiah) or a fixed-precision numeric type. Never use floating point for wallet arithmetic.
+
+### Request lifecycle and hard application-side guard
+
+1. Authenticate the user and resolve the active cooperative from trusted membership context; never trust a client-supplied cooperative_id.
+2. Check tenant license status and DABU entitlement.
+3. Atomically reserve a conservative maximum request cost against the tenant's included allowance first, then eligible purchased credits. The reservation operation must be a trusted database RPC/transaction with row locking or equivalent concurrency control to prevent simultaneous requests overspending the same balance.
+4. Enforce per-request input/output limits and model allowlist. Trim conversation history and fetch only the minimum tenant-scoped context needed.
+5. Call the provider from the Edge Function using a server-side API key. Never expose provider keys to browser code, logs, prompts, or users.
+6. Record provider usage and reconcile the reservation to actual usage. Release unused reserved amount; record any discrepancy safely.
+7. If the provider fails, apply the documented reservation-release/refund rule and retain a sanitized error event.
+8. If allowance and purchased credits are exhausted, fail closed with a clear quota-exhausted response. Do not silently continue on an unmetered fallback.
+9. Apply rate limits per user and per tenant, plus global concurrency limits, to reduce abuse and cost spikes.
+
+### Allowance, paid add-ons, and commercial rules
+
+- Nusa Pixel configures the included monthly allowance per DAGBOEK subscription/license plan. The allowance can be zero, a small fixed number of requests, or a token/cost budget; prefer token/cost accounting over raw message counts because message sizes vary.
+- Unused included allowance expires at the monthly reset unless a later commercial policy explicitly allows rollover.
+- Paid top-ups are tenant-specific, have explicit validity/expiry terms, and cannot be transferred between tenants.
+- Paid credit is activated only after a verified payment-provider webhook or an authorized Super Admin adjustment. Never trust a browser payment-success redirect.
+- Define refund, expiry, failed-payment, chargeback, and cancellation handling before public sale.
+- Show each tenant its included allowance, consumed amount, remaining amount, paid balance, and recent usage. Show Super Admin aggregate spend, tenant-level consumption, provider-reported costs, and alerts.
+- Keep DABU AI credits separate from cooperative financial accounting. If Nusa Pixel later invoices AI usage, create auditable billing records; do not post directly to a KDMP's operational books without an explicit accounting workflow.
+
+### Budget controls and alerts
+
+For the initial pilot:
+- Target maximum estimated API spend: Rp20,000/month.
+- Hold Rp5,000 as an unallocated safety buffer.
+- Alert at 50%, 75%, and 90% of the pilot API-spend target.
+- At 100% of the configured application-side spend ceiling, block new paid-provider requests until the next period or an authorized budget increase.
+- Reconcile internal estimates against provider usage/billing daily. Provider billing dashboards/limits are an additional safeguard, not a replacement for application-side metering.
+- Because provider-side spend reporting may be delayed and token estimates are imperfect, keep a safety margin and use conservative reservations. Do not promise an absolute zero-overrun guarantee.
+
+### Data isolation, privacy, and security
+
+- Every usage, entitlement, wallet, and credit record is cooperative-scoped and protected by RLS plus trusted server-side authorization.
+- Users can see only their own conversation history and the usage view permitted by their tenant role; tenant managers can see their tenant's aggregate usage.
+- Super Admin can administer plans and inspect platform-wide billing metadata, with audit logs. Do not expose message contents unnecessarily in billing dashboards.
+- Do not send secrets, credentials, payment details, or unrelated tenant records to the model.
+- The Edge Function must use the authenticated user's JWT and tenant-scoped queries. A service-role key, if ever needed for a narrowly scoped operation, must remain server-side and must not bypass tenant checks.
+- Keep DABU conversations/messages ownership policy explicit: user-scoped access within the active tenant, with tenant_id recorded on each conversation. Do not allow a user to switch tenants and read another tenant's chat history merely by supplying a conversation UUID.
+- Preserve user-scoped dabu_user_memory unless a separate product decision changes it. Do not automatically share personal memory across KDMPs.
+
+### Rollout and acceptance criteria
+
+1. Audit the current dabu-assistant Edge Function, its model identifier, context queries, JWT handling, conversation ownership, and existing database policies.
+2. Verify model availability, official token pricing, and provider billing controls. Replace the currently configured model identifier only after verification.
+3. Design and test entitlement/usage ledger migrations in an isolated test database; do not apply them to production during the design phase.
+4. Add atomic reservation/reconciliation RPCs and tenant-scoped RLS policies.
+5. Add per-tenant usage display and Super Admin cost monitoring.
+6. Test concurrent requests, retries/idempotency, provider errors, token-limit enforcement, exhausted free allowance, exhausted top-up balance, failed/late payment webhooks, and monthly reset.
+7. Test that Tenant A cannot read, reserve, spend, or refund Tenant B's allowance or credits.
+8. Test that a request is blocked when the pilot global spend ceiling is reached.
+9. Only after all tests pass, request explicit approval before any production schema/function deployment or enabling billable API calls.
+
+No provider API key has been added, no AI billing account has been charged, and no production DABU function or database schema has been changed as part of this design update.
