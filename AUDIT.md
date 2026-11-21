@@ -11,8 +11,9 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - Identitas UI awal diselaraskan menjadi DAGBOEK by Nusa Pixel.
 - Tipografi Inter/Playfair Display, sidebar charcoal, aksen heritage gold, dan fondasi dark mode yang lebih terbaca ditambahkan.
 - Navigasi dan form utama diberi role guard untuk manajer, admin keuangan, kasir, admin gudang, dan pengurus.
-- Tiga migration disiapkan: integritas/RPC, RLS berbasis role, dan private RPC wrappers. Semuanya lolos uji eksekusi dalam transaksi rollback.
+- Empat migration disiapkan: integritas/RPC, RLS berbasis role, private RPC wrappers, dan RLS/performance cleanup. Semuanya lolos uji eksekusi dalam transaksi rollback.
 - Implementasi SECURITY DEFINER dipindahkan ke schema `private`; endpoint RPC publik yang dibutuhkan aplikasi menjadi wrapper SECURITY INVOKER. Fungsi jurnal POS lama yang tidak lagi dipakai dipindahkan ke private.
+- Policy SELECT ganda dikonsolidasikan, 26 indeks foreign-key disiapkan, dan dua indeks persediaan duplikat yang tidak digunakan dihapus melalui migration terpisah.
 - Pilihan role undangan diselaraskan dengan role database: `admin_keuangan`, `kasir`, `admin_gudang`, `pengurus`.
 - Tema dasar charcoal/heritage gold dan peningkatan keterbacaan dark mode ditambahkan.
 
