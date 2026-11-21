@@ -21,7 +21,8 @@ Develop the multi-KDMP architecture without upgrading Supabase and without using
    - an active member sees only their own tenant's inventory;
    - a tenant cannot update another tenant's row;
    - a tenant cannot insert a row into another tenant;
-   - a journal line cannot reference an account belonging to another tenant through composite foreign keys.
+   - a journal line cannot reference an account belonging to another tenant through composite foreign keys;
+   - an expired cooperative license blocks access even when the membership itself remains active.
 
 ## Important limitation
 
