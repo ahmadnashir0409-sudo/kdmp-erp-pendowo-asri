@@ -58,7 +58,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install PostgreSQL parser
-        run: python -m pip install --disable-pip-version-check pglast==6.2
+        run: python -m pip install --disable-pip-version-check pglast==8.9
 
       - name: Parse SQL migrations
         run: python scripts/validate_sql_migrations.py
