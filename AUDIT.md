@@ -11,7 +11,8 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - Identitas UI awal diselaraskan menjadi DAGBOEK by Nusa Pixel.
 - Tipografi Inter/Playfair Display, sidebar charcoal, aksen heritage gold, dan fondasi dark mode yang lebih terbaca ditambahkan.
 - Navigasi dan form utama diberi role guard untuk manajer, admin keuangan, kasir, admin gudang, dan pengurus.
-- Dua migration disiapkan: integritas/RPC dan RLS berbasis role. Keduanya lolos uji eksekusi dalam transaksi rollback.
+- Tiga migration disiapkan: integritas/RPC, RLS berbasis role, dan private RPC wrappers. Semuanya lolos uji eksekusi dalam transaksi rollback.
+- Implementasi SECURITY DEFINER dipindahkan ke schema `private`; endpoint RPC publik yang dibutuhkan aplikasi menjadi wrapper SECURITY INVOKER. Fungsi jurnal POS lama yang tidak lagi dipakai dipindahkan ke private.
 - Pilihan role undangan diselaraskan dengan role database: `admin_keuangan`, `kasir`, `admin_gudang`, `pengurus`.
 - Tema dasar charcoal/heritage gold dan peningkatan keterbacaan dark mode ditambahkan.
 
@@ -23,6 +24,7 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - Pengujian membuktikan header, detail, mutasi, dan jurnal terbentuk dalam transaksi yang sama; setelah rollback stok kembali ke nilai awal dan tidak ada data uji tertinggal.
 - Simulasi role Kasir dengan kedua migration aktif sementara membuktikan kasir dapat membuat penjualan atomik dan membaca header/detail/mutasi yang terkait. Setelah `ROLLBACK`, role manajer, stok, dan tabel produksi kembali seperti semula.
 - Simulasi role Admin Gudang membuktikan trigger mutasi mengabaikan nilai `stock_before`/`stock_after` dari klien dan menyimpan snapshot terkunci yang benar. Percobaan update langsung ke `current_stock` ditolak selama migration aktif. Setelah `ROLLBACK`, stok dan data uji kembali seperti semula.
+- Private RPC wrapper diuji: Kasir berhasil membuat penjualan melalui wrapper SECURITY INVOKER; fungsi invoice mengembalikan hasil duplicate yang benar melalui wrapper. Kedua pengujian diakhiri `ROLLBACK`.
 - Migration integritas/RPC berhasil diuji sintaks dan eksekusinya dalam transaksi yang diakhiri `ROLLBACK`; migration belum diterapkan ke database produksi.
 - Seluruh 19 jurnal posted yang ada saat audit seimbang.
 
