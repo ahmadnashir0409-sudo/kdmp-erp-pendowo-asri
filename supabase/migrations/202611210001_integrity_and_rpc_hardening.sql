@@ -540,8 +540,7 @@ BEGIN
 
   return v_journal_id;
 end;
-$function$
-
+$function$;
 
 REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.auto_journal_invoice() FROM PUBLIC, anon, authenticated;
