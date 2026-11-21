@@ -65,3 +65,10 @@ The current database inspection identifies two manager accounts but does not est
 ## Scope deliberately deferred
 
 Tutup Buku is not included in this migration. It requires a separate functional/accounting design discussion before implementation.
+
+
+## Product owner identity confirmation
+
+The user explicitly designated `ahmadnashir0409@gmail.com` as the Nusa Pixel product-owner/Super Admin account. A read-only lookup confirms that this email exists in Supabase Auth, is email-confirmed, and has auth user ID `440b4978-8a65-4248-bfaa-48359288947b`.
+
+This is the account identity to use for the protected Super Admin bootstrap. Do not change its password or alter auth state as part of this project work. The owner has forgotten the current password; the account should regain access through the normal Supabase password-recovery flow before final Super Admin activation. The app login page currently has no visible forgot-password/reset-password flow in index.html, so a recovery email should be initiated through the Supabase Auth dashboard or a deliberately implemented secure recovery flow.
