@@ -4,7 +4,7 @@ Repository: `ahmadnashir0409-sudo/kdmp-erp-pendowo-asri`
 Project Supabase: `srfhamdyewblyuangxzz`
 
 ## Status pengerjaan
-Empat migration stabilisasi telah diterapkan ke database produksi setelah diuji dalam transaksi sementara yang diakhiri `ROLLBACK`. Perubahan kode utama telah digabungkan ke `main`.
+Enam migration telah diterapkan ke database produksi setelah diuji dalam transaksi sementara yang diakhiri `ROLLBACK`. Perubahan kode utama telah digabungkan ke `main`.
 
 ### Perubahan yang sudah masuk
 - Penjualan toko menggunakan RPC atomik untuk menyimpan header, detail, mutasi stok, dan jurnal dalam satu transaksi database.
@@ -15,7 +15,7 @@ Empat migration stabilisasi telah diterapkan ke database produksi setelah diuji 
 - Role-based RLS diterapkan untuk modul utama: manajer, admin keuangan, kasir, admin gudang, dan pengurus.
 - Menu dan form utama diberi pemeriksaan role di frontend.
 - Identitas produk diselaraskan menjadi DAGBOEK by Nusa Pixel dengan sidebar charcoal, aksen heritage gold, tipografi Inter/Playfair Display, dan perbaikan dasar dark mode.
-- Empat migration mencakup integritas/RPC, RLS role, private RPC wrappers, dan RLS/performance cleanup.
+- Enam migration mencakup integritas/RPC, RLS role, private RPC wrappers, RLS/performance cleanup, DABU memory, dan penyelarasan role membership.
 
 ## Hasil verifikasi
 - `app.js` dan `utang-piutang.js` lulus pemeriksaan sintaks JavaScript.
@@ -34,11 +34,11 @@ Empat migration stabilisasi telah diterapkan ke database produksi setelah diuji 
 2. **Jurnal historis belum lengkap.** Empat transaksi penjualan dan dua invoice lama tidak memiliki jurnal terkait yang terdeteksi. Perlu rekonsiliasi dan jurnal koreksi baru, bukan mengedit riwayat.
 3. **Simpanan dan pinjaman belum terintegrasi penuh dengan akuntansi.** Transaksi simpanan dan pembayaran angsuran yang ada belum memiliki jurnal terkait. Sebelum membuat jurnal otomatis, perlu menetapkan pemetaan akun simpanan dan pembagian angsuran pokok/jasa.
 4. **Invoice belum atomik sepenuhnya.** Header, detail, dan jurnal masih diproses melalui beberapa langkah. Dampak invoice penjualan/pembelian terhadap kuantitas persediaan juga perlu ditetapkan agar tidak terjadi pengurangan stok ganda dengan POS.
-5. **Alur undangan staf sudah diperbaiki.** Edge Function `invite-user` versi 4 aktif dengan JWT verification, role yang sesuai constraint, pembuatan profil dan membership, serta tautan recovery untuk membuat password pribadi. Password awal tidak lagi dikirim melalui email. Alur ini masih perlu diuji dengan alamat email staf nyata.
+5. **Alur undangan staf sudah diperbaiki.** Edge Function `invite-user` versi 4 aktif dengan JWT verification, role yang sesuai constraint, pembuatan profil dan membership, serta tautan recovery untuk membuat password pribadi. Password awal tidak lagi dikirim melalui email. Form login sekarang memiliki alur reset dan pembuatan password baru. Alur ini masih perlu diuji dengan alamat email staf nyata.
 6. **Multi-koperasi belum lengkap.** Tabel koperasi dan membership tersedia, tetapi tabel transaksi inti belum memiliki `cooperative_id`. Instalasi ini masih beroperasi sebagai satu koperasi.
 7. **Pengaturan profil koperasi masih lokal.** Nama, email, alamat, telepon, dan logo masih disimpan di localStorage, belum disinkronkan ke Supabase.
 8. **Dashboard belum mencakup seluruh sumber transaksi.** KPI pemasukan/pengeluaran dan grafik utama masih mengandalkan `financial_transactions`; POS, simpanan, dan pinjaman belum disatukan ke ringkasan.
-9. **DABU tahap pertama sudah dipasang.** UI assistant, Edge Function read-only, riwayat percakapan per pengguna, dan tabel memori sudah tersedia. Fungsi AI membutuhkan secret `OPENAI_API_KEY`; keberadaan secret ini belum dapat diperiksa atau diatur melalui tool project yang tersedia.
+9. **DABU tahap pertama sudah dipasang.** UI assistant, Edge Function read-only dengan JWT verification, riwayat percakapan per pengguna, dan tabel penyimpanan ringkasan memori sudah tersedia. Riwayat chat persisten; peringkas memori otomatis belum dibuat. Fungsi AI membutuhkan secret `OPENAI_API_KEY`; keberadaan secret ini belum dapat diperiksa atau diatur melalui tool project yang tersedia.
 10. **Tutup buku dan regression test lintas modul belum tersedia.**
 11. **Dua pengaturan Auth perlu diselesaikan di Supabase Dashboard.** OTP email masih berlaku lebih dari satu jam dan leaked-password protection belum aktif. Tool project yang tersedia tidak menyediakan pengubahan kedua setting tersebut.
 12. **Constraint role membership sudah diselaraskan.** Nilai role di `cooperative_memberships` sekarang sama dengan `profiles`: `manajer`, `admin_keuangan`, `kasir`, `admin_gudang`, `pengurus`.
