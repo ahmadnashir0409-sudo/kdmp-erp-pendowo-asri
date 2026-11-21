@@ -9074,6 +9074,7 @@ function setupSettings(){
         inviteButton.textContent="Buat Pengguna";
       }
     });
+  }
   section.style.display="block";
   let theme="light";try{theme=localStorage.getItem("kdmp_erp_theme")||"light";}catch(_){}
   const toggle=document.getElementById("settingsThemeSwitch");
