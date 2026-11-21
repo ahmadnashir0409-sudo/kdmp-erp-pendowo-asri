@@ -314,10 +314,10 @@ BEGIN
     IF SQLERRM <> 'LATER_PERIOD_EXISTS' THEN RAISE; END IF;
   END;
 END;
-$;
+$$;
 
 -- Beta has no later period, so it can be reopened and re-closed as a new version.
-DO $
+DO $$
 DECLARE v_period uuid;
 BEGIN
   SELECT id INTO v_period FROM close_test.periods
@@ -343,9 +343,9 @@ BEGIN
     RAISE EXCEPTION 'Re-close did not advance version';
   END IF;
 END;
-$;
+$$;
 
-DO $
+DO $$
 DECLARE v_period uuid;
 BEGIN
   SELECT id INTO v_period FROM close_test.periods
@@ -358,9 +358,9 @@ BEGIN
     IF SQLERRM <> 'PERIOD_SNAPSHOT_IMMUTABLE' THEN RAISE; END IF;
   END;
 END;
-$;
+$$;
 
-DO $
+DO $$
 DECLARE v_events integer; v_snapshots integer;
 BEGIN
   SELECT count(*) INTO v_events FROM close_test.events
@@ -373,7 +373,7 @@ BEGIN
   IF v_events <> 4 THEN RAISE EXCEPTION 'Expected 4 Beta events, got %',v_events; END IF;
   IF v_snapshots <> 2 THEN RAISE EXCEPTION 'Expected 2 versioned snapshots, got %',v_snapshots; END IF;
 END;
-$;
+$$;
 
 DROP SCHEMA close_test CASCADE;
 \echo 'PASS: manual period lifecycle, required first start, sequential periods, backdate lock, tenant boundary, idempotent close guard, audited reopen, immutable snapshots/events'
