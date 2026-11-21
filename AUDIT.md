@@ -34,16 +34,17 @@ Empat migration stabilisasi telah diterapkan ke database produksi setelah diuji 
 2. **Jurnal historis belum lengkap.** Empat transaksi penjualan dan dua invoice lama tidak memiliki jurnal terkait yang terdeteksi. Perlu rekonsiliasi dan jurnal koreksi baru, bukan mengedit riwayat.
 3. **Simpanan dan pinjaman belum terintegrasi penuh dengan akuntansi.** Transaksi simpanan dan pembayaran angsuran yang ada belum memiliki jurnal terkait. Sebelum membuat jurnal otomatis, perlu menetapkan pemetaan akun simpanan dan pembagian angsuran pokok/jasa.
 4. **Invoice belum atomik sepenuhnya.** Header, detail, dan jurnal masih diproses melalui beberapa langkah. Dampak invoice penjualan/pembelian terhadap kuantitas persediaan juga perlu ditetapkan agar tidak terjadi pengurangan stok ganda dengan POS.
-5. **Undangan staf belum aktif.** Pilihan role form sudah cocok dengan constraint database dan policy membership sudah tersedia, tetapi Edge Function `invite-user` belum dibuat/deploy.
+5. **Alur undangan staf sudah diperbaiki.** Edge Function `invite-user` versi 4 aktif dengan JWT verification, role yang sesuai constraint, pembuatan profil dan membership, serta tautan recovery untuk membuat password pribadi. Password awal tidak lagi dikirim melalui email. Alur ini masih perlu diuji dengan alamat email staf nyata.
 6. **Multi-koperasi belum lengkap.** Tabel koperasi dan membership tersedia, tetapi tabel transaksi inti belum memiliki `cooperative_id`. Instalasi ini masih beroperasi sebagai satu koperasi.
 7. **Pengaturan profil koperasi masih lokal.** Nama, email, alamat, telepon, dan logo masih disimpan di localStorage, belum disinkronkan ke Supabase.
 8. **Dashboard belum mencakup seluruh sumber transaksi.** KPI pemasukan/pengeluaran dan grafik utama masih mengandalkan `financial_transactions`; POS, simpanan, dan pinjaman belum disatukan ke ringkasan.
-9. **DABU belum diimplementasikan.** Belum ada UI assistant, Edge Function AI, tabel memori, atau secret provider AI.
+9. **DABU tahap pertama sudah dipasang.** UI assistant, Edge Function read-only, riwayat percakapan per pengguna, dan tabel memori sudah tersedia. Fungsi AI membutuhkan secret `OPENAI_API_KEY`; keberadaan secret ini belum dapat diperiksa atau diatur melalui tool project yang tersedia.
 10. **Tutup buku dan regression test lintas modul belum tersedia.**
 11. **Dua pengaturan Auth perlu diselesaikan di Supabase Dashboard.** OTP email masih berlaku lebih dari satu jam dan leaked-password protection belum aktif. Tool project yang tersedia tidak menyediakan pengubahan kedua setting tersebut.
+12. **Constraint role membership sudah diselaraskan.** Nilai role di `cooperative_memberships` sekarang sama dengan `profiles`: `manajer`, `admin_keuangan`, `kasir`, `admin_gudang`, `pengurus`.
 
 ## Status Supabase Advisor
-- **Security:** hanya dua peringatan konfigurasi Auth (OTP expiry dan leaked-password protection). Tidak ada lagi peringatan fungsi SECURITY DEFINER di schema publik.
+- **Security:** hanya dua peringatan konfigurasi Auth (OTP expiry dan leaked-password protection). Tidak ada lagi peringatan fungsi SECURITY DEFINER di schema publik. Kedua Edge Function aktif dengan JWT verification.
 - **Performance:** tidak ada lagi peringatan foreign key tanpa indeks, multiple permissive policies, duplicate indexes, atau auth init-plan. Masih ada info indeks belum terpakai, yang tidak otomatis berarti indeks harus dihapus.
 
 ## Aturan keselamatan data
@@ -54,8 +55,8 @@ Empat migration stabilisasi telah diterapkan ke database produksi setelah diuji 
 - Perubahan database selanjutnya harus diuji dan diverifikasi sebelum diterapkan ke produksi.
 
 ## Urutan pengerjaan berikutnya
-1. Implementasikan DABU sebagai Edge Function server-side dan UI assistant; API key harus disimpan sebagai secret Supabase, bukan di frontend.
-2. Selesaikan jurnal simpanan/pinjaman dan invoice dengan pemetaan akun yang benar.
-3. Bangun Edge Function undangan staf dan uji role dengan akun staf nyata.
+1. Tambahkan secret `OPENAI_API_KEY` di Supabase Edge Function Secrets, lalu uji percakapan DABU end-to-end. Jangan pernah menaruh key di GitHub atau frontend.
+2. Uji undangan staf menggunakan email tes; pastikan tautan recovery membawa pengguna ke form pembuatan password dan profil/role berhasil dibuat.
+3. Selesaikan jurnal simpanan/pinjaman dan invoice dengan pemetaan akun yang benar.
 4. Benahi dashboard, pengaturan profil koperasi, dan fondasi multi-koperasi.
 5. Tambahkan tutup buku, audit trail, dan regression tests lintas modul.
