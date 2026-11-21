@@ -2099,6 +2099,9 @@ async function saveBankMutation() {
     return;
   }
 
+  target.scrollIntoView({behavior:"smooth",block:"start"});
+  target.innerHTML = '<div class="erp-card"><h3>Rincian Mutasi Rekonsiliasi</h3><p>Memuat periode dan daftar mutasi...</p></div>';
+
   const { data: header, error: headerError } = await client
     .from("bank_reconciliations")
     .select("id")
@@ -2210,8 +2213,8 @@ async function loadBankReconciliations() {
               <td>${formatRupiah(item.difference)}</td>
               <td>${item.status === "balanced" ? "Seimbang" : "Belum seimbang"}</td>
               <td>
-                <button class="btn-secondary"
-                  onclick="loadBankMutations('${item.id}')">
+                <button type="button" class="btn-secondary bank-history-view"
+                  data-reconciliation-id="${escapeHTML(item.id)}">
                   Lihat
                 </button>
               </td>
@@ -2223,6 +2226,20 @@ async function loadBankReconciliations() {
       </table>
     </div>
   `;
+  target.querySelectorAll(".bank-history-view").forEach(button=>{
+    button.addEventListener("click",async()=>{
+      const reconciliationId=button.dataset.reconciliationId;
+      button.disabled=true;
+      const originalLabel=button.textContent;
+      button.textContent="Memuat...";
+      try{
+        await loadBankMutations(reconciliationId);
+      }finally{
+        button.disabled=false;
+        button.textContent=originalLabel;
+      }
+    });
+  });
 }
 
 async function loadBankMutations(reconciliationId) {
@@ -2278,6 +2295,11 @@ async function loadBankMutations(reconciliationId) {
 
   const rupiah = value => formatRupiah(value);
   target.innerHTML = `
+    <div class="erp-card">
+      <h3>Rincian Mutasi Rekonsiliasi</h3>
+      <p>Periode: <strong>${escapeHTML(header.period_start)} s/d ${escapeHTML(header.period_end)}</strong></p>
+      <p>Jumlah mutasi: <strong>${(items||[]).length}</strong></p>
+    </div>
     <div class="table-responsive">
       <table class="erp-table">
         <thead>
@@ -8927,13 +8949,13 @@ function setupSettings(){
       </div>
       <div class="settings-card" id="settingsInviteCard">
         <h3>👥 Undang Pengguna Koperasi</h3>
-        <p class="settings-help">Undang staf menggunakan email. Pengguna akan menerima tautan aman untuk membuat password pribadinya sendiri; Manajer tidak perlu mengetahui password staf.</p>
+        <p class="settings-help">Buat akun pengguna dengan email, password awal, dan jabatan. Sampaikan password kepada pengguna melalui saluran pribadi yang aman.</p>
         <div class="settings-grid">
-          <div class="settings-field"><label for="inviteUserName">Nama Lengkap</label><input id="inviteUserName" maxlength="120" autocomplete="name" placeholder="Nama pengguna"></div>
-          <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com"></div>
+          <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com" required></div>
+          <div class="settings-field"><label for="inviteUserPassword">Sandi / Password Pengguna</label><input id="inviteUserPassword" type="password" minlength="8" maxlength="72" autocomplete="new-password" placeholder="Minimal 8 karakter" required></div>
           <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="manajer">Manajer — Hak Akses Penuh</option><option value="admin_keuangan">Admin Keuangan</option><option value="kasir">Kasir</option><option value="admin_gudang">Admin Gudang</option><option value="pengurus">Pengurus</option></select></div>
         </div>
-        <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Kirim Undangan</button></div>
+        <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Buat Pengguna</button></div>
         <div id="inviteUserMessage" aria-live="polite"></div>
       </div>
       <div class="settings-card">
@@ -8998,72 +9020,60 @@ function setupSettings(){
     });
     const inviteButton=document.getElementById("inviteUserSend");
     inviteButton.addEventListener("click",async()=>{
-      const nameInput=document.getElementById("inviteUserName");
       const emailInput=document.getElementById("inviteUserEmail");
+      const passwordInput=document.getElementById("inviteUserPassword");
       const roleInput=document.getElementById("inviteUserRole");
       const message=document.getElementById("inviteUserMessage");
-      const fullName=nameInput.value.trim();
       const email=emailInput.value.trim().toLowerCase();
+      const password=passwordInput.value;
       const role=roleInput.value;
       message.className="";
-      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){
         message.textContent="Masukkan alamat email yang valid.";
-        message.className="error";
-        emailInput.focus();
-        return;
+        message.className="error";emailInput.focus();return;
       }
-      if(!fullName||fullName.length>120){
-        message.textContent="Nama lengkap wajib diisi (maksimal 120 karakter).";
-        message.className="error";
-        nameInput.focus();
-        return;
+      if(password.length<8||password.length>72){
+        message.textContent="Password harus terdiri dari 8 sampai 72 karakter.";
+        message.className="error";passwordInput.focus();return;
       }
       const user=window.currentUser;
       if(!user?.id){
         message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
-        message.className="error";
-        return;
+        message.className="error";return;
       }
       inviteButton.disabled=true;
-      inviteButton.textContent="Mengirim undangan...";
-      message.textContent="Memeriksa akses Manajer dan mengirim email...";
+      inviteButton.textContent="Membuat pengguna...";
+      message.textContent="Memeriksa hak akses Manajer dan membuat akun...";
       try{
         const {data:memberships,error:membershipError}=await supabaseClient
-          .from("cooperative_memberships")
-          .select("cooperative_id")
-          .eq("user_id",user.id)
-          .eq("role","manajer")
-          .eq("status","active")
-          .limit(2);
+          .from("cooperative_memberships").select("cooperative_id")
+          .eq("user_id",user.id).eq("role","manajer").eq("status","active").limit(2);
         if(membershipError)throw new Error("Gagal memeriksa akses Manajer: "+membershipError.message);
         if(!memberships?.length)throw new Error("Akun ini belum terdaftar sebagai Manajer aktif koperasi.");
-        if(memberships.length>1)throw new Error("Akun Manajer terdaftar di lebih dari satu koperasi. Pemilihan koperasi perlu diaktifkan sebelum undangan dikirim agar pengguna masuk ke koperasi yang benar.");
+        if(memberships.length>1)throw new Error("Akun Manajer terdaftar di lebih dari satu koperasi. Pemilihan koperasi perlu diaktifkan sebelum membuat pengguna.");
         const cooperativeId=memberships[0].cooperative_id;
         if(!cooperativeId)throw new Error("ID koperasi tidak ditemukan pada keanggotaan Manajer.");
         const {data,error}=await supabaseClient.functions.invoke("invite-user",{
-          body:{cooperative_id:cooperativeId,email,nama_lengkap:fullName,role}
+          body:{cooperative_id:cooperativeId,email,password,role}
         });
         if(error){
-          let detail="";
-          try{detail=await error.context.clone().text();}catch(_){}
+          let detail="";try{detail=await error.context.clone().text();}catch(_){}
           let parsed=null;try{parsed=JSON.parse(detail);}catch(_){}
-          throw new Error(parsed?.message||detail||error.message||"Undangan gagal dikirim.");
+          throw new Error(parsed?.message||detail||error.message||"Pengguna gagal dibuat.");
         }
-        if(!data?.success)throw new Error(data?.message||"Undangan gagal dikirim.");
-        message.textContent="Akun berhasil dibuat dan email akses dikirim ke "+email+". Minta pengguna memeriksa Inbox dan folder Spam.";
+        if(!data?.success)throw new Error(data?.message||"Pengguna gagal dibuat.");
+        message.textContent="Pengguna berhasil dibuat: "+email+". Password awal sudah ditetapkan.";
         message.className="success";
-        nameInput.value="";
-        emailInput.value="";
+        emailInput.value="";passwordInput.value="";
       }catch(error){
-        console.error("Invite user:",error);
-        message.textContent=error.message||"Terjadi kesalahan saat mengirim undangan.";
+        console.error("Create user:",error);
+        message.textContent=error.message||"Terjadi kesalahan saat membuat pengguna.";
         message.className="error";
       }finally{
         inviteButton.disabled=false;
-        inviteButton.textContent="Kirim Undangan";
+        inviteButton.textContent="Buat Pengguna";
       }
     });
-  }
   section.style.display="block";
   let theme="light";try{theme=localStorage.getItem("kdmp_erp_theme")||"light";}catch(_){}
   const toggle=document.getElementById("settingsThemeSwitch");
