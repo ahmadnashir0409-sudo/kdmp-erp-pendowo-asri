@@ -141,3 +141,19 @@ Additional findings from the current branch source:
 - The current “Tambah Pengguna Koperasi” UI is still the old manager invitation flow and exposes operational role selection. It must be replaced with the separate Nusa Pixel Super Admin control center.
 - A likely runtime defect exists in the current invite handler: after obtaining `authenticatedUser` from `auth.getUser()`, the membership query references `user.id` rather than `authenticatedUser.id`. The identifier `user` is not defined in that handler scope. This should be corrected as part of the invitation-flow replacement, not patched as an isolated workaround.
 - The frontend currently has no tenant-selection/bootstrap state and many queries assume a single cooperative. Tenant identity must be loaded from a trusted server-side membership context before any business module is enabled.
+
+
+## Follow-up: production migration-history reconciliation (read-only)
+
+During the free test-environment setup, the Supabase production migration history was checked again. It reports six existing applied migration records:
+
+- dagboek_inventory_integrity_rpc_hardening
+- dagboek_role_based_rls
+- dagboek_private_rpc_wrappers
+- dagboek_rls_performance_cleanup
+- dagboek_dabu_memory
+- dagboek_align_membership_roles
+
+The checked-in migration filenames currently use 12-digit prefixes (for example, 202611210001), while the production migration history reports 14-digit versions (for example, 20261121105311). This version/name discrepancy must be reconciled before any future use of supabase db push, migration repair, or schema reset. Do not blindly replay or rename these migrations.
+
+No migration was applied, repaired, pushed, or otherwise changed in production during this follow-up. This was a read-only history check.
