@@ -8006,6 +8006,10 @@ window.hideInventoryForm=function(){
 };
 
 window.saveInventoryProduct=async function(){
+  if(!["manajer","admin_gudang"].includes(window.currentUser?.role)){
+    alert("Hanya Manajer atau Admin Gudang yang dapat mengelola master barang.");
+    return;
+  }
   const button=document.getElementById("invSaveProduct");
   const message=document.getElementById("invProductMessage");
 
@@ -8272,6 +8276,10 @@ window.filterInventoryProducts=function(){
 
 
 window.saveInventoryMovement=async function(){
+  if(!["manajer","admin_gudang"].includes(window.currentUser?.role)){
+    alert("Hanya Manajer atau Admin Gudang yang dapat mencatat mutasi stok.");
+    return;
+  }
   const button=document.getElementById("invSaveMovement");
   const message=document.getElementById("invMovementMessage");
 
