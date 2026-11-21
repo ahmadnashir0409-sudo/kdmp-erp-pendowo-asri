@@ -4970,6 +4970,8 @@ function setupSavingsManagement(){
   `;
 
   parent.appendChild(section);
+  const savingsForm=document.getElementById("savingsForm");
+  if(savingsForm)savingsForm.hidden=!["manajer","admin_keuangan"].includes(window.currentUser?.role);
 
   document.getElementById("savDate").value=
     new Date().toISOString().slice(0,10);
@@ -5014,6 +5016,11 @@ async function loadSavingsMembers(){
 
 async function saveSavingsTransaction(event){
   event.preventDefault();
+  if(!["manajer","admin_keuangan"].includes(window.currentUser?.role)){
+    const denied=document.getElementById("savFormMessage");
+    if(denied)denied.textContent="Hanya Manajer atau Admin Keuangan yang dapat mencatat transaksi simpanan.";
+    return;
+  }
 
   const button=document.getElementById("savSaveButton");
   const message=document.getElementById("savFormMessage");
@@ -5432,6 +5439,8 @@ function setupLoanManagement(){
   `;
 
   parent.appendChild(section);
+  const loanForm=document.getElementById("loanForm");
+  if(loanForm)loanForm.hidden=!["manajer","admin_keuangan"].includes(window.currentUser?.role);
 
   document.getElementById("loanApplicationDate").value=todayDate();
   document.getElementById("loanForm").onsubmit=saveLoanApplication;
@@ -5550,6 +5559,11 @@ async function saveLoanSettings(){
 
 async function saveLoanApplication(event){
   event.preventDefault();
+  if(!["manajer","admin_keuangan"].includes(window.currentUser?.role)){
+    const denied=document.getElementById("loanFormMessage");
+    if(denied)denied.textContent="Hanya Manajer atau Admin Keuangan yang dapat mengajukan pinjaman.";
+    return;
+  }
 
   const message=document.getElementById("loanFormMessage");
   const button=document.getElementById("loanSubmitButton");
@@ -6101,6 +6115,11 @@ window.openLoanPaymentForm = function (
 
 async function saveLoanInstallmentPayment(event) {
   event.preventDefault();
+  if(!["manajer","admin_keuangan"].includes(window.currentUser?.role)){
+    const denied=document.getElementById("loanPaymentMessage");
+    if(denied)denied.textContent="Hanya Manajer atau Admin Keuangan yang dapat mencatat pembayaran angsuran.";
+    return;
+  }
 
   const installmentId = selectedInstallmentForPayment;
   if (!installmentId) {
