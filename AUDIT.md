@@ -26,8 +26,16 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 - Simulasi role Kasir dengan kedua migration aktif sementara membuktikan kasir dapat membuat penjualan atomik dan membaca header/detail/mutasi yang terkait. Setelah `ROLLBACK`, role manajer, stok, dan tabel produksi kembali seperti semula.
 - Simulasi role Admin Gudang membuktikan trigger mutasi mengabaikan nilai `stock_before`/`stock_after` dari klien dan menyimpan snapshot terkunci yang benar. Percobaan update langsung ke `current_stock` ditolak selama migration aktif. Setelah `ROLLBACK`, stok dan data uji kembali seperti semula.
 - Private RPC wrapper diuji: Kasir berhasil membuat penjualan melalui wrapper SECURITY INVOKER; fungsi invoice mengembalikan hasil duplicate yang benar melalui wrapper. Kedua pengujian diakhiri `ROLLBACK`.
-- Migration integritas/RPC berhasil diuji sintaks dan eksekusinya dalam transaksi yang diakhiri `ROLLBACK`; migration belum diterapkan ke database produksi.
+- Empat migration produksi berhasil diterapkan setelah uji rollback. Stok, profil manajer, dan riwayat transaksi lama tetap utuh.
 - Seluruh 19 jurnal posted yang ada saat audit seimbang.
+
+## Status database produksi setelah stabilisasi
+- Tidak ada fungsi `SECURITY DEFINER` yang tersisa di schema `public`; implementasi privileged berada di schema `private`, sedangkan API memakai wrapper `SECURITY INVOKER`.
+- Trigger persediaan berjalan dari schema `private`; pengguna authenticated tidak memiliki hak UPDATE langsung pada `inventory_products.current_stock`.
+- `current_stock` memiliki constraint non-negatif dan tetap menjadi sumber stok tunggal.
+- Role-based RLS aktif untuk modul utama; tabel cooperative directory kini memiliki policy membership.
+- Security Advisor sekarang hanya menyisakan dua pengaturan Auth: masa berlaku OTP email lebih dari satu jam dan leaked-password protection belum aktif.
+- Performance Advisor tidak lagi melaporkan foreign key tanpa indeks, policy SELECT ganda, indeks duplikat, atau pemanggilan auth yang dievaluasi per baris. Yang tersisa hanya laporan indeks belum terpakai; tidak dihapus otomatis karena sebagian baru ditambahkan untuk FK.
 
 ## Temuan kritis
 1. **Keamanan RLS belum konsisten dengan role aplikasi.** Sejumlah tabel operasional memakai kebijakan `true` untuk seluruh pengguna authenticated. Contoh mencakup invoice, anggota, simpanan/pinjaman, persediaan, penjualan, mitra, dan log operasional. Pembatasan tombol di frontend bukan pengganti RLS.
@@ -42,6 +50,7 @@ Repository dan project Supabase aktif dan terhubung. Audit dilakukan secara baca
 10. **Dashboard belum mencakup seluruh sumber transaksi.** KPI pemasukan/pengeluaran dan grafik utama saat ini dihitung dari `financial_transactions`; penjualan toko dan modul simpanan/pinjaman tidak tercakup sebagai satu ringkasan operasional.
 11. **DABU belum diimplementasikan.** Belum ada Edge Function AI, tabel memori, UI assistant, atau konfigurasi provider AI.
 12. **Tutup buku dan pengujian otomatis belum tersedia.** Belum ditemukan rangkaian test otomatis untuk alur lintas modul.
+13. **Pengaturan keamanan Auth perlu sentuhan dashboard.** Masa berlaku OTP perlu diturunkan di bawah satu jam dan leaked-password protection perlu diaktifkan; tool project tidak menyediakan pengubahan kedua setting tersebut.
 
 ## Aturan keselamatan data
 - `current_stock` tetap menjadi satu-satunya sumber stok operasional.
