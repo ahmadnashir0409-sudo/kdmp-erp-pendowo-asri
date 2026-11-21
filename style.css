@@ -1210,3 +1210,82 @@ body[data-kdmp-theme="dark"] .about-brand-description{color:#c0c7d2}
 body[data-kdmp-theme="dark"] .about-brand-divider{background:#45404b}
 @media(max-width:600px){.about-brand-card{gap:13px;padding:15px}.about-brand-mark{flex-basis:48px;width:48px;height:48px;border-radius:13px;font-size:24px}.about-brand-content h3{font-size:22px}.about-brand-credit{display:block}.about-brand-credit span{display:block;margin-bottom:2px}}
 
+
+
+/* DAGBOEK by Nusa Pixel — modern classic enterprise identity */
+:root{
+  --dagboek-charcoal:#172033;
+  --dagboek-charcoal-soft:#222d43;
+  --dagboek-gold:#c7a65b;
+  --dagboek-gold-light:#e4cf98;
+  --dagboek-ivory:#f5f3ed;
+}
+body{font-family:"Inter",Arial,sans-serif;background:var(--dagboek-ivory)}
+.brand h2,.topbar h2,.welcome h1,.panel-header h3{font-family:"Playfair Display",Georgia,serif}
+.sidebar{background:var(--dagboek-charcoal);border-right:1px solid #303b50}
+.brand{border-bottom-color:#303b50}
+.brand-logo{background:var(--dagboek-gold);color:var(--dagboek-charcoal);border-radius:9px;box-shadow:0 5px 16px #0003}
+.brand h2{color:#f6f1e5;letter-spacing:.3px}
+.brand p{color:#aeb8ca}
+.menu-title{color:#bba66f}
+.menu button{color:#c5ccda}
+.menu button:hover,.menu button.active{background:#2b354a;color:var(--dagboek-gold-light)}
+.menu button.active{box-shadow:inset 3px 0 0 var(--dagboek-gold)}
+.topbar{background:#fffdf8}
+.topbar h2{color:#202a3c}
+.avatar{background:#f0e7d0;color:#79602b}
+#loginScreen{background:linear-gradient(135deg,#111a2d,#26344c)!important}
+.login-card{border:1px solid #e6dcc2;box-shadow:0 24px 70px #05091466}
+.login-logo{background:var(--dagboek-charcoal)!important;color:var(--dagboek-gold)!important;border:1px solid #8f7948}
+.login-card h2{font-family:"Playfair Display",Georgia,serif;color:var(--dagboek-charcoal)}
+.login-card button,.erp-button:not(.secondary),.settings-btn:not(.secondary){background:var(--dagboek-charcoal);color:var(--dagboek-gold-light)}
+.login-card button:hover,.erp-button:not(.secondary):hover,.settings-btn:not(.secondary):hover{background:#26334b}
+.menu button:focus-visible,.erp-button:focus-visible{outline:2px solid var(--dagboek-gold);outline-offset:2px}
+
+/* Complete readable dark mode for shared ERP surfaces */
+body[data-kdmp-theme="dark"]{background:#101726;color:#e9edf5}
+body[data-kdmp-theme="dark"] .main,
+body[data-kdmp-theme="dark"] .content{background:#101726;color:#e9edf5}
+body[data-kdmp-theme="dark"] .topbar{background:#172033;border-bottom-color:#303b50}
+body[data-kdmp-theme="dark"] .topbar h2,
+body[data-kdmp-theme="dark"] .panel h3,
+body[data-kdmp-theme="dark"] .welcome h1{color:#f0f2f7}
+body[data-kdmp-theme="dark"] .topbar p,
+body[data-kdmp-theme="dark"] .muted,
+body[data-kdmp-theme="dark"] .erp-muted{color:#aab4c6}
+body[data-kdmp-theme="dark"] .panel,
+body[data-kdmp-theme="dark"] .stat-card,
+body[data-kdmp-theme="dark"] .settings-card,
+body[data-kdmp-theme="dark"] .erp-form,
+body[data-kdmp-theme="dark"] .erp-table-wrap,
+body[data-kdmp-theme="dark"] .financial-card,
+body[data-kdmp-theme="dark"] .ledger-card,
+body[data-kdmp-theme="dark"] .report-card,
+body[data-kdmp-theme="dark"] .invoice-card,
+body[data-kdmp-theme="dark"] .loan-panel,
+body[data-kdmp-theme="dark"] .arap-card,
+body[data-kdmp-theme="dark"] .arap-panel,
+body[data-kdmp-theme="dark"] .export-center{background:#192338;color:#e9edf5;border-color:#303d55}
+body[data-kdmp-theme="dark"] .erp-table th,
+body[data-kdmp-theme="dark"] .erp-table td,
+body[data-kdmp-theme="dark"] table th,
+body[data-kdmp-theme="dark"] table td{border-color:#303d55;color:#e1e6ef}
+body[data-kdmp-theme="dark"] .erp-table th,
+body[data-kdmp-theme="dark"] table th{background:#222e45;color:#e9edf5}
+body[data-kdmp-theme="dark"] input,
+body[data-kdmp-theme="dark"] select,
+body[data-kdmp-theme="dark"] textarea{background:#101a2b;color:#e9edf5;border-color:#3a4861}
+body[data-kdmp-theme="dark"] input::placeholder,
+body[data-kdmp-theme="dark"] textarea::placeholder{color:#8996ad}
+body[data-kdmp-theme="dark"] .menu button:hover,
+body[data-kdmp-theme="dark"] .menu button.active{background:#2b354a;color:var(--dagboek-gold-light)}
+body[data-kdmp-theme="dark"] .settings-help,
+body[data-kdmp-theme="dark"] .settings-card p,
+body[data-kdmp-theme="dark"] .report-description{color:#aab4c6}
+body[data-kdmp-theme="dark"] .erp-button.secondary,
+body[data-kdmp-theme="dark"] .settings-btn.secondary{background:#303d55;color:#e9edf5}
+body[data-kdmp-theme="dark"] .about-brand-card{background:#202b40;border-color:#3a4861}
+body[data-kdmp-theme="dark"] .about-brand-content h3,
+body[data-kdmp-theme="dark"] .about-brand-credit strong{color:#edf0f5}
+body[data-kdmp-theme="dark"] .about-brand-description{color:#c0c7d2}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
