@@ -21,7 +21,7 @@ AS $function$
     SELECT 1
     FROM public.cooperative_memberships cm
     WHERE cm.cooperative_id = p_cooperative_id
-      AND cm.user_id = auth.uid()
+      AND cm.user_id = (select auth.uid())
       AND cm.status = 'active'
       AND EXISTS (
         SELECT 1 FROM public.profiles pr
@@ -62,167 +62,167 @@ $$;
 -- Financial records
 CREATE POLICY financial_transactions_read ON public.financial_transactions
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY financial_transactions_write ON public.financial_transactions
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY journal_entries_read ON public.journal_entries
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY journal_entries_write ON public.journal_entries
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY journal_lines_read ON public.journal_lines
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY journal_lines_write ON public.journal_lines
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 -- Inventory: stock is changed only by inventory movement trigger/RPC.
 CREATE POLICY inventory_products_read ON public.inventory_products
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_gudang','kasir','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_gudang','kasir','admin_keuangan','pengurus'));
 CREATE POLICY inventory_products_insert ON public.inventory_products
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_gudang'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_gudang'));
 CREATE POLICY inventory_products_update ON public.inventory_products
 FOR UPDATE TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_gudang'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_gudang'));
+USING ((select public.current_user_role()) IN ('manajer','admin_gudang'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_gudang'));
 CREATE POLICY inventory_products_delete ON public.inventory_products
 FOR DELETE TO authenticated
-USING (public.current_user_role() = 'manajer');
+USING ((select public.current_user_role()) = 'manajer');
 
 CREATE POLICY inventory_movements_read ON public.inventory_movements
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_gudang','kasir','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_gudang','kasir','admin_keuangan','pengurus'));
 CREATE POLICY inventory_movements_insert ON public.inventory_movements
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_gudang'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_gudang'));
 
 -- POS rows are written only through the atomic sale/cancellation RPCs.
 CREATE POLICY store_sales_read ON public.store_sales
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','kasir','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','kasir','admin_keuangan','pengurus'));
 CREATE POLICY store_sale_items_read ON public.store_sale_items
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','kasir','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','kasir','admin_keuangan','pengurus'));
 
 -- Invoices are maintained by finance; payments are written by a guarded RPC.
 CREATE POLICY invoices_read ON public.invoices
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY invoices_insert ON public.invoices
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY invoices_delete_failed_create ON public.invoices
 FOR DELETE TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY invoice_items_read ON public.invoice_items
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY invoice_items_insert ON public.invoice_items
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY invoice_payments_read ON public.invoice_payments
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 -- Accounts payable/receivable and counterparties.
 CREATE POLICY business_partners_access ON public.business_partners
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY ar_ap_documents_access ON public.ar_ap_documents
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY ar_ap_payments_access ON public.ar_ap_payments
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 -- Members, savings, and loans.
 CREATE POLICY cooperative_members_read ON public.cooperative_members
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','kasir','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','kasir','pengurus'));
 CREATE POLICY cooperative_members_write ON public.cooperative_members
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY cooperative_finance_settings_access ON public.cooperative_finance_settings
 FOR ALL TO authenticated
-USING (public.current_user_role() = 'manajer')
-WITH CHECK (public.current_user_role() = 'manajer');
+USING ((select public.current_user_role()) = 'manajer')
+WITH CHECK ((select public.current_user_role()) = 'manajer');
 
 CREATE POLICY member_savings_read ON public.member_savings_transactions
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY member_savings_insert ON public.member_savings_transactions
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY member_loans_read ON public.member_loans
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY member_loans_insert ON public.member_loans
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY member_loans_update ON public.member_loans
 FOR UPDATE TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY loan_installments_read ON public.loan_installments
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY loan_installments_insert ON public.loan_installments
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() = 'manajer');
+WITH CHECK ((select public.current_user_role()) = 'manajer');
 CREATE POLICY loan_installments_update ON public.loan_installments
 FOR UPDATE TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 CREATE POLICY loan_installment_payments_read ON public.loan_installment_payments
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY loan_installment_payments_insert ON public.loan_installment_payments
 FOR INSERT TO authenticated
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 -- Operational daily logs: users can create their own; manager controls maintenance.
 CREATE POLICY operational_logs_read ON public.operational_daily_logs
 FOR SELECT TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan','pengurus'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan','pengurus'));
 CREATE POLICY operational_logs_insert ON public.operational_daily_logs
 FOR INSERT TO authenticated
-WITH CHECK (auth.uid() = created_by);
+WITH CHECK ((select auth.uid()) = created_by);
 CREATE POLICY operational_logs_update ON public.operational_daily_logs
 FOR UPDATE TO authenticated
-USING (created_by = auth.uid() OR public.current_user_role() = 'manajer')
-WITH CHECK (created_by = auth.uid() OR public.current_user_role() = 'manajer');
+USING (created_by = (select auth.uid()) OR (select public.current_user_role()) = 'manajer')
+WITH CHECK (created_by = (select auth.uid()) OR (select public.current_user_role()) = 'manajer');
 CREATE POLICY operational_logs_delete ON public.operational_daily_logs
 FOR DELETE TO authenticated
-USING (public.current_user_role() = 'manajer');
+USING ((select public.current_user_role()) = 'manajer');
 
 -- Bank reconciliation.
 CREATE POLICY bank_reconciliations_access ON public.bank_reconciliations
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 CREATE POLICY bank_reconciliation_items_access ON public.bank_reconciliation_items
 FOR ALL TO authenticated
-USING (public.current_user_role() IN ('manajer','admin_keuangan'))
-WITH CHECK (public.current_user_role() IN ('manajer','admin_keuangan'));
+USING ((select public.current_user_role()) IN ('manajer','admin_keuangan'))
+WITH CHECK ((select public.current_user_role()) IN ('manajer','admin_keuangan'));
 
 -- Cooperative directory and invitations. Membership writes are reserved for server-side invitation flow.
 CREATE POLICY cooperatives_member_read ON public.cooperatives
@@ -235,7 +235,7 @@ WITH CHECK (public.has_active_cooperative_membership(id,'manajer'));
 
 CREATE POLICY cooperative_memberships_self_or_manager_read ON public.cooperative_memberships
 FOR SELECT TO authenticated
-USING (user_id = auth.uid() OR public.has_active_cooperative_membership(cooperative_id,'manajer'));
+USING (user_id = (select auth.uid()) OR public.has_active_cooperative_membership(cooperative_id,'manajer'));
 
 CREATE POLICY cooperative_invitations_manager_read ON public.cooperative_invitations
 FOR SELECT TO authenticated
