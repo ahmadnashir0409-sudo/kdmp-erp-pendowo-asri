@@ -8948,7 +8948,7 @@ function setupSettings(){
         <div id="settingsMessage"></div>
       </div>
       <div class="settings-card" id="settingsInviteCard">
-        <h3>👥 Undang Pengguna Koperasi</h3>
+        <h3>👥 Tambah Pengguna Koperasi</h3>
         <p class="settings-help">Buat akun pengguna dengan email, password awal, dan jabatan. Sampaikan password kepada pengguna melalui saluran pribadi yang aman.</p>
         <div class="settings-grid">
           <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com" required></div>
@@ -9028,7 +9028,7 @@ function setupSettings(){
       const password=passwordInput.value;
       const role=roleInput.value;
       message.className="";
-      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
         message.textContent="Masukkan alamat email yang valid.";
         message.className="error";emailInput.focus();return;
       }
