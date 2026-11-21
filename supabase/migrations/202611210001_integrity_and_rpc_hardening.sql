@@ -553,6 +553,428 @@ REVOKE ALL ON FUNCTION public.current_user_role() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.current_user_role() TO authenticated;
 REVOKE ALL ON FUNCTION public.batalkan_transaksi_toko(uuid,text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.batalkan_transaksi_toko(uuid,text) TO authenticated;
+CREATE OR REPLACE FUNCTION public.proses_penjualan_toko_atomik(p_sale jsonb, p_items jsonb)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_user_id uuid;
+    v_role text;
+    v_sale_id uuid;
+    v_sale_number text;
+    v_payment_method text;
+    v_sale_date timestamptz := now();
+
+    v_subtotal numeric := 0;
+    v_input_subtotal numeric;
+    v_discount numeric := 0;
+    v_total numeric := 0;
+    v_paid numeric := 0;
+    v_change numeric := 0;
+    v_hpp numeric := 0;
+
+    v_item record;
+    v_product record;
+    v_product_count integer := 0;
+    v_expected_products integer := 0;
+    v_line_total numeric;
+
+    v_account_cash uuid;
+    v_account_revenue uuid;
+    v_account_inventory uuid;
+    v_account_hpp uuid;
+
+    v_journal_id uuid;
+    v_journal_number text;
+BEGIN
+    -- 1. Validasi sesi dan hak akses
+    v_user_id := auth.uid();
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Sesi login tidak valid.';
+    END IF;
+
+    v_role := public.current_user_role();
+
+    IF COALESCE(v_role, '') NOT IN ('manajer', 'kasir') THEN
+        RAISE EXCEPTION 'Hanya Manajer atau Kasir yang boleh melakukan transaksi.';
+    END IF;
+
+    -- 2. Validasi data input
+    IF jsonb_typeof(p_sale) <> 'object' THEN
+        RAISE EXCEPTION 'Data transaksi tidak valid.';
+    END IF;
+
+    IF jsonb_typeof(p_items) <> 'array'
+       OR jsonb_array_length(p_items) = 0 THEN
+        RAISE EXCEPTION 'Minimal harus ada satu barang.';
+    END IF;
+
+    v_sale_number := trim(p_sale->>'sale_number');
+    v_payment_method := p_sale->>'payment_method';
+
+    IF COALESCE(v_sale_number, '') = '' THEN
+        RAISE EXCEPTION 'Nomor transaksi wajib diisi.';
+    END IF;
+
+    IF v_payment_method NOT IN ('tunai', 'transfer', 'qris') THEN
+        RAISE EXCEPTION 'Metode pembayaran tidak valid.';
+    END IF;
+
+    v_discount := round(
+        COALESCE((p_sale->>'discount')::numeric, 0), 2
+    );
+
+    v_paid := round(
+        COALESCE((p_sale->>'paid_amount')::numeric, 0), 2
+    );
+
+    IF v_discount < 0 OR v_paid < 0 THEN
+        RAISE EXCEPTION 'Diskon atau pembayaran tidak valid.';
+    END IF;
+
+    -- 3. Hitung subtotal dari detail barang
+    FOR v_item IN
+        SELECT *
+        FROM jsonb_to_recordset(p_items)
+        AS x(
+            product_id uuid,
+            quantity numeric,
+            unit_price numeric
+        )
+    LOOP
+        IF v_item.product_id IS NULL
+           OR v_item.quantity IS NULL
+           OR v_item.unit_price IS NULL
+           OR v_item.quantity <= 0
+           OR v_item.unit_price < 0 THEN
+            RAISE EXCEPTION 'Detail barang memiliki data tidak valid.';
+        END IF;
+
+        v_line_total := round(
+            v_item.quantity * v_item.unit_price, 2
+        );
+
+        v_subtotal := v_subtotal + v_line_total;
+    END LOOP;
+
+    v_subtotal := round(v_subtotal, 2);
+
+    v_input_subtotal := round(
+        COALESCE((p_sale->>'subtotal')::numeric, v_subtotal), 2
+    );
+
+    IF abs(v_input_subtotal - v_subtotal) > 0.01 THEN
+        RAISE EXCEPTION 'Subtotal tidak sesuai dengan detail barang.';
+    END IF;
+
+    IF v_discount > v_subtotal THEN
+        RAISE EXCEPTION 'Diskon melebihi subtotal.';
+    END IF;
+
+    v_total := round(v_subtotal - v_discount, 2);
+
+    IF v_total <= 0 THEN
+        RAISE EXCEPTION 'Total transaksi harus lebih dari nol.';
+    END IF;
+
+    IF v_paid < v_total THEN
+        RAISE EXCEPTION 'Pembayaran belum mencukupi total transaksi.';
+    END IF;
+
+    v_change := round(v_paid - v_total, 2);
+
+    IF p_sale ? 'total'
+       AND abs((p_sale->>'total')::numeric - v_total) > 0.01 THEN
+        RAISE EXCEPTION 'Total transaksi tidak sesuai.';
+    END IF;
+
+    IF p_sale ? 'change_amount'
+       AND abs((p_sale->>'change_amount')::numeric - v_change) > 0.01 THEN
+        RAISE EXCEPTION 'Uang kembalian tidak sesuai.';
+    END IF;
+
+    -- 4. Kunci seluruh produk dalam urutan konsisten.
+    -- Menghindari dua transaksi memakai stok yang sama.
+    SELECT count(DISTINCT product_id)
+    INTO v_expected_products
+    FROM jsonb_to_recordset(p_items)
+    AS x(product_id uuid, quantity numeric);
+
+    FOR v_product IN
+        SELECT
+            ip.id,
+            ip.product_code,
+            ip.product_name,
+            ip.unit,
+            ip.current_stock,
+            ip.purchase_price,
+            grouped.total_qty
+        FROM public.inventory_products ip
+        JOIN (
+            SELECT
+                product_id,
+                SUM(quantity) AS total_qty
+            FROM jsonb_to_recordset(p_items)
+            AS x(product_id uuid, quantity numeric)
+            GROUP BY product_id
+        ) grouped ON grouped.product_id = ip.id
+        WHERE ip.is_active = true
+        ORDER BY ip.id
+        FOR UPDATE OF ip
+    LOOP
+        v_product_count := v_product_count + 1;
+
+        IF v_product.current_stock < v_product.total_qty THEN
+            RAISE EXCEPTION
+                'Stok % tidak mencukupi. Tersedia %, dibutuhkan %.',
+                v_product.product_name,
+                v_product.current_stock,
+                v_product.total_qty;
+        END IF;
+
+        v_hpp := v_hpp +
+            (v_product.total_qty *
+             COALESCE(v_product.purchase_price, 0));
+    END LOOP;
+
+    IF v_product_count <> v_expected_products THEN
+        RAISE EXCEPTION
+            'Ada barang yang tidak ditemukan atau tidak aktif di master persediaan.';
+    END IF;
+
+    v_hpp := round(v_hpp, 2);
+
+    -- 5. Simpan header penjualan
+    INSERT INTO public.store_sales (
+        sale_number,
+        sale_date,
+        customer_name,
+        payment_method,
+        subtotal,
+        discount,
+        total,
+        paid_amount,
+        change_amount,
+        status,
+        notes,
+        created_by
+    )
+    VALUES (
+        v_sale_number,
+        v_sale_date,
+        COALESCE(NULLIF(trim(p_sale->>'customer_name'), ''), 'Pelanggan Umum'),
+        v_payment_method,
+        v_subtotal,
+        v_discount,
+        v_total,
+        v_paid,
+        v_change,
+        'selesai',
+        NULLIF(trim(p_sale->>'notes'), ''),
+        v_user_id
+    )
+    RETURNING id INTO v_sale_id;
+
+    -- 6. Simpan detail barang berdasarkan master persediaan
+    FOR v_item IN
+        SELECT *
+        FROM jsonb_to_recordset(p_items)
+        AS x(
+            product_id uuid,
+            quantity numeric,
+            unit_price numeric
+        )
+    LOOP
+        SELECT product_code, product_name, unit
+        INTO v_product
+        FROM public.inventory_products
+        WHERE id = v_item.product_id
+          AND is_active = true;
+
+        v_line_total := round(
+            v_item.quantity * v_item.unit_price, 2
+        );
+
+        INSERT INTO public.store_sale_items (
+            sale_id,
+            product_id,
+            product_code,
+            product_name,
+            quantity,
+            unit,
+            unit_price,
+            line_total
+        )
+        VALUES (
+            v_sale_id,
+            v_item.product_id,
+            v_product.product_code,
+            v_product.product_name,
+            v_item.quantity,
+            v_product.unit,
+            v_item.unit_price,
+            v_line_total
+        );
+    END LOOP;
+
+    -- 7. Catat mutasi stok.
+    -- Trigger inventory_movements yang mengubah current_stock.
+    FOR v_product IN
+        SELECT
+            ip.id,
+            ip.product_name,
+            ip.current_stock,
+            ip.purchase_price,
+            grouped.total_qty
+        FROM public.inventory_products ip
+        JOIN (
+            SELECT
+                product_id,
+                SUM(quantity) AS total_qty
+            FROM jsonb_to_recordset(p_items)
+            AS x(product_id uuid, quantity numeric)
+            GROUP BY product_id
+        ) grouped ON grouped.product_id = ip.id
+        ORDER BY ip.id
+    LOOP
+        INSERT INTO public.inventory_movements (
+            movement_number,
+            product_id,
+            movement_type,
+            quantity,
+            stock_before,
+            stock_after,
+            unit_cost,
+            movement_date,
+            reference_number,
+            notes,
+            created_by
+        )
+        VALUES (
+            'JUAL-' ||
+                to_char(v_sale_date, 'YYYYMMDD') || '-' ||
+                upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
+            v_product.id,
+            'keluar',
+            v_product.total_qty,
+            v_product.current_stock,
+            v_product.current_stock - v_product.total_qty,
+            COALESCE(v_product.purchase_price, 0),
+            v_sale_date::date,
+            v_sale_number,
+            'Pengeluaran stok otomatis transaksi toko',
+            v_user_id
+        );
+    END LOOP;
+
+    -- 8. Ambil akun jurnal
+    SELECT id INTO v_account_cash
+    FROM public.accounts
+    WHERE kode_akun =
+        CASE WHEN v_payment_method = 'tunai' THEN '1101' ELSE '1102' END
+      AND aktif = true
+    LIMIT 1;
+
+    SELECT id INTO v_account_revenue
+    FROM public.accounts
+    WHERE kode_akun = '4101' AND aktif = true
+    LIMIT 1;
+
+    IF v_hpp > 0 THEN
+        SELECT id INTO v_account_inventory
+        FROM public.accounts
+        WHERE kode_akun = '1104' AND aktif = true
+        LIMIT 1;
+
+        SELECT id INTO v_account_hpp
+        FROM public.accounts
+        WHERE kode_akun = '5104' AND aktif = true
+        LIMIT 1;
+    END IF;
+
+    IF v_account_cash IS NULL OR v_account_revenue IS NULL THEN
+        RAISE EXCEPTION 'Akun kas/bank atau pendapatan belum tersedia atau tidak aktif.';
+    END IF;
+
+    IF v_hpp > 0
+       AND (v_account_inventory IS NULL OR v_account_hpp IS NULL) THEN
+        RAISE EXCEPTION 'Akun persediaan atau HPP belum tersedia atau tidak aktif.';
+    END IF;
+
+    -- 9. Buat jurnal penjualan
+    v_journal_number :=
+        'JU-' || to_char(v_sale_date, 'YYYYMMDD') || '-' ||
+        upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+
+    INSERT INTO public.journal_entries (
+        nomor_jurnal,
+        tanggal,
+        keterangan,
+        status,
+        created_by
+    )
+    VALUES (
+        v_journal_number,
+        v_sale_date::date,
+        'Penjualan toko KDMP ' || v_sale_number,
+        'draft',
+        v_user_id
+    )
+    RETURNING id INTO v_journal_id;
+
+    INSERT INTO public.journal_lines (
+        journal_id, account_id, keterangan, debit, kredit
+    )
+    VALUES
+    (
+        v_journal_id,
+        v_account_cash,
+        'Penerimaan penjualan ' || v_sale_number,
+        v_total,
+        0
+    ),
+    (
+        v_journal_id,
+        v_account_revenue,
+        'Pendapatan penjualan ' || v_sale_number,
+        0,
+        v_total
+    );
+
+    IF v_hpp > 0 THEN
+        INSERT INTO public.journal_lines (
+            journal_id, account_id, keterangan, debit, kredit
+        )
+        VALUES
+        (
+            v_journal_id,
+            v_account_hpp,
+            'HPP penjualan ' || v_sale_number,
+            v_hpp,
+            0
+        ),
+        (
+            v_journal_id,
+            v_account_inventory,
+            'Pengurangan persediaan ' || v_sale_number,
+            0,
+            v_hpp
+        );
+    END IF;
+
+    -- Memicu validasi keseimbangan jurnal yang sudah ada
+    UPDATE public.journal_entries
+    SET status = 'posted'
+    WHERE id = v_journal_id;
+
+    RETURN v_sale_id;
+END;
+$function$
+;
+
 REVOKE ALL ON FUNCTION public.proses_penjualan_toko_atomik(jsonb,jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.proses_penjualan_toko_atomik(jsonb,jsonb) TO authenticated;
 REVOKE ALL ON FUNCTION public.catat_transaksi_keuangan(date,text,uuid,uuid,numeric,text) FROM PUBLIC, anon;
