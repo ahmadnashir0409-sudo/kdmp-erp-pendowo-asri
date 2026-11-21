@@ -9162,7 +9162,7 @@ window.showPage=function(page,button){
 
 // Centralized frontend page permissions. Database RLS remains the security boundary.
 const KDMP_ROLE_PAGES={
-  manajer:Object.keys(modules),
+  manajer:["dashboard",...Object.keys(modules)],
   admin_keuangan:[
     "dashboard","keuangan","coa","jurnal","buku-besar","laporan",
     "utang-piutang","bank","invoice","simpanan","bulanan","rumus-kamus"
