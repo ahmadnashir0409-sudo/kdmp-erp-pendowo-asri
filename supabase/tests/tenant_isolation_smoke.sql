@@ -27,6 +27,13 @@ CREATE TABLE public.cooperative_memberships (
   PRIMARY KEY (user_id, cooperative_id)
 );
 
+CREATE TABLE public.cooperative_licenses (
+  cooperative_id uuid PRIMARY KEY REFERENCES public.cooperatives(id),
+  status text NOT NULL CHECK (status IN ('active', 'suspended', 'cancelled')),
+  starts_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz
+);
+
 CREATE TABLE public.inventory_products (
   id uuid PRIMARY KEY,
   cooperative_id uuid NOT NULL REFERENCES public.cooperatives(id),
@@ -75,6 +82,14 @@ AS $$
     WHERE cm.cooperative_id = p_cooperative_id
       AND cm.user_id = auth.uid()
       AND cm.status = 'active'
+      AND EXISTS (
+        SELECT 1
+        FROM public.cooperative_licenses AS cl
+        WHERE cl.cooperative_id = cm.cooperative_id
+          AND cl.status = 'active'
+          AND cl.starts_at <= now()
+          AND (cl.expires_at IS NULL OR cl.expires_at > now())
+      )
   );
 $$;
 
@@ -132,6 +147,10 @@ INSERT INTO public.cooperatives (id, name) VALUES
 INSERT INTO public.cooperative_memberships (user_id, cooperative_id, status) VALUES
   ('11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'active'),
   ('22222222-2222-4222-8222-222222222222', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'active');
+
+INSERT INTO public.cooperative_licenses (cooperative_id, status, starts_at, expires_at) VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'active', now() - interval '1 day', now() + interval '30 days'),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'active', now() - interval '1 day', now() + interval '30 days');
 
 INSERT INTO public.inventory_products (id, cooperative_id, name, current_stock) VALUES
   ('a1000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Produk Alpha', 10),
@@ -229,4 +248,25 @@ END;
 $$;
 
 RESET ROLE;
-\echo 'PASS: tenant isolation, cross-tenant write rejection, and composite FK isolation'
+
+-- Expire Beta's license and verify that its otherwise-active member loses access.
+UPDATE public.cooperative_licenses
+SET expires_at = now() - interval '1 second'
+WHERE cooperative_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
+
+DO $
+DECLARE
+  v_count integer;
+BEGIN
+  SELECT count(*) INTO v_count FROM public.inventory_products;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'Expired license still has access to % inventory rows', v_count;
+  END IF;
+END;
+$;
+
+RESET ROLE;
+\echo 'PASS: tenant isolation, cross-tenant write rejection, composite FK isolation, and expired-license lockout'
