@@ -109,3 +109,17 @@ All three must be tenant-scoped before multi-KDMP rollout. Tenant identity must 
 ## Safety status
 
 No production DDL, DML, policy, trigger, function, deployment, or migration was executed for this feature. This document is a design artifact only. Production migration history has a known version-format mismatch with checked-in migration filenames; do not use `db push`, migration repair, or production migration application until that drift is reconciled.
+
+
+## Development test harness added (branch only)
+
+A standalone PostgreSQL contract test now lives at `supabase/tests/period_closing_contract.sql` and is wired into `.github/workflows/dagboek-free-regression.yml`. It uses a disposable `close_test` schema and synthetic cooperative IDs only. It covers:
+- first-period start must be explicit;
+- next period begins the day after the last successfully closed period;
+- a closed period rejects backdated writes while the next open period and another cooperative remain unaffected;
+- duplicate close attempts are rejected;
+- reopening requires a reason and is blocked when a later period already exists;
+- a permitted reopen increments the version and a re-close creates a second immutable snapshot;
+- snapshot and event rows reject update/delete.
+
+This is a contract harness, not production application code. It deliberately does not introduce a Supabase migration because current journal and operational tables do not yet have a reliable cooperative/tenant key. Applying period lock triggers before tenant ownership is established could either lock the wrong cooperative or fail to lock some records. The database implementation must follow the tenant migration and its cross-tenant FK/RLS tests.
