@@ -9036,11 +9036,15 @@ function setupSettings(){
         message.textContent="Password harus terdiri dari 8 sampai 72 karakter.";
         message.className="error";passwordInput.focus();return;
       }
-      const user=window.currentUser;
-      if(!user?.id){
-        message.textContent="Sesi login tidak ditemukan. Silakan login ulang.";
+      // Ambil identitas langsung dari sesi Supabase, bukan hanya cache window.currentUser.
+      // Cache UI bisa belum terisi/tertinggal meskipun sesi autentikasi masih valid.
+      const {data:authData,error:authError}=await supabaseClient.auth.getUser();
+      const authenticatedUser=authData?.user;
+      if(authError||!authenticatedUser?.id){
+        message.textContent="Sesi login Supabase tidak ditemukan atau sudah kedaluwarsa. Silakan login ulang.";
         message.className="error";return;
       }
+      window.currentUser={...(window.currentUser||{}),id:authenticatedUser.id};
       inviteButton.disabled=true;
       inviteButton.textContent="Membuat pengguna...";
       message.textContent="Memeriksa hak akses Manajer dan membuat akun...";
