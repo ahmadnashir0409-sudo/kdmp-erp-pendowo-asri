@@ -77,7 +77,7 @@ This is the account identity to use for the protected Super Admin bootstrap. Do 
 ## Extended database/function audit (2026-11-21)
 
 ### Complete public table inventory
-The live public schema contains 31 application tables. Only `cooperative_invitations` and `cooperative_memberships` currently have `cooperative_id`. The remaining 29 tables need an explicit ownership decision before tenant enforcement:
+The live public schema contains 30 application tables. Only `cooperative_invitations` and `cooperative_memberships` currently have `cooperative_id`. The remaining 28 tables need an explicit ownership decision before tenant enforcement:
 - Core cooperative records: `accounts`, `cooperative_members`, `cooperative_finance_settings`, `business_partners`.
 - Finance/accounting: `financial_transactions`, `journal_entries`, `journal_lines`, `ar_ap_documents`, `ar_ap_payments`, `bank_reconciliations`, `bank_reconciliation_items`.
 - Inventory/POS/invoice: `inventory_products`, `inventory_movements`, `store_sales`, `store_sale_items`, `invoices`, `invoice_items`, `invoice_payments`.
