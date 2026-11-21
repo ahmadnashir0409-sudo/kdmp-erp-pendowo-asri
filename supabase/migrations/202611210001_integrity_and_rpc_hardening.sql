@@ -3,7 +3,8 @@
 CREATE OR REPLACE FUNCTION public.process_inventory_movement()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
 AS $function$
 DECLARE
   v_stock NUMERIC(15,3);
@@ -546,6 +547,10 @@ REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated
 REVOKE ALL ON FUNCTION public.auto_journal_invoice() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.auto_journal_invoice_payment() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.process_inventory_movement() FROM PUBLIC, anon, authenticated;
+-- Clients may edit product metadata but never write stock columns directly.
+REVOKE INSERT, UPDATE ON TABLE public.inventory_products FROM PUBLIC, anon, authenticated;
+GRANT INSERT (product_code, product_name, category, unit, purchase_price, selling_price, minimum_stock, description, is_active, created_by, notes) ON TABLE public.inventory_products TO authenticated;
+GRANT UPDATE (product_code, product_name, category, unit, purchase_price, selling_price, minimum_stock, description, is_active, created_by, notes) ON TABLE public.inventory_products TO authenticated;
 REVOKE ALL ON FUNCTION public.prevent_posted_journal_changes() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.prevent_posted_journal_line_changes() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.check_journal_balance() FROM PUBLIC, anon, authenticated;
