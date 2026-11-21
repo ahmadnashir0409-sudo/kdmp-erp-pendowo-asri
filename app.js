@@ -36,7 +36,7 @@ style.textContent = `
 .login-card label{display:block;font-size:13px;font-weight:bold;margin:15px 0 7px;color:#444}
 .login-card input{width:100%;box-sizing:border-box;padding:13px;border:1px solid #ddd;border-radius:8px;font-size:15px}
 .login-card button{width:100%;padding:14px;margin-top:22px;border:none;border-radius:8px;background:#a71925;color:white;font-size:15px;font-weight:bold;cursor:pointer}
-.login-card button:disabled{opacity:.6;cursor:wait}#loginError{color:#b91c2c;font-size:13px;margin-top:14px}
+.login-card button:disabled{opacity:.6;cursor:wait}.login-card .login-link-button{margin-top:10px;background:transparent;color:#8b7137;border:0;font-size:12px;text-decoration:underline;padding:6px}#loginError{color:#b91c2c;font-size:13px;margin-top:14px}#passwordRecoveryPanel h3{margin:10px 0;color:#202a3c}#passwordRecoveryPanel p{margin:0 0 12px}#passwordRecoveryMessage{font-size:13px;margin-top:12px;color:#8b7137}
 #logoutButton{border:1px solid #ddd;background:white;padding:8px 12px;border-radius:7px;cursor:pointer;margin-left:15px}
 .erp-content{margin-top:25px;width:100%}
 .erp-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
@@ -396,7 +396,16 @@ loginScreen.innerHTML = `
       <label>Email</label><input type="email" id="loginEmail" required autocomplete="username">
       <label>Password</label><input type="password" id="loginPassword" required autocomplete="current-password">
       <button type="submit" id="loginButton">Masuk ke Sistem</button>
+      <button type="button" id="forgotPasswordBtn" class="login-link-button">Lupa password? Kirim tautan reset</button>
       <div id="loginError" role="alert"></div>
+    </form>
+    <form id="passwordRecoveryPanel" hidden>
+      <h3>Buat Password Baru</h3>
+      <p>Gunakan password pribadi yang kuat untuk akun DAGBOEK.</p>
+      <label>Password Baru</label><input type="password" id="newAccountPassword" minlength="10" required autocomplete="new-password">
+      <label>Ulangi Password Baru</label><input type="password" id="confirmAccountPassword" minlength="10" required autocomplete="new-password">
+      <button type="submit" id="updatePasswordButton">Simpan Password Baru</button>
+      <div id="passwordRecoveryMessage" role="alert"></div>
     </form>
   </div>`;
 document.body.prepend(loginScreen);
@@ -407,6 +416,69 @@ if (layout) layout.style.display = "none";
 const loginForm = document.getElementById("loginForm");
 const loginButton = document.getElementById("loginButton");
 const loginError = document.getElementById("loginError");
+const passwordRecoveryPanel=document.getElementById("passwordRecoveryPanel");
+const passwordRecoveryMessage=document.getElementById("passwordRecoveryMessage");
+const forgotPasswordButton=document.getElementById("forgotPasswordBtn");
+
+function showPasswordRecoveryPanel(){
+  loginScreen.style.display="flex";
+  if(layout)layout.style.display="none";
+  loginForm.hidden=true;
+  passwordRecoveryPanel.hidden=false;
+  passwordRecoveryMessage.textContent="";
+}
+
+forgotPasswordButton.addEventListener("click",async()=>{
+  const email=document.getElementById("loginEmail").value.trim();
+  if(!email){loginError.textContent="Masukkan email akun terlebih dahulu.";document.getElementById("loginEmail").focus();return;}
+  forgotPasswordButton.disabled=true;
+  forgotPasswordButton.textContent="Mengirim tautan...";
+  loginError.textContent="";
+  try{
+    const redirectTo=window.location.origin+window.location.pathname;
+    const {error}=await supabaseClient.auth.resetPasswordForEmail(email,{redirectTo});
+    if(error)throw error;
+    loginError.textContent="Tautan reset password telah dikirim. Periksa Inbox dan folder Spam.";
+    loginError.style.color="#159765";
+  }catch(error){
+    loginError.textContent=error.message||"Gagal mengirim tautan reset password.";
+    loginError.style.color="#b91c2c";
+  }finally{
+    forgotPasswordButton.disabled=false;
+    forgotPasswordButton.textContent="Lupa password? Kirim tautan reset";
+  }
+});
+
+passwordRecoveryPanel.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const password=document.getElementById("newAccountPassword").value;
+  const confirmPassword=document.getElementById("confirmAccountPassword").value;
+  if(password.length<10){passwordRecoveryMessage.textContent="Password minimal 10 karakter.";return;}
+  if(password!==confirmPassword){passwordRecoveryMessage.textContent="Konfirmasi password tidak sama.";return;}
+  const button=document.getElementById("updatePasswordButton");
+  button.disabled=true;button.textContent="Menyimpan...";
+  passwordRecoveryMessage.textContent="";
+  try{
+    const {error}=await supabaseClient.auth.updateUser({password});
+    if(error)throw error;
+    await supabaseClient.auth.signOut();
+    window.history.replaceState({},document.title,window.location.pathname+window.location.search);
+    passwordRecoveryPanel.hidden=true;
+    loginForm.hidden=false;
+    document.getElementById("newAccountPassword").value="";
+    document.getElementById("confirmAccountPassword").value="";
+    loginError.textContent="Password berhasil diperbarui. Silakan masuk.";
+    loginError.style.color="#159765";
+  }catch(error){
+    passwordRecoveryMessage.textContent=error.message||"Gagal memperbarui password.";
+  }finally{
+    button.disabled=false;button.textContent="Simpan Password Baru";
+  }
+});
+
+supabaseClient.auth.onAuthStateChange(event=>{
+  if(event==="PASSWORD_RECOVERY")showPasswordRecoveryPanel();
+});
 
 loginForm.addEventListener("submit", async event => {
   event.preventDefault();
@@ -2358,6 +2430,8 @@ window.showPage = function(page, button) {
 // PERIKSA SESSION
 // ==========================================
 async function checkLoginSession() {
+  const authHash=new URLSearchParams(window.location.hash.replace(/^#/,""));
+  if(["recovery","invite"].includes(authHash.get("type"))){showPasswordRecoveryPanel();return;}
   const {data,error}=await supabaseClient.auth.getSession();
   if(error){loginError.textContent="Tidak dapat memeriksa sesi login.";return;}
   if(data.session)await loadUserProfile(data.session.user);
@@ -8853,10 +8927,10 @@ function setupSettings(){
       </div>
       <div class="settings-card" id="settingsInviteCard">
         <h3>👥 Undang Pengguna Koperasi</h3>
-        <p class="settings-help">Buat akun pengguna yang hanya dapat dibuat atas persetujuan Manajer. Tentukan email, password awal, dan hak akses pengguna.</p>
+        <p class="settings-help">Undang staf menggunakan email. Pengguna akan menerima tautan aman untuk membuat password pribadinya sendiri; Manajer tidak perlu mengetahui password staf.</p>
         <div class="settings-grid">
+          <div class="settings-field"><label for="inviteUserName">Nama Lengkap</label><input id="inviteUserName" maxlength="120" autocomplete="name" placeholder="Nama pengguna"></div>
           <div class="settings-field"><label for="inviteUserEmail">Email Pengguna</label><input id="inviteUserEmail" type="email" maxlength="254" autocomplete="off" placeholder="nama@email.com"></div>
-          <div class="settings-field"><label for="inviteUserPassword">Password Awal</label><input id="inviteUserPassword" type="password" minlength="6" maxlength="72" autocomplete="new-password" placeholder="Tentukan password pengguna"></div>
           <div class="settings-field"><label for="inviteUserRole">Jabatan / Hak Akses</label><select id="inviteUserRole"><option value="admin_keuangan">Admin Keuangan</option><option value="kasir">Kasir</option><option value="admin_gudang">Admin Gudang</option><option value="pengurus">Pengurus</option></select></div>
         </div>
         <div class="settings-actions"><button type="button" class="settings-btn" id="inviteUserSend">Kirim Undangan</button></div>
@@ -8924,12 +8998,12 @@ function setupSettings(){
     });
     const inviteButton=document.getElementById("inviteUserSend");
     inviteButton.addEventListener("click",async()=>{
+      const nameInput=document.getElementById("inviteUserName");
       const emailInput=document.getElementById("inviteUserEmail");
-      const passwordInput=document.getElementById("inviteUserPassword");
       const roleInput=document.getElementById("inviteUserRole");
       const message=document.getElementById("inviteUserMessage");
+      const fullName=nameInput.value.trim();
       const email=emailInput.value.trim().toLowerCase();
-      const password=passwordInput.value;
       const role=roleInput.value;
       message.className="";
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
@@ -8938,10 +9012,10 @@ function setupSettings(){
         emailInput.focus();
         return;
       }
-      if(password.length<6){
-        message.textContent="Password awal minimal 6 karakter.";
+      if(!fullName||fullName.length>120){
+        message.textContent="Nama lengkap wajib diisi (maksimal 120 karakter).";
         message.className="error";
-        passwordInput.focus();
+        nameInput.focus();
         return;
       }
       const user=window.currentUser;
@@ -8967,7 +9041,7 @@ function setupSettings(){
         const cooperativeId=memberships[0].cooperative_id;
         if(!cooperativeId)throw new Error("ID koperasi tidak ditemukan pada keanggotaan Manajer.");
         const {data,error}=await supabaseClient.functions.invoke("invite-user",{
-          body:{cooperative_id:cooperativeId,email,password,role}
+          body:{cooperative_id:cooperativeId,email,nama_lengkap:fullName,role}
         });
         if(error){
           let detail="";
@@ -8978,8 +9052,8 @@ function setupSettings(){
         if(!data?.success)throw new Error(data?.message||"Undangan gagal dikirim.");
         message.textContent="Akun berhasil dibuat dan email akses dikirim ke "+email+". Minta pengguna memeriksa Inbox dan folder Spam.";
         message.className="success";
+        nameInput.value="";
         emailInput.value="";
-        passwordInput.value="";
       }catch(error){
         console.error("Invite user:",error);
         message.textContent=error.message||"Terjadi kesalahan saat mengirim undangan.";

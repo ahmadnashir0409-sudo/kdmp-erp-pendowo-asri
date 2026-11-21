@@ -1,0 +1,7 @@
+project_id = "srfhamdyewblyuangxzz"
+
+[functions.invite-user]
+verify_jwt = true
+
+[functions.dabu-assistant]
+verify_jwt = true
