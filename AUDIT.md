@@ -93,3 +93,12 @@ The following checks were executed against the active Supabase schema using expl
 - GitHub PR #19 was merged into `main` on 22 November 2026.
 - The current Cloudflare Pages project named `dagboek-nusa-pixel` is still connected to the older repository `sistem_akuntansi_kopdes` and branch `copy/kdmp-erp-base-daiboek`.
 - `dagboek-nusa-pixel-demo` is an ad-hoc Pages project with no Git source connection. The merge to `kdmp-erp-pendowo-asri/main` therefore did not trigger a Cloudflare deployment. Do not switch or overwrite either Pages project until the intended production target is confirmed.
+
+
+### KDMP ERP production deployment — 22 November 2026
+- Created a dedicated Cloudflare Pages project `kdmp-erp-pendowo-asri`.
+- Connected source control to GitHub repository `ahmadnashir0409-sudo/kdmp-erp-pendowo-asri`, production branch `main`.
+- Production deployment `cd00f851-79a3-4033-8832-54c0dc86e81f` completed successfully.
+- Live Pages address: `https://kdmp-erp-pendowo-asri.pages.dev`; deployment-specific URL: `https://cd00f851.kdmp-erp-pendowo-asri.pages.dev`.
+- The older Pages projects for DAGBOEK were left unchanged.
+- Post-deployment database verification: 0 posted journals out of balance, 0 invoices missing automatic journals, and 0 savings transactions missing automatic journals.
