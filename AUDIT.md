@@ -87,3 +87,9 @@ The following checks were executed against the active Supabase schema using expl
 - The existing loan `PJM-1794893609971` has principal `Rp1.200.000`, disbursed on 17 November 2026, but the previous UI did not store whether the source was cash or bank. Its existing `Rp100.000` installment payment also has no journal. Do not backfill these loan journals until the historical disbursement source is confirmed.
 - The invoice migration backfilled the two missing invoice journals as new audit records; production now has 5/5 invoices with automatic journals. It did not edit invoice rows.
 - The savings migration backfilled the missing savings journal as a new audit record; production now has 1/1 savings transactions with automatic journals. It did not edit the savings transaction row.
+
+
+### Release handoff
+- GitHub PR #19 was merged into `main` on 22 November 2026.
+- The current Cloudflare Pages project named `dagboek-nusa-pixel` is still connected to the older repository `sistem_akuntansi_kopdes` and branch `copy/kdmp-erp-base-daiboek`.
+- `dagboek-nusa-pixel-demo` is an ad-hoc Pages project with no Git source connection. The merge to `kdmp-erp-pendowo-asri/main` therefore did not trigger a Cloudflare deployment. Do not switch or overwrite either Pages project until the intended production target is confirmed.
