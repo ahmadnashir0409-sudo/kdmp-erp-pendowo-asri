@@ -488,15 +488,18 @@ loginForm.addEventListener("submit", async event => {
 
   const email = document.getElementById("loginEmail").value.trim();
   const password = document.getElementById("loginPassword").value;
-  const {data,error} = await supabaseClient.auth.signInWithPassword({email,password});
 
-  if (error) {
-    loginError.textContent = "Login gagal. Periksa email dan password.";
+  try {
+    const {data,error} = await supabaseClient.auth.signInWithPassword({email,password});
+    if (error) throw error;
+    if (!data?.user?.id) throw new Error("Sesi login tidak berhasil dibuat.");
+    await loadUserProfile(data.user);
+  } catch (error) {
+    console.error("Login gagal:", error);
+    loginError.textContent = "Login gagal. Periksa email, password, dan koneksi internet.";
     loginButton.disabled = false;
     loginButton.textContent = "Masuk ke Sistem";
-    return;
   }
-  await loadUserProfile(data.user);
 });
 
 async function loadUserProfile(user) {
@@ -511,6 +514,8 @@ async function loadUserProfile(user) {
     return;
   }
 
+  loginButton.disabled = false;
+  loginButton.textContent = "Masuk ke Sistem";
   loginScreen.style.display = "none";
   if (layout) layout.style.display = "";
 
@@ -872,20 +877,42 @@ async function saveJournal(event) {
 async function loadJournalHistory() {
   const body=document.getElementById("journalHistoryBody");if(!body)return;
   body.innerHTML='<tr><td colspan="7">Memuat riwayat jurnal...</td></tr>';
-  const {data:entries,error}=await supabaseClient.from("journal_entries").select("id,nomor_jurnal,tanggal,keterangan,status").order("tanggal",{ascending:false}).limit(50);
+  const {data:entries,error}=await supabaseClient
+    .from("journal_entries")
+    .select("id,nomor_jurnal,tanggal,keterangan,status,reversal_of")
+    .order("tanggal",{ascending:false})
+    .limit(50);
   if(error){body.innerHTML=`<tr><td colspan="7">${escapeHTML(error.message)}</td></tr>`;return;}
   if(!entries?.length){body.innerHTML='<tr><td colspan="7">Belum ada jurnal.</td></tr>';return;}
+
+  const {data:reversalRows,error:reversalError}=await supabaseClient
+    .from("journal_entries")
+    .select("reversal_of")
+    .not("reversal_of","is",null);
+  if(reversalError){body.innerHTML=`<tr><td colspan="7">${escapeHTML(reversalError.message)}</td></tr>`;return;}
+  const reversedIds=new Set((reversalRows||[]).map(item=>item.reversal_of).filter(Boolean));
+
   const ids=entries.map(e=>e.id);
-  const {data:lines,error:lineError}=await supabaseClient.from("journal_lines").select("journal_id,debit,kredit").in("journal_id",ids);
+  const {data:lines,error:lineError}=await supabaseClient
+    .from("journal_lines")
+    .select("journal_id,debit,kredit")
+    .in("journal_id",ids);
   if(lineError){body.innerHTML=`<tr><td colspan="7">${escapeHTML(lineError.message)}</td></tr>`;return;}
+
   body.replaceChildren();
   entries.forEach(entry=>{
-    const related=(lines||[]).filter(l=>l.journal_id===entry.id),debit=related.reduce((s,l)=>s+Number(l.debit),0),credit=related.reduce((s,l)=>s+Number(l.kredit),0),row=document.createElement("tr");
+    const related=(lines||[]).filter(l=>l.journal_id===entry.id);
+    const debit=related.reduce((s,l)=>s+Number(l.debit),0);
+    const credit=related.reduce((s,l)=>s+Number(l.kredit),0);
+    const row=document.createElement("tr");
     [entry.nomor_jurnal,entry.tanggal,entry.keterangan,entry.status,formatRupiah(debit),formatRupiah(credit)].forEach((value,index)=>{
       const cell=document.createElement("td");cell.textContent=value;
-      if(index===3&&entry.status==="posted"){const badge=document.createElement("span");badge.className="erp-status";badge.textContent="Posted";cell.replaceChildren(badge);}
+      if(index===3&&entry.status==="posted"){
+        const badge=document.createElement("span");badge.className="erp-status";badge.textContent="Posted";cell.replaceChildren(badge);
+      }
       row.appendChild(cell);
     });
+
     const actionCell=document.createElement("td");
     const detailButton=document.createElement("button");
     detailButton.type="button";
@@ -893,10 +920,55 @@ async function loadJournalHistory() {
     detailButton.textContent="Lihat Detail";
     detailButton.addEventListener("click",()=>openJournalDetail(entry.id));
     actionCell.appendChild(detailButton);
+
+    const moduleManaged=/^(Penjualan toko KDMP |Pembalik penjualan toko |Jurnal otomatis invoice |Pembayaran invoice |Jurnal simpanan |Jurnal pembayaran angsuran |Jurnal pencairan pinjaman )/.test(entry.keterangan||"");
+    if(window.currentUser?.role==="manajer"&&entry.status==="posted"&&!entry.reversal_of&&!reversedIds.has(entry.id)&&!moduleManaged){
+      const reverseButton=document.createElement("button");
+      reverseButton.type="button";
+      reverseButton.className="journal-detail-button";
+      reverseButton.style.marginLeft="6px";
+      reverseButton.textContent="Balikkan";
+      reverseButton.addEventListener("click",()=>reverseJournal(entry.id,entry.nomor_jurnal));
+      actionCell.appendChild(reverseButton);
+    }
+
     row.appendChild(actionCell);
     body.appendChild(row);
   });
 }
+
+async function reverseJournal(journalId,journalNumber) {
+  if(window.currentUser?.role!=="manajer"){
+    alert("Hanya Manajer yang dapat membalik jurnal.");
+    return;
+  }
+  const reason=prompt("Alasan pembalikan jurnal "+(journalNumber||"ini")+":");
+  if(reason===null)return;
+  if(!reason.trim()){
+    alert("Alasan reversal wajib diisi.");
+    return;
+  }
+  if(reason.trim().length>500){
+    alert("Alasan reversal maksimal 500 karakter.");
+    return;
+  }
+  if(!confirm("Buat jurnal pembalik untuk "+(journalNumber||"jurnal ini")+"? Jurnal asli tetap tersimpan dan tidak diubah."))return;
+
+  try{
+    const {data,error}=await supabaseClient.rpc("reverse_posted_journal",{
+      p_journal_id:journalId,
+      p_reason:reason.trim(),
+      p_reversal_date:todayDate()
+    });
+    if(error)throw error;
+    alert("Jurnal berhasil dibalik. Nomor jurnal pembalik: "+(data?.reversal_journal_number||"-"));
+    await loadJournalHistory();
+  }catch(error){
+    console.error("Journal reversal failed:",error);
+    alert("Gagal membalik jurnal: "+(error.message||"Kesalahan tidak diketahui"));
+  }
+}
+window.reverseJournal=reverseJournal;
 
 // ==========================================
 // DETAIL JURNAL (READ ONLY)
@@ -2943,41 +3015,17 @@ async function saveInvoice(event) {
    created_by:window.currentUser.id
   };
 
-  const {data:invoice,error}=await supabaseClient
-   .from("invoices")
-   .insert(invoiceData)
-   .select("id")
-   .single();
-
-  if(error)throw error;
-
-  const itemRows=result.items.map(item=>({
-   invoice_id:invoice.id,
-   ...item
-  }));
-
-  const {error:itemError}=await supabaseClient
-   .from("invoice_items")
-   .insert(itemRows);
-
-  if(itemError){
-   await supabaseClient.from("invoices").delete().eq("id",invoice.id);
-   throw itemError;
-  }
-
-  // Buat jurnal otomatis setelah header dan rincian invoice berhasil tersimpan.
-  // RPC dibuat idempoten di database berdasarkan invoice_id.
-  let journalWarning="";
-  const {error:journalError}=await supabaseClient.rpc("record_invoice_journal",{
-   p_invoice_id:invoice.id
+  const {data:invoice,error}=await supabaseClient.rpc("create_invoice_with_items",{
+   p_invoice:invoiceData,
+   p_items:result.items
   });
-  if(journalError){
-   journalWarning=" Invoice tersimpan, tetapi jurnal otomatis belum berhasil dibuat: "+journalError.message;
-  }
+  if(error)throw error;
+  if(!invoice?.success)throw new Error("Invoice belum berhasil disimpan secara lengkap.");
 
   message.textContent=(isPurchase?"Invoice pembelian":"Invoice penjualan")+
-   " berhasil dibuat: "+invoiceNumber+journalWarning;
-  message.className="invoice-message "+(journalWarning?"erp-error":"erp-success");
+   " berhasil dibuat: "+invoiceNumber+
+   (invoice.journal_number?" · Jurnal: "+invoice.journal_number:"");
+  message.className="invoice-message erp-success";
 
   closeInvoiceForm();
   await loadInvoiceHistory();
@@ -5938,60 +5986,40 @@ window.disburseLoan=async function(id){
   const loan=loanCache.find(x=>x.id===id);
   if(!loan||loan.status!=="disetujui")return;
 
+  const paymentMethodInput=prompt(
+    "Pilih sumber dana pencairan: tunai, transfer, atau qris.",
+    "tunai"
+  );
+  if(paymentMethodInput===null)return;
+  const paymentMethod=paymentMethodInput.trim().toLowerCase();
+  if(!["tunai","transfer","qris"].includes(paymentMethod)){
+    alert("Metode pencairan harus tunai, transfer, atau qris.");
+    return;
+  }
+
   if(!confirm(
     "Cairkan pinjaman "+loan.loan_number+
-    " sebesar "+formatRupiah(loan.principal_amount)+"?"
+    " sebesar "+formatRupiah(loan.principal_amount)+
+    " melalui "+paymentMethod+"?\n"+
+    "Jadwal angsuran dan jurnal pencairan akan dibuat otomatis."
   ))return;
 
   try{
-    const disbursedAt=new Date().toISOString();
-
-    const {data:updated,error:updateError}=await supabaseClient
-      .from("member_loans")
-      .update({
-        status:"dicairkan",
-        disbursed_by:window.currentUser.id,
-        disbursed_at:disbursedAt,
-        updated_at:disbursedAt
-      })
-      .eq("id",id)
-      .eq("status","disetujui")
-      .select()
-      .single();
-
-    if(updateError)throw updateError;
-
-    const schedule=calculateLoanSchedule(updated);
-
-    const records=schedule.map(item=>({
-      ...item,
-      loan_id:id
-    }));
-
-    const {error:scheduleError}=await supabaseClient
-      .from("loan_installments")
-      .insert(records);
-
-    if(scheduleError){
-      // Kembalikan status jika pembuatan jadwal gagal.
-      await supabaseClient
-        .from("member_loans")
-        .update({
-          status:"disetujui",
-          disbursed_by:null,
-          disbursed_at:null,
-          updated_at:new Date().toISOString()
-        })
-        .eq("id",id);
-
-      throw scheduleError;
-    }
+    const {data,error}=await supabaseClient.rpc("disburse_member_loan",{
+      p_loan_id:id,
+      p_payment_method:paymentMethod
+    });
+    if(error)throw error;
+    if(!data?.success)throw new Error("Pencairan pinjaman tidak berhasil.");
 
     await loadLoans();
     await viewLoanSchedule(id);
 
-    alert("Pinjaman berhasil dicairkan dan jadwal angsuran dibuat.");
-
+    alert(
+      "Pinjaman berhasil dicairkan.\n"+
+      "Jadwal angsuran: "+data.schedule_count+" bulan.\n"+
+      "Jurnal pencairan: "+(data.journal_number||"-")
+    );
   }catch(error){
     alert("Gagal mencairkan pinjaman: "+error.message);
   }
@@ -6260,7 +6288,8 @@ async function saveLoanInstallmentPayment(event) {
     if (error) throw error;
 
     message.textContent =
-      "Pembayaran berhasil disimpan. Nomor: " + paymentNumber;
+      "Pembayaran berhasil disimpan. Nomor: " + paymentNumber +
+      (data?.journal_number ? " · Jurnal: " + data.journal_number : "");
     message.style.color = "#16834e";
 
     selectedInstallmentForPayment = null;
@@ -8871,7 +8900,81 @@ body[data-kdmp-theme="dark"] .inventory-field input::placeholder,
 body[data-kdmp-theme="dark"] .inventory-search::placeholder{
   color:#626975!important;
 }
-body[data-kdmp-theme="dark"] .inventory-stock-closing{color:#166534!important}
+body[data-kdmp-theme="dark"] .inventory-card,
+body[data-kdmp-theme="dark"] .inventory-panel,
+body[data-kdmp-theme="dark"] .inventory-table-wrap,
+body[data-kdmp-theme="dark"] .toko-box,
+body[data-kdmp-theme="dark"] .toko-panel,
+body[data-kdmp-theme="dark"] .toko-stat-card,
+body[data-kdmp-theme="dark"] .toko-table-wrap,
+body[data-kdmp-theme="dark"] .sav-panel,
+body[data-kdmp-theme="dark"] .loan-panel,
+body[data-kdmp-theme="dark"] .loan-card,
+body[data-kdmp-theme="dark"] .arap-card,
+body[data-kdmp-theme="dark"] .arap-panel,
+body[data-kdmp-theme="dark"] .invoice-card,
+body[data-kdmp-theme="dark"] .invoice-form,
+body[data-kdmp-theme="dark"] .invoice-table-wrap,
+body[data-kdmp-theme="dark"] .monitoring-card,
+body[data-kdmp-theme="dark"] .monitoring-panel,
+body[data-kdmp-theme="dark"] .journal-detail-dialog,
+body[data-kdmp-theme="dark"] .ledger-filter,
+body[data-kdmp-theme="dark"] .report-filter{
+  background:#192338!important;color:#e9edf5!important;border-color:#303d55!important;
+}
+body[data-kdmp-theme="dark"] .inventory-card *,
+body[data-kdmp-theme="dark"] .inventory-panel *,
+body[data-kdmp-theme="dark"] .toko-box *,
+body[data-kdmp-theme="dark"] .toko-panel *,
+body[data-kdmp-theme="dark"] .sav-panel *,
+body[data-kdmp-theme="dark"] .loan-panel *,
+body[data-kdmp-theme="dark"] .loan-card *,
+body[data-kdmp-theme="dark"] .arap-card *,
+body[data-kdmp-theme="dark"] .arap-panel *,
+body[data-kdmp-theme="dark"] .invoice-card *,
+body[data-kdmp-theme="dark"] .invoice-form *,
+body[data-kdmp-theme="dark"] .monitoring-card *,
+body[data-kdmp-theme="dark"] .monitoring-panel *,
+body[data-kdmp-theme="dark"] .journal-detail-dialog *,
+body[data-kdmp-theme="dark"] .ledger-filter *,
+body[data-kdmp-theme="dark"] .report-filter *{
+  color:#e9edf5!important;
+}
+body[data-kdmp-theme="dark"] .inventory-table th,
+body[data-kdmp-theme="dark"] .inventory-table td,
+body[data-kdmp-theme="dark"] .toko-table th,
+body[data-kdmp-theme="dark"] .toko-table td,
+body[data-kdmp-theme="dark"] .loan-table th,
+body[data-kdmp-theme="dark"] .loan-table td,
+body[data-kdmp-theme="dark"] .sav-table th,
+body[data-kdmp-theme="dark"] .sav-table td,
+body[data-kdmp-theme="dark"] .arap-table th,
+body[data-kdmp-theme="dark"] .arap-table td{
+  background:#192338!important;color:#e9edf5!important;border-color:#303d55!important;
+}
+body[data-kdmp-theme="dark"] .inventory-field input,
+body[data-kdmp-theme="dark"] .inventory-field select,
+body[data-kdmp-theme="dark"] .inventory-field textarea,
+body[data-kdmp-theme="dark"] .inventory-search,
+body[data-kdmp-theme="dark"] .toko-box input,
+body[data-kdmp-theme="dark"] .toko-box select,
+body[data-kdmp-theme="dark"] .toko-box textarea,
+body[data-kdmp-theme="dark"] .loan-panel input,
+body[data-kdmp-theme="dark"] .loan-panel select,
+body[data-kdmp-theme="dark"] .loan-panel textarea,
+body[data-kdmp-theme="dark"] .sav-panel input,
+body[data-kdmp-theme="dark"] .sav-panel select,
+body[data-kdmp-theme="dark"] .arap-panel input,
+body[data-kdmp-theme="dark"] .arap-panel select,
+body[data-kdmp-theme="dark"] .arap-panel textarea{
+  background:#101a2b!important;color:#e9edf5!important;border-color:#3a4861!important;
+}
+body[data-kdmp-theme="dark"] .inventory-stock-opening,
+body[data-kdmp-theme="dark"] .inventory-stock-closing{color:#e9edf5!important}
+body[data-kdmp-theme="dark"] .inventory-btn.gray,
+body[data-kdmp-theme="dark"] .toko-btn.gray,
+body[data-kdmp-theme="dark"] .loan-btn.gray,
+body[data-kdmp-theme="dark"] .sav-btn.gray{background:#303d55!important;color:#e9edf5!important;border-color:#47536b!important}
 @media(max-width:700px){.settings-grid{grid-template-columns:1fr}.settings-card{padding:15px}}
 `;
 
@@ -9051,7 +9154,7 @@ function setupSettings(){
       try{
         const {data:memberships,error:membershipError}=await supabaseClient
           .from("cooperative_memberships").select("cooperative_id")
-          .eq("user_id",user.id).eq("role","manajer").eq("status","active").limit(2);
+          .eq("user_id",authenticatedUser.id).eq("role","manajer").eq("status","active").limit(2);
         if(membershipError)throw new Error("Gagal memeriksa akses Manajer: "+membershipError.message);
         if(!memberships?.length)throw new Error("Akun ini belum terdaftar sebagai Manajer aktif koperasi.");
         if(memberships.length>1)throw new Error("Akun Manajer terdaftar di lebih dari satu koperasi. Pemilihan koperasi perlu diaktifkan sebelum membuat pengguna.");
