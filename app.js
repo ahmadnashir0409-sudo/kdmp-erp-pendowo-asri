@@ -9573,7 +9573,7 @@ function initDabuAssistant(){
 
   function showGreeting(){
     messagesEl.replaceChildren();
-    addMessage("assistant","Halo! Aku DABU, asisten DAGBOEK. Aku bisa bantu menjelaskan stok, jurnal, transaksi, laporan, dan cara menggunakan modul. Aku hanya membaca data sesuai hak akses akun.");
+    addMessage("assistant","Halo! Aku DABU, asisten AI KDMP by Nusa Pixel. Aku bisa bantu menjelaskan stok, jurnal, transaksi, laporan, pengembangan usaha, Offtaker, UMKM, dan cara menggunakan modul. Aku hanya membaca data sesuai hak akses akun.");
   }
 
   async function loadHistory(){
