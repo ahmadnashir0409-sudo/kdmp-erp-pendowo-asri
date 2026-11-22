@@ -3187,10 +3187,14 @@ async function showInvoiceDetail(id) {
     <div id="invoiceDetailContent"></div>
    </div>`;
   document.body.appendChild(overlay);
+  const closeInvoiceDetailModal=()=>{
+   overlay.style.display="none";
+   document.body.classList.remove("invoice-detail-open");
+  };
   overlay.addEventListener("click",event=>{
-   if(event.target===overlay)overlay.style.display="none";
+   if(event.target===overlay)closeInvoiceDetailModal();
   });
-  overlay.querySelector("#invoiceDetailClose").addEventListener("click",()=>overlay.style.display="none");
+  overlay.querySelector("#invoiceDetailClose").addEventListener("click",closeInvoiceDetailModal);
  }
  overlay.style.display="flex";
  document.body.classList.add("invoice-detail-open");
