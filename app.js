@@ -9708,26 +9708,7 @@ function setupOfftakerModule(){
    <div class="offtaker-stat"><small>Pesanan Berjalan</small><strong id="offtakerOrderCount">—</strong></div>
    <div class="offtaker-stat"><small>Piutang Offtaker</small><strong id="offtakerReceivableTotal">—</strong></div>
   </div>
-  <div class="offtaker-panel">
-   <h3>Ruang Lingkup Modul</h3>
-   <p>Dashboard ini menjadi titik awal. Tahap berikutnya mengaktifkan data mitra, permintaan komoditas, penawaran dan kontrak, pesanan, pengiriman, serta tagihan dan pembayaran.</p>
-   <div class="offtaker-phase-grid">
-    <div class="offtaker-phase"><b>01 · Data Mitra</b><span>Identitas perusahaan, PIC, alamat, wilayah, dan komoditas yang diminati.</span></div>
-    <div class="offtaker-phase"><b>02 · Permintaan & Penawaran</b><span>Volume, spesifikasi mutu, harga, jadwal, dan masa berlaku penawaran.</span></div>
-    <div class="offtaker-phase"><b>03 · Kontrak & Pesanan</b><span>Kesepakatan harga, volume, termin pembayaran, dan jadwal pemenuhan.</span></div>
-    <div class="offtaker-phase"><b>04 · Pengiriman</b><span>Surat jalan, jumlah terkirim, penerimaan, dan selisih barang.</span></div>
-    <div class="offtaker-phase"><b>05 · Keuangan</b><span>Invoice, pembayaran, piutang, dan jurnal terintegrasi.</span></div>
-    <div class="offtaker-phase"><b>06 · Laporan</b><span>Penyerapan komoditas, omzet, performa mitra, dan piutang jatuh tempo.</span></div>
-   </div>
-  </div>
-  <div class="offtaker-panel">
-   <h3>Aktivitas Terbaru</h3>
-   <div class="offtaker-empty"><div style="font-size:30px">📋</div><strong>Belum ada aktivitas offtaker</strong><span>Aktivitas akan muncul setelah fitur data mitra dan transaksi diaktifkan.</span></div>
-  </div>
-  <div class="offtaker-panel">
-   <h3>Catatan Implementasi</h3>
-   <p>Fondasi tampilan sudah aktif. Angka belum diisi data contoh. Integrasi database dan transaksi akan dikerjakan setelah struktur data offtaker serta aturan aksesnya selesai diaudit.</p>
-  </div>`;
+`;
  modulePage.appendChild(content);
 }
 
