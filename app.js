@@ -1963,10 +1963,6 @@ async function setupBankReconciliation() {
       <div id="bankHistory">Memuat data...</div>
     </div>
 
-    <div class="erp-card">
-      <h3>Mutasi Rekening Periode Ini</h3>
-      <div id="bankMutations">Pilih akun dan periode terlebih dahulu.</div>
-    </div>
   `;
 
   document.getElementById("bankStart").value =
@@ -2315,11 +2311,61 @@ async function loadBankReconciliations() {
   });
 }
 
+function ensureBankMutationModal() {
+  let modal = document.getElementById("bankMutationModal");
+  if (modal) return modal;
+
+  const style = document.createElement("style");
+  style.id = "bankMutationModalStyle";
+  style.textContent = `
+    #bankMutationModal{position:fixed;inset:0;z-index:10050;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,23,42,.58);backdrop-filter:blur(3px)}
+    #bankMutationModal .bank-mutation-dialog{width:min(1120px,100%);max-height:min(88vh,900px);display:flex;flex-direction:column;background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.28);overflow:hidden}
+    #bankMutationModal .bank-mutation-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 20px;border-bottom:1px solid #ececec;background:#fff;flex-shrink:0}
+    #bankMutationModal .bank-mutation-head h3{margin:0;font-size:18px;color:#252525}
+    #bankMutationModal .bank-mutation-close{width:36px;height:36px;border:0;border-radius:9px;background:#f1f2f4;color:#333;font-size:23px;cursor:pointer}
+    #bankMutationModal .bank-mutation-body{padding:18px 20px;overflow:auto;overscroll-behavior:contain}
+    #bankMutationModal .bank-mutation-body .erp-card{margin:0 0 14px;box-shadow:none}
+    @media(max-width:600px){#bankMutationModal{padding:8px}#bankMutationModal .bank-mutation-dialog{max-height:94vh;border-radius:12px}#bankMutationModal .bank-mutation-head{padding:13px 14px}#bankMutationModal .bank-mutation-body{padding:12px}#bankMutationModal .bank-mutation-body .table-responsive{overflow-x:auto}}
+  `;
+  document.head.appendChild(style);
+
+  modal = document.createElement("div");
+  modal.id = "bankMutationModal";
+  modal.innerHTML = `
+    <div class="bank-mutation-dialog" role="dialog" aria-modal="true" aria-labelledby="bankMutationModalTitle">
+      <div class="bank-mutation-head">
+        <h3 id="bankMutationModalTitle">Rincian Mutasi Rekonsiliasi</h3>
+        <button type="button" class="bank-mutation-close" aria-label="Tutup">&times;</button>
+      </div>
+      <div class="bank-mutation-body" id="bankMutations">Memuat mutasi dan jurnal yang tersedia...</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const close = () => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  };
+  modal.querySelector(".bank-mutation-close").addEventListener("click", close);
+  modal.addEventListener("click", event => {
+    if (event.target === modal) close();
+  });
+  modal._closeBankMutationModal = close;
+  modal._escapeHandler = event => {
+    if (event.key === "Escape" && modal.style.display === "flex") close();
+  };
+  document.addEventListener("keydown", modal._escapeHandler);
+  return modal;
+}
+
 async function loadBankMutations(reconciliationId) {
   const client = window.kdmpSupabase;
+  const modal = ensureBankMutationModal();
   const target = document.getElementById("bankMutations");
   if (!target) return;
 
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
   target.innerHTML = "Memuat mutasi dan jurnal yang tersedia...";
 
   const { data: header, error: headerError } = await client
