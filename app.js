@@ -16,6 +16,7 @@ const modules = {
   simpanan: ["👥", "Simpanan & Pinjaman", "Pengelolaan simpanan anggota dan pinjaman."],
   persediaan: ["📦", "Persediaan Barang", "Pengelolaan stok masuk dan stok keluar."],
   offtaker: ["🤝", "Offtaker", "Pengelolaan mitra pembeli, permintaan komoditas, dan penyerapan hasil usaha KDMP."],
+  umkm: ["🏪", "UMKM", "Pendataan dan pengembangan usaha mikro, kecil, dan menengah desa."],
   bulanan: ["📅", "Laporan Bulanan", "Rekapitulasi keuangan setiap bulan."],
   monitoring: ["🛡️", "Monitoring Manajer", "Pemantauan aktivitas dan kondisi keuangan."],
   "rumus-kamus": ["📚", "Rumus Excel & Kamus Akuntansi", "Pusat referensi rumus spreadsheet dan istilah akuntansi."],
@@ -9459,11 +9460,11 @@ const KDMP_ROLE_PAGES={
   manajer:["dashboard",...Object.keys(modules)],
   admin_keuangan:[
     "dashboard","keuangan","coa","jurnal","buku-besar","laporan",
-    "utang-piutang","bank","invoice","simpanan","bulanan","offtaker","rumus-kamus"
+    "utang-piutang","bank","invoice","simpanan","bulanan","offtaker","umkm","rumus-kamus"
   ],
   kasir:["toko","rumus-kamus"],
   admin_gudang:["persediaan","rumus-kamus"],
-  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","offtaker","monitoring","rumus-kamus"]
+  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","offtaker","umkm","monitoring","rumus-kamus"]
 };
 
 function kdmpCanAccessPage(page,role=window.currentUser?.role){
