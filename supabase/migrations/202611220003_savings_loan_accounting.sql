@@ -1,5 +1,5 @@
 -- Automatic accounting journals for member savings and loan installment payments.
--- Existing historical rows are not rewritten; only new transactions create journals.
+-- Historical source rows remain immutable; missing savings journals are added as new audit records.
 
 INSERT INTO public.accounts (kode_akun,nama_akun,kategori,saldo_normal,aktif)
 VALUES ('2103','Simpanan Sukarela Anggota','kewajiban','kredit',true)
@@ -487,3 +487,75 @@ REVOKE ALL ON FUNCTION public.pay_loan_installment(text,uuid,numeric,text,text)
 GRANT EXECUTE ON FUNCTION public.pay_loan_installment(text,uuid,numeric,text,text)
   TO authenticated;
 
+
+
+-- Backfill missing savings journals as new audit records; source transactions
+-- are not updated or deleted. Historical loan journals remain pending review
+-- because the old disbursement flow did not record whether cash or bank was used.
+DO $backfill_savings$
+DECLARE
+  v_savings record;
+  v_cash_account uuid;
+  v_savings_account uuid;
+  v_savings_code text;
+  v_journal_id uuid;
+  v_journal_number text;
+  v_description text;
+BEGIN
+  FOR v_savings IN
+    SELECT s.*
+    FROM public.member_savings_transactions s
+    WHERE NOT EXISTS(
+      SELECT 1 FROM public.journal_entries je
+      WHERE je.keterangan LIKE '% - '||s.transaction_number
+    )
+    ORDER BY s.transaction_date,s.created_at
+  LOOP
+    v_savings_code := CASE v_savings.savings_type
+      WHEN 'pokok' THEN '3101'
+      WHEN 'wajib' THEN '3102'
+      WHEN 'sukarela' THEN '2103'
+      ELSE NULL
+    END;
+    IF v_savings_code IS NULL THEN
+      RAISE EXCEPTION 'Jenis simpanan % tidak memiliki pemetaan akun.',v_savings.savings_type;
+    END IF;
+
+    SELECT id INTO v_cash_account
+    FROM public.accounts
+    WHERE kode_akun=CASE WHEN v_savings.payment_method='tunai' THEN '1101' ELSE '1102' END
+      AND aktif=true LIMIT 1;
+    SELECT id INTO v_savings_account
+    FROM public.accounts
+    WHERE kode_akun=v_savings_code AND aktif=true LIMIT 1;
+    IF v_cash_account IS NULL OR v_savings_account IS NULL THEN
+      RAISE EXCEPTION 'Akun simpanan atau kas/bank tidak tersedia untuk transaksi %.',v_savings.transaction_number;
+    END IF;
+
+    v_journal_number := 'JRN-SMP-RPR-'||to_char(v_savings.transaction_date,'YYYYMMDD')||'-'||
+      upper(substr(replace(gen_random_uuid()::text,'-',''),1,8));
+    v_description := 'Jurnal simpanan '||v_savings.savings_type||' '||
+      v_savings.transaction_type||' - '||v_savings.transaction_number;
+
+    INSERT INTO public.journal_entries(nomor_jurnal,tanggal,keterangan,status,created_by)
+    VALUES(v_journal_number,v_savings.transaction_date::date,v_description,'draft',v_savings.created_by)
+    RETURNING id INTO v_journal_id;
+
+    IF v_savings.transaction_type='setoran' THEN
+      INSERT INTO public.journal_lines(journal_id,account_id,keterangan,debit,kredit)
+      VALUES
+        (v_journal_id,v_cash_account,'Penerimaan simpanan',v_savings.amount,0),
+        (v_journal_id,v_savings_account,'Penambahan saldo simpanan anggota',0,v_savings.amount);
+    ELSIF v_savings.transaction_type='penarikan' THEN
+      INSERT INTO public.journal_lines(journal_id,account_id,keterangan,debit,kredit)
+      VALUES
+        (v_journal_id,v_savings_account,'Penarikan saldo simpanan anggota',v_savings.amount,0),
+        (v_journal_id,v_cash_account,'Pengeluaran penarikan simpanan',0,v_savings.amount);
+    ELSE
+      RAISE EXCEPTION 'Jenis transaksi simpanan % tidak valid.',v_savings.transaction_type;
+    END IF;
+
+    UPDATE public.journal_entries SET status='posted' WHERE id=v_journal_id;
+  END LOOP;
+END;
+$backfill_savings$;
