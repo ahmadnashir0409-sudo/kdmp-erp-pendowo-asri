@@ -60,3 +60,30 @@ Enam migration telah diterapkan ke database produksi setelah diuji dalam transak
 3. Selesaikan jurnal simpanan/pinjaman dan invoice dengan pemetaan akun yang benar.
 4. Benahi dashboard, pengaturan profil koperasi, dan fondasi multi-koperasi.
 5. Tambahkan tutup buku, audit trail, dan regression tests lintas modul.
+
+
+## Master Testing Checklist — Regression Pass 22 November 2026
+
+The following checks were executed against the active Supabase schema using explicit SQL transactions followed by ROLLBACK. No production business rows were changed by these regression tests.
+
+### Verified in rollback tests
+- POS cancellation RPC: first cancellation sets status to `dibatalkan`, returns stock once, and creates one balanced reversing journal. A second cancellation is rejected. Original sale journal remains posted and unchanged.
+- Inventory: movement trigger overwrites caller-supplied stock snapshots and updates `current_stock`; legacy `stock` is not used as the stock authority. `penyesuaian_masuk` and `penyesuaian_keluar` work, stock is restored after paired test movements, and a negative-stock movement is rejected. Current UI low-stock predicate is `current_stock <= minimum_stock` (5 current products meet it).
+- Manual journal reversal: creates a new balanced posted journal, preserves the original journal, rejects duplicate reversals, and blocks POS/invoice/savings/loan journals from being reversed outside their source module.
+- Invoice: proposed RPC creates invoice header, line items, and journal together. Success test produced all three; a forced journal-account failure left no invoice header or items. Backfill test found 5/5 invoices would have automatic journals after repairing the two missing ones.
+- Savings/loans: rollback test verified automatic savings and installment journals, a loan disbursement journal, a 12-row installment schedule, principal/service allocation, and duplicate-disbursement rejection. The savings backfill test found the existing savings transaction can be journaled without changing its source row.
+- JavaScript syntax check passed after the application changes.
+
+### Code changes prepared on branch
+- Login handler now catches network/auth exceptions and always restores the submit button; live sign-in still requires an authorized user session to test.
+- Journal history gains a manager-only manual reversal action backed by an immutable reversal RPC.
+- Invoice save is moved to one atomic RPC.
+- Loan disbursement is moved to one atomic RPC, requires an explicit source method (cash/transfer/QRIS), creates the schedule and journal together.
+- Dark-mode overrides now cover inventory, POS, savings/loans, AR/AP, invoice, monitoring, and journal detail surfaces; visual confirmation on a real browser/device remains pending.
+- Invite-user membership lookup now uses the authenticated Supabase user ID.
+
+### Production deployment and remaining historical reconciliation
+- The new migrations are not yet applied to production; the rollback tests above left production unchanged.
+- The existing loan `PJM-1794893609971` has principal `Rp1.200.000`, disbursed on 17 November 2026, but the previous UI did not store whether the source was cash or bank. Its existing `Rp100.000` installment payment also has no journal. Do not backfill these loan journals until the historical disbursement source is confirmed.
+- The invoice migration backfills the two missing invoice journals as new audit records; it does not edit invoice rows.
+- The savings migration backfills the missing savings journal as a new audit record; it does not edit the savings transaction row.
