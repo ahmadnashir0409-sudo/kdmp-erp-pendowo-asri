@@ -195,3 +195,57 @@ REVOKE ALL ON FUNCTION public.create_invoice_with_items(jsonb,jsonb)
   FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.create_invoice_with_items(jsonb,jsonb)
   TO authenticated;
+
+
+-- Repair missing invoice journals without changing invoice/payment history.
+DO $backfill$
+DECLARE
+  v_invoice record;
+  v_debit_account uuid;
+  v_credit_account uuid;
+  v_journal_id uuid;
+  v_journal_number text;
+  v_description text;
+BEGIN
+  FOR v_invoice IN
+    SELECT i.*
+    FROM public.invoices i
+    WHERE i.total>0
+      AND NOT EXISTS(
+        SELECT 1 FROM public.journal_entries je
+        WHERE je.keterangan='Jurnal otomatis invoice '||i.invoice_number
+      )
+    ORDER BY i.issue_date,i.created_at
+  LOOP
+    IF v_invoice.invoice_type='penjualan' THEN
+      SELECT id INTO v_debit_account FROM public.accounts WHERE kode_akun='1105' AND aktif=true LIMIT 1;
+      SELECT id INTO v_credit_account FROM public.accounts WHERE kode_akun='4101' AND aktif=true LIMIT 1;
+    ELSIF v_invoice.invoice_type='pembelian' THEN
+      SELECT id INTO v_debit_account FROM public.accounts WHERE kode_akun='1104' AND aktif=true LIMIT 1;
+      SELECT id INTO v_credit_account FROM public.accounts WHERE kode_akun='2101' AND aktif=true LIMIT 1;
+    ELSE
+      RAISE EXCEPTION 'Jenis invoice % tidak dikenali untuk backfill jurnal.',v_invoice.invoice_number;
+    END IF;
+
+    IF v_debit_account IS NULL OR v_credit_account IS NULL THEN
+      RAISE EXCEPTION 'Akun jurnal invoice % tidak tersedia atau tidak aktif.',v_invoice.invoice_number;
+    END IF;
+
+    v_description := 'Jurnal otomatis invoice '||v_invoice.invoice_number;
+    v_journal_number :=
+      'JU-INV-RPR-'||to_char(COALESCE(v_invoice.issue_date,CURRENT_DATE),'YYYYMMDD')||'-'||
+      upper(substr(replace(gen_random_uuid()::text,'-',''),1,8));
+
+    INSERT INTO public.journal_entries(nomor_jurnal,tanggal,keterangan,status,created_by)
+    VALUES(v_journal_number,COALESCE(v_invoice.issue_date,CURRENT_DATE),v_description,'draft',v_invoice.created_by)
+    RETURNING id INTO v_journal_id;
+
+    INSERT INTO public.journal_lines(journal_id,account_id,keterangan,debit,kredit)
+    VALUES
+      (v_journal_id,v_debit_account,v_description,v_invoice.total,0),
+      (v_journal_id,v_credit_account,v_description,0,v_invoice.total);
+
+    UPDATE public.journal_entries SET status='posted' WHERE id=v_journal_id;
+  END LOOP;
+END;
+$backfill$;
