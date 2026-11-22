@@ -15,6 +15,7 @@ const modules = {
   toko: ["🛒", "Transaksi Toko", "Pencatatan penjualan dan transaksi toko."],
   simpanan: ["👥", "Simpanan & Pinjaman", "Pengelolaan simpanan anggota dan pinjaman."],
   persediaan: ["📦", "Persediaan Barang", "Pengelolaan stok masuk dan stok keluar."],
+  offtaker: ["🤝", "Offtaker", "Pengelolaan mitra pembeli, permintaan komoditas, dan penyerapan hasil usaha KDMP."],
   bulanan: ["📅", "Laporan Bulanan", "Rekapitulasi keuangan setiap bulan."],
   monitoring: ["🛡️", "Monitoring Manajer", "Pemantauan aktivitas dan kondisi keuangan."],
   "rumus-kamus": ["📚", "Rumus Excel & Kamus Akuntansi", "Pusat referensi rumus spreadsheet dan istilah akuntansi."],
@@ -9412,11 +9413,11 @@ const KDMP_ROLE_PAGES={
   manajer:["dashboard",...Object.keys(modules)],
   admin_keuangan:[
     "dashboard","keuangan","coa","jurnal","buku-besar","laporan",
-    "utang-piutang","bank","invoice","simpanan","bulanan","rumus-kamus"
+    "utang-piutang","bank","invoice","simpanan","bulanan","offtaker","rumus-kamus"
   ],
   kasir:["toko","rumus-kamus"],
   admin_gudang:["persediaan","rumus-kamus"],
-  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","monitoring","rumus-kamus"]
+  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","offtaker","monitoring","rumus-kamus"]
 };
 
 function kdmpCanAccessPage(page,role=window.currentUser?.role){
@@ -9613,3 +9614,85 @@ function initDabuAssistant(){
     if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();form.requestSubmit();}
   });
 }
+
+
+/* =====================================================
+   MODUL OFFTAKER — TAHAP 1: FONDASI & DASHBOARD
+   KDMP BY NUSA PIXEL
+   ===================================================== */
+const offtakerStyle=document.createElement("style");
+offtakerStyle.textContent=`
+.offtaker-wrap{display:grid;gap:17px;margin-top:20px}
+.offtaker-intro{background:linear-gradient(135deg,#fff 0%,#fbf8f0 100%);border:1px solid #eee6d4;border-radius:13px;padding:20px}
+.offtaker-intro h3{margin:0 0 7px;color:#292929}
+.offtaker-intro p{margin:0;color:#737373;font-size:13px;line-height:1.6}
+.offtaker-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.offtaker-stat{background:#fff;border:1px solid #ececec;border-radius:12px;padding:16px;min-width:0}
+.offtaker-stat small{display:block;color:#777;font-size:12px;margin-bottom:9px}
+.offtaker-stat strong{display:block;font-size:22px;color:#292929}
+.offtaker-panel{background:#fff;border:1px solid #eaeaea;border-radius:12px;padding:19px}
+.offtaker-panel h3{margin:0 0 6px;font-size:16px}
+.offtaker-panel p{margin:0;color:#777;font-size:13px;line-height:1.55}
+.offtaker-phase-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:15px}
+.offtaker-phase{background:#fafafa;border:1px solid #eee;border-radius:10px;padding:14px}
+.offtaker-phase b{display:block;margin-bottom:6px;font-size:13px}
+.offtaker-phase span{display:block;color:#777;font-size:12px;line-height:1.5}
+.offtaker-empty{padding:24px 12px;text-align:center;color:#777}
+.offtaker-empty strong{display:block;color:#333;margin:8px 0 5px}
+@media(max-width:760px){.offtaker-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.offtaker-phase-grid{grid-template-columns:1fr}}
+`;
+document.head.appendChild(offtakerStyle);
+
+function setupOfftakerModule(){
+ const modulePage=document.getElementById("modulePage");
+ if(!modulePage)return;
+ let content=document.getElementById("offtakerContent");
+ if(content)return;
+ content=document.createElement("section");
+ content.id="offtakerContent";
+ content.className="page offtaker-wrap";
+ content.innerHTML=`
+  <div class="offtaker-intro">
+   <h3>🤝 Pusat Kemitraan & Penyerapan Komoditas</h3>
+   <p>Kelola hubungan KDMP dengan perusahaan, distributor, pabrik, pedagang besar, dan mitra pembeli lainnya. Modul ini dirancang untuk seluruh jenis komoditas, tidak terbatas pada hasil pertanian.</p>
+  </div>
+  <div class="offtaker-stats">
+   <div class="offtaker-stat"><small>Total Mitra Offtaker</small><strong id="offtakerPartnerCount">—</strong></div>
+   <div class="offtaker-stat"><small>Permintaan Aktif</small><strong id="offtakerRequestCount">—</strong></div>
+   <div class="offtaker-stat"><small>Pesanan Berjalan</small><strong id="offtakerOrderCount">—</strong></div>
+   <div class="offtaker-stat"><small>Piutang Offtaker</small><strong id="offtakerReceivableTotal">—</strong></div>
+  </div>
+  <div class="offtaker-panel">
+   <h3>Ruang Lingkup Modul</h3>
+   <p>Dashboard ini menjadi titik awal. Tahap berikutnya mengaktifkan data mitra, permintaan komoditas, penawaran dan kontrak, pesanan, pengiriman, serta tagihan dan pembayaran.</p>
+   <div class="offtaker-phase-grid">
+    <div class="offtaker-phase"><b>01 · Data Mitra</b><span>Identitas perusahaan, PIC, alamat, wilayah, dan komoditas yang diminati.</span></div>
+    <div class="offtaker-phase"><b>02 · Permintaan & Penawaran</b><span>Volume, spesifikasi mutu, harga, jadwal, dan masa berlaku penawaran.</span></div>
+    <div class="offtaker-phase"><b>03 · Kontrak & Pesanan</b><span>Kesepakatan harga, volume, termin pembayaran, dan jadwal pemenuhan.</span></div>
+    <div class="offtaker-phase"><b>04 · Pengiriman</b><span>Surat jalan, jumlah terkirim, penerimaan, dan selisih barang.</span></div>
+    <div class="offtaker-phase"><b>05 · Keuangan</b><span>Invoice, pembayaran, piutang, dan jurnal terintegrasi.</span></div>
+    <div class="offtaker-phase"><b>06 · Laporan</b><span>Penyerapan komoditas, omzet, performa mitra, dan piutang jatuh tempo.</span></div>
+   </div>
+  </div>
+  <div class="offtaker-panel">
+   <h3>Aktivitas Terbaru</h3>
+   <div class="offtaker-empty"><div style="font-size:30px">📋</div><strong>Belum ada aktivitas offtaker</strong><span>Aktivitas akan muncul setelah fitur data mitra dan transaksi diaktifkan.</span></div>
+  </div>
+  <div class="offtaker-panel">
+   <h3>Catatan Implementasi</h3>
+   <p>Fondasi tampilan sudah aktif. Angka belum diisi data contoh. Integrasi database dan transaksi akan dikerjakan setelah struktur data offtaker serta aturan aksesnya selesai diaudit.</p>
+  </div>`;
+ modulePage.appendChild(content);
+}
+
+const kdmpShowPageBeforeOfftaker=window.showPage;
+window.showPage=function(page,button){
+ const content=document.getElementById("offtakerContent");
+ if(content)content.style.display="none";
+ kdmpShowPageBeforeOfftaker(page,button);
+ if(page==="offtaker"){
+  setupOfftakerModule();
+  const panel=document.getElementById("offtakerContent");
+  if(panel)panel.style.display="grid";
+ }
+};
