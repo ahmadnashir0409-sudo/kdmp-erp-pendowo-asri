@@ -921,7 +921,7 @@ async function loadJournalHistory() {
     detailButton.addEventListener("click",()=>openJournalDetail(entry.id));
     actionCell.appendChild(detailButton);
 
-    const moduleManaged=/^(Penjualan toko KDMP |Jurnal otomatis invoice |Pembayaran invoice |Jurnal simpanan |Jurnal pembayaran angsuran )/.test(entry.keterangan||"");
+    const moduleManaged=/^(Penjualan toko KDMP |Pembalik penjualan toko |Jurnal otomatis invoice |Pembayaran invoice |Jurnal simpanan |Jurnal pembayaran angsuran |Jurnal pencairan pinjaman )/.test(entry.keterangan||"");
     if(window.currentUser?.role==="manajer"&&entry.status==="posted"&&!entry.reversal_of&&!reversedIds.has(entry.id)&&!moduleManaged){
       const reverseButton=document.createElement("button");
       reverseButton.type="button";
