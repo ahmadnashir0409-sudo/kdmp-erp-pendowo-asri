@@ -364,7 +364,7 @@ BEGIN
     RAISE EXCEPTION 'Data pinjaman tidak ditemukan.';
   END IF;
   IF v_loan.status <> 'disetujui' THEN
-    RAISE EXCEPTION 'Hanya pinjaman yang sudah disetujui yang dapat dicairkan.';
+    RAISE EXCEPTION 'Pinjaman tidak berstatus disetujui atau sudah pernah dicairkan.';
   END IF;
   IF EXISTS(SELECT 1 FROM public.loan_installments WHERE loan_id=p_loan_id) THEN
     RAISE EXCEPTION 'Jadwal angsuran sudah ada. Pencairan ulang ditolak.';
