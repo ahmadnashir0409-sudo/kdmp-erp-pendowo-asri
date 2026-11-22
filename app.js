@@ -5986,60 +5986,40 @@ window.disburseLoan=async function(id){
   const loan=loanCache.find(x=>x.id===id);
   if(!loan||loan.status!=="disetujui")return;
 
+  const paymentMethodInput=prompt(
+    "Pilih sumber dana pencairan: tunai, transfer, atau qris.",
+    "tunai"
+  );
+  if(paymentMethodInput===null)return;
+  const paymentMethod=paymentMethodInput.trim().toLowerCase();
+  if(!["tunai","transfer","qris"].includes(paymentMethod)){
+    alert("Metode pencairan harus tunai, transfer, atau qris.");
+    return;
+  }
+
   if(!confirm(
     "Cairkan pinjaman "+loan.loan_number+
-    " sebesar "+formatRupiah(loan.principal_amount)+"?"
+    " sebesar "+formatRupiah(loan.principal_amount)+
+    " melalui "+paymentMethod+"?\n"+
+    "Jadwal angsuran dan jurnal pencairan akan dibuat otomatis."
   ))return;
 
   try{
-    const disbursedAt=new Date().toISOString();
-
-    const {data:updated,error:updateError}=await supabaseClient
-      .from("member_loans")
-      .update({
-        status:"dicairkan",
-        disbursed_by:window.currentUser.id,
-        disbursed_at:disbursedAt,
-        updated_at:disbursedAt
-      })
-      .eq("id",id)
-      .eq("status","disetujui")
-      .select()
-      .single();
-
-    if(updateError)throw updateError;
-
-    const schedule=calculateLoanSchedule(updated);
-
-    const records=schedule.map(item=>({
-      ...item,
-      loan_id:id
-    }));
-
-    const {error:scheduleError}=await supabaseClient
-      .from("loan_installments")
-      .insert(records);
-
-    if(scheduleError){
-      // Kembalikan status jika pembuatan jadwal gagal.
-      await supabaseClient
-        .from("member_loans")
-        .update({
-          status:"disetujui",
-          disbursed_by:null,
-          disbursed_at:null,
-          updated_at:new Date().toISOString()
-        })
-        .eq("id",id);
-
-      throw scheduleError;
-    }
+    const {data,error}=await supabaseClient.rpc("disburse_member_loan",{
+      p_loan_id:id,
+      p_payment_method:paymentMethod
+    });
+    if(error)throw error;
+    if(!data?.success)throw new Error("Pencairan pinjaman tidak berhasil.");
 
     await loadLoans();
     await viewLoanSchedule(id);
 
-    alert("Pinjaman berhasil dicairkan dan jadwal angsuran dibuat.");
-
+    alert(
+      "Pinjaman berhasil dicairkan.\n"+
+      "Jadwal angsuran: "+data.schedule_count+" bulan.\n"+
+      "Jurnal pencairan: "+(data.journal_number||"-")
+    );
   }catch(error){
     alert("Gagal mencairkan pinjaman: "+error.message);
   }
@@ -6308,7 +6288,8 @@ async function saveLoanInstallmentPayment(event) {
     if (error) throw error;
 
     message.textContent =
-      "Pembayaran berhasil disimpan. Nomor: " + paymentNumber;
+      "Pembayaran berhasil disimpan. Nomor: " + paymentNumber +
+      (data?.journal_number ? " · Jurnal: " + data.journal_number : "");
     message.style.color = "#16834e";
 
     selectedInstallmentForPayment = null;
