@@ -3015,41 +3015,17 @@ async function saveInvoice(event) {
    created_by:window.currentUser.id
   };
 
-  const {data:invoice,error}=await supabaseClient
-   .from("invoices")
-   .insert(invoiceData)
-   .select("id")
-   .single();
-
-  if(error)throw error;
-
-  const itemRows=result.items.map(item=>({
-   invoice_id:invoice.id,
-   ...item
-  }));
-
-  const {error:itemError}=await supabaseClient
-   .from("invoice_items")
-   .insert(itemRows);
-
-  if(itemError){
-   await supabaseClient.from("invoices").delete().eq("id",invoice.id);
-   throw itemError;
-  }
-
-  // Buat jurnal otomatis setelah header dan rincian invoice berhasil tersimpan.
-  // RPC dibuat idempoten di database berdasarkan invoice_id.
-  let journalWarning="";
-  const {error:journalError}=await supabaseClient.rpc("record_invoice_journal",{
-   p_invoice_id:invoice.id
+  const {data:invoice,error}=await supabaseClient.rpc("create_invoice_with_items",{
+   p_invoice:invoiceData,
+   p_items:result.items
   });
-  if(journalError){
-   journalWarning=" Invoice tersimpan, tetapi jurnal otomatis belum berhasil dibuat: "+journalError.message;
-  }
+  if(error)throw error;
+  if(!invoice?.success)throw new Error("Invoice belum berhasil disimpan secara lengkap.");
 
   message.textContent=(isPurchase?"Invoice pembelian":"Invoice penjualan")+
-   " berhasil dibuat: "+invoiceNumber+journalWarning;
-  message.className="invoice-message "+(journalWarning?"erp-error":"erp-success");
+   " berhasil dibuat: "+invoiceNumber+
+   (invoice.journal_number?" · Jurnal: "+invoice.journal_number:"");
+  message.className="invoice-message erp-success";
 
   closeInvoiceForm();
   await loadInvoiceHistory();
