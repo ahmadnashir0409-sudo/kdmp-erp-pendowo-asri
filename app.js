@@ -3170,121 +3170,130 @@ async function submitInvoicePayment(invoiceId) {
 }
 
 async function showInvoiceDetail(id) {
- const panel=document.getElementById("invoiceDetailPanel");
- panel.style.display="block";
- panel.innerHTML="Memuat detail invoice...";
-
- const {data:invoice,error}=await supabaseClient
-  .from("invoices").select("*").eq("id",id).single();
-
- if(error){
-  panel.textContent="Gagal memuat invoice: "+error.message;
-  return;
- }
-
- const {data:items,error:itemError}=await supabaseClient
-  .from("invoice_items").select("*").eq("invoice_id",id);
-
- if(itemError){
-  panel.textContent="Gagal memuat rincian: "+itemError.message;
-  return;
- }
-
- const {data:payments,error:paymentError}=await supabaseClient
-  .from("invoice_payments")
-  .select("*")
-  .eq("invoice_id",id)
-  .order("payment_date",{ascending:false});
-
- const paymentRows=(payments||[]).map(payment=>`
-  <tr>
-   <td>${escapeHTML(payment.payment_date||"-")}</td>
-   <td>${escapeHTML(payment.payment_method||"-")}</td>
-   <td>${formatRupiah(payment.amount)}</td>
-   <td>${escapeHTML(payment.notes||"-")}</td>
-  </tr>
- `).join("");
-
- const rows=(items||[]).map(item=>`
-  <tr>
-   <td>${escapeHTML(item.description)}</td>
-   <td>${item.quantity} ${escapeHTML(item.unit||"")}</td>
-   <td>${formatRupiah(item.unit_price)}</td>
-   <td>${formatRupiah(item.line_total)}</td>
-  </tr>
- `).join("");
-
- panel.innerHTML=`
-  <div id="invoicePrintArea">
-   <div style="display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap">
-    <div>
-     <h2 style="color:#a71925;margin-bottom:5px">KDMP PENDOWO ASRI</h2>
-     <p>INVOICE / FAKTUR TAGIHAN</p>
+ let overlay=document.getElementById("invoiceDetailOverlay");
+ if(!overlay){
+  overlay=document.createElement("div");
+  overlay.id="invoiceDetailOverlay";
+  overlay.className="invoice-detail-overlay";
+  overlay.innerHTML=`
+   <div class="invoice-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="invoiceDetailTitle">
+    <div class="invoice-detail-head">
+     <div>
+      <h3 id="invoiceDetailTitle">Detail Invoice</h3>
+      <div id="invoiceDetailMessage" class="erp-muted">Memuat rincian invoice...</div>
+     </div>
+     <button type="button" class="invoice-detail-close" id="invoiceDetailClose">Tutup ✕</button>
     </div>
-    <div>
-     <h3>${escapeHTML(invoice.invoice_number)}</h3>
-     <p>Tanggal: ${escapeHTML(invoice.issue_date)}</p>
-     <p>Jatuh tempo: ${escapeHTML(invoice.due_date||"-")}</p>
-    </div>
-   </div>
-   <hr>
-   <h3>${invoice.invoice_type==="pembelian"?"Tagihan dari pemasok:":"Ditagihkan kepada:"}</h3>
-   <strong>${escapeHTML(invoice.invoice_type==="pembelian"?(invoice.supplier_name||invoice.customer_name):invoice.customer_name)}</strong>
-   <p>${escapeHTML(invoice.customer_address||"-")}</p>
-   <p>${escapeHTML(invoice.customer_phone||"-")}</p>
-   <div style="overflow-x:auto;margin-top:20px">
-    <table class="invoice-items">
-     <thead><tr><th>Barang / Jasa</th><th>Jumlah</th><th>Harga</th><th>Total</th></tr></thead>
-     <tbody>${rows}</tbody>
-    </table>
-   </div>
-   <div style="text-align:right;margin-top:20px;line-height:2">
-    Subtotal: ${formatRupiah(invoice.subtotal)}<br>
-    Diskon: ${formatRupiah(invoice.discount)}<br>
-    Pajak: ${formatRupiah(invoice.tax)}<br>
-    <strong style="font-size:20px">TOTAL: ${formatRupiah(invoice.total)}</strong><br>
-    Dibayar: ${formatRupiah(invoice.paid_amount)}<br>
-    <strong>Sisa Tagihan: ${formatRupiah(Math.max(0,Number(invoice.total)-Number(invoice.paid_amount||0)))}</strong><br>
-    <strong>Status: ${invoicePaymentStatus(invoice)==="lunas"?"Lunas":invoicePaymentStatus(invoice)==="dibayar_sebagian"?"Dibayar Sebagian":"Belum Dibayar"}</strong>
-   </div>
-   <p style="margin-top:25px">Catatan: ${escapeHTML(invoice.notes||"-")}</p>
-  </div>
-  <div class="invoice-payment-box no-print">
-   <h3>Riwayat Pembayaran</h3>
-   ${paymentError?`<p class="invoice-message erp-error">Gagal memuat riwayat pembayaran: ${escapeHTML(paymentError.message)}</p>`:""}
-   <div style="overflow-x:auto">
-    <table class="invoice-payment-table">
-     <thead><tr><th>Tanggal</th><th>Metode</th><th>Nominal</th><th>Catatan</th></tr></thead>
-     <tbody>${paymentRows||'<tr><td colspan="4">Belum ada pembayaran.</td></tr>'}</tbody>
-    </table>
-   </div>
-   ${invoicePaymentStatus(invoice)!=="lunas"?`
-    <h3 style="margin-top:20px">Catat Pembayaran</h3>
-    <div class="invoice-payment-grid">
-     <div><label>Nominal Pembayaran (Rp)</label><input id="invoicePaymentAmount" type="number" min="1" max="${Math.max(0,Number(invoice.total)-Number(invoice.paid_amount||0))}" step="1" placeholder="Masukkan nominal"></div>
-     <div><label>Tanggal Pembayaran</label><input id="invoicePaymentDate" type="date" value="${todayDate()}"></div>
-     <div><label>Metode Pembayaran</label><select id="invoicePaymentMethod"><option value="tunai">Tunai</option><option value="transfer">Transfer Bank</option><option value="qris">QRIS</option><option value="lainnya">Lainnya</option></select></div>
-     <div><label>Catatan</label><input id="invoicePaymentNotes" placeholder="Opsional"></div>
-    </div>
-    <div id="invoicePaymentMessage" class="invoice-message"></div>
-    <button class="invoice-action invoice-primary" id="invoicePaymentSaveButton" type="button" style="margin-top:12px">Simpan Pembayaran</button>
-   `:`<p class="invoice-message erp-success">Invoice sudah lunas.</p>`}
-  </div>
-  <div class="erp-actions no-print">
-   <button class="invoice-action invoice-primary" id="invoicePrintButton">Cetak Invoice</button>
-   <button class="invoice-action invoice-secondary" id="invoiceCloseDetail">Tutup</button>
-  </div>
- `;
-
- if(document.getElementById("invoicePaymentSaveButton")){
-  document.getElementById("invoicePaymentSaveButton").addEventListener("click",()=>submitInvoicePayment(id));
+    <div id="invoiceDetailContent"></div>
+   </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click",event=>{
+   if(event.target===overlay)overlay.style.display="none";
+  });
+  overlay.querySelector("#invoiceDetailClose").addEventListener("click",()=>overlay.style.display="none");
  }
- document.getElementById("invoicePrintButton").addEventListener("click",()=>window.print());
- document.getElementById("invoiceCloseDetail").addEventListener("click",()=>{
-  panel.style.display="none";
- });
+ overlay.style.display="flex";
+ document.body.classList.add("invoice-detail-open");
+ const message=document.getElementById("invoiceDetailMessage");
+ const content=document.getElementById("invoiceDetailContent");
+ message.textContent="Memuat rincian invoice...";
+ content.innerHTML='<div class="invoice-message">Mengambil data invoice...</div>';
 
- panel.scrollIntoView({behavior:"smooth"});
+ try{
+  const [{data:invoice,error},{data:items,error:itemError},{data:payments,error:paymentError}]=await Promise.all([
+   supabaseClient.from("invoices").select("*").eq("id",id).single(),
+   supabaseClient.from("invoice_items").select("*").eq("invoice_id",id),
+   supabaseClient.from("invoice_payments").select("*").eq("invoice_id",id).order("payment_date",{ascending:false})
+  ]);
+  if(error)throw error;
+  if(itemError)throw itemError;
+
+  const paymentRows=(payments||[]).map(payment=>`
+   <tr>
+    <td>${escapeHTML(payment.payment_date||"-")}</td>
+    <td>${escapeHTML(payment.payment_method||"-")}</td>
+    <td>${formatRupiah(payment.amount)}</td>
+    <td>${escapeHTML(payment.notes||"-")}</td>
+   </tr>`).join("");
+
+  const rows=(items||[]).map(item=>`
+   <tr>
+    <td>${escapeHTML(item.description||"-")}</td>
+    <td>${item.quantity} ${escapeHTML(item.unit||"")}</td>
+    <td>${formatRupiah(item.unit_price)}</td>
+    <td>${formatRupiah(item.line_total)}</td>
+   </tr>`).join("");
+
+  const paymentStatus=invoicePaymentStatus(invoice);
+  const remaining=Math.max(0,Number(invoice.total)-Number(invoice.paid_amount||0));
+  document.getElementById("invoiceDetailTitle").textContent="Detail Invoice · "+(invoice.invoice_number||"-");
+  message.textContent="Rincian invoice, pembayaran, dan status tagihan.";
+  content.innerHTML=`
+   <div id="invoicePrintArea" class="invoice-print-area">
+    <div class="invoice-print-header">
+     <div><h2>KDMP PENDOWO ASRI</h2><p>INVOICE / FAKTUR TAGIHAN</p></div>
+     <div><h3>${escapeHTML(invoice.invoice_number)}</h3><p>Tanggal: ${escapeHTML(invoice.issue_date)}</p><p>Jatuh tempo: ${escapeHTML(invoice.due_date||"-")}</p></div>
+    </div>
+    <hr>
+    <h3>${invoice.invoice_type==="pembelian"?"Tagihan dari pemasok:":"Ditagihkan kepada:"}</h3>
+    <strong>${escapeHTML(invoice.invoice_type==="pembelian"?(invoice.supplier_name||invoice.customer_name):(invoice.customer_name||"-"))}</strong>
+    <p>${escapeHTML(invoice.customer_address||"-")}</p>
+    <p>${escapeHTML(invoice.customer_phone||"-")}</p>
+    <div class="invoice-detail-table-wrap">
+     <table class="invoice-items">
+      <thead><tr><th>Barang / Jasa</th><th>Jumlah</th><th>Harga</th><th>Total</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="4">Tidak ada rincian barang.</td></tr>'}</tbody>
+     </table>
+    </div>
+    <div class="invoice-detail-totals">
+     Subtotal: ${formatRupiah(invoice.subtotal)}<br>
+     Diskon: ${formatRupiah(invoice.discount)}<br>
+     Pajak: ${formatRupiah(invoice.tax)}<br>
+     <strong class="invoice-detail-grand-total">TOTAL: ${formatRupiah(invoice.total)}</strong><br>
+     Dibayar: ${formatRupiah(invoice.paid_amount)}<br>
+     <strong>Sisa Tagihan: ${formatRupiah(remaining)}</strong><br>
+     <strong>Status: ${paymentStatus==="lunas"?"Lunas":paymentStatus==="dibayar_sebagian"?"Dibayar Sebagian":"Belum Dibayar"}</strong>
+    </div>
+    <p class="invoice-detail-notes">Catatan: ${escapeHTML(invoice.notes||"-")}</p>
+   </div>
+   <div class="invoice-payment-box no-print">
+    <h3>Riwayat Pembayaran</h3>
+    ${paymentError?`<p class="invoice-message erp-error">Gagal memuat riwayat pembayaran: ${escapeHTML(paymentError.message)}</p>`:""}
+    <div class="invoice-detail-table-wrap">
+     <table class="invoice-payment-table">
+      <thead><tr><th>Tanggal</th><th>Metode</th><th>Nominal</th><th>Catatan</th></tr></thead>
+      <tbody>${paymentRows||'<tr><td colspan="4">Belum ada pembayaran.</td></tr>'}</tbody>
+     </table>
+    </div>
+    ${paymentStatus!=="lunas"?`
+     <h3 class="invoice-payment-title">Catat Pembayaran</h3>
+     <div class="invoice-payment-grid">
+      <div><label>Nominal Pembayaran (Rp)</label><input id="invoicePaymentAmount" type="number" min="1" max="${remaining}" step="1" placeholder="Masukkan nominal"></div>
+      <div><label>Tanggal Pembayaran</label><input id="invoicePaymentDate" type="date" value="${todayDate()}"></div>
+      <div><label>Metode Pembayaran</label><select id="invoicePaymentMethod"><option value="tunai">Tunai</option><option value="transfer">Transfer Bank</option><option value="qris">QRIS</option><option value="lainnya">Lainnya</option></select></div>
+      <div><label>Catatan</label><input id="invoicePaymentNotes" placeholder="Opsional"></div>
+     </div>
+     <div id="invoicePaymentMessage" class="invoice-message"></div>
+     <button class="invoice-action invoice-primary" id="invoicePaymentSaveButton" type="button">Simpan Pembayaran</button>
+    `:'<p class="invoice-message erp-success">Invoice sudah lunas.</p>'}
+   </div>
+   <div class="erp-actions no-print invoice-detail-actions">
+    <button class="invoice-action invoice-primary" id="invoicePrintButton" type="button">Cetak Invoice</button>
+    <button class="invoice-action invoice-secondary" id="invoiceCloseDetail" type="button">Tutup</button>
+   </div>`;
+
+  if(document.getElementById("invoicePaymentSaveButton")){
+   document.getElementById("invoicePaymentSaveButton").addEventListener("click",()=>submitInvoicePayment(id));
+  }
+  document.getElementById("invoicePrintButton").addEventListener("click",()=>window.print());
+  document.getElementById("invoiceCloseDetail").addEventListener("click",()=>{
+   overlay.style.display="none";
+   document.body.classList.remove("invoice-detail-open");
+  });
+ }catch(error){
+  message.textContent="Gagal memuat detail invoice.";
+  content.innerHTML=`<p class="invoice-message erp-error">${escapeHTML(error.message||"Kesalahan tidak diketahui")}</p>`;
+ }
 }
 
 // Hubungkan menu Invoice ke navigasi yang sudah ada
