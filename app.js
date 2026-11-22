@@ -8239,7 +8239,7 @@ window.saveInventoryProduct=async function(){
 
 window.editInventoryProduct=function(id){
   supabaseClient.from("inventory_products")
-    .select("*")
+    .select("id,product_code,product_name,category,unit,purchase_price,selling_price,minimum_stock,notes,is_active")
     .eq("id",id)
     .single()
     .then(({data,error})=>{
@@ -8276,7 +8276,7 @@ async function loadInventoryProducts(){
 
   const {data,error}=await supabaseClient
     .from("inventory_products")
-    .select("*")
+    .select("id,product_code,product_name,category,unit,current_stock,purchase_price,selling_price,minimum_stock,is_active")
     .eq("is_active",true)
     .order("product_name");
 
@@ -8438,27 +8438,11 @@ window.saveInventoryMovement=async function(){
   button.textContent="Menyimpan...";
 
   try{
-    const {data:product,error:productError}=await supabaseClient
-      .from("inventory_products")
-      .select("id,current_stock,purchase_price")
-      .eq("id",productId)
-      .single();
-
-    if(productError)throw productError;
-
-    const stockBefore=Number(product.current_stock||0);
-    let stockAfter=stockBefore;
-
-    if(type==="masuk"||type==="penyesuaian_masuk"){
-      stockAfter=stockBefore+quantity;
-    }else{
-      stockAfter=stockBefore-quantity;
-    }
-
-    if(stockAfter<0){
-      throw new Error("Stok tidak mencukupi. Stok tersedia: "+stockBefore);
-    }
-
+    // Trigger database mengunci produk, memvalidasi ketersediaan,
+    // mengisi stock_before/stock_after yang aktual, memperbarui
+    // current_stock, dan menghitung harga beli rata-rata tertimbang.
+    // Jangan hitung saldo dari cache frontend atau menimpa harga beli
+    // setelah trigger selesai.
     const {data:movement,error:movementError}=await supabaseClient
       .from("inventory_movements")
       .insert({
@@ -8466,30 +8450,19 @@ window.saveInventoryMovement=async function(){
         product_id:productId,
         movement_type:type,
         quantity:quantity,
-        stock_before:stockBefore,
-        stock_after:stockAfter,
         unit_cost:cost,
         movement_date:date,
         reference_number:reference||null,
         notes:notes||null,
         created_by:window.currentUser?.id||null
       })
-      .select("id")
+      .select("id,stock_before,stock_after")
       .single();
 
     if(movementError)throw movementError;
 
-    // Trigger inventory_movements memperbarui current_stock.
-    // Di sini hanya harga beli yang perlu diperbarui secara terpisah.
-    if(type==="masuk"&&cost>0){
-      const {error:updatePriceError}=await supabaseClient
-        .from("inventory_products")
-        .update({purchase_price:cost})
-        .eq("id",productId);
-      if(updatePriceError){
-        throw new Error("Mutasi stok tercatat, tetapi pembaruan harga beli gagal: "+updatePriceError.message);
-      }
-    }
+    const stockBefore=Number(movement.stock_before);
+    const stockAfter=Number(movement.stock_after);
 
     message.textContent=
       "Mutasi berhasil disimpan. Stok berubah dari "+
