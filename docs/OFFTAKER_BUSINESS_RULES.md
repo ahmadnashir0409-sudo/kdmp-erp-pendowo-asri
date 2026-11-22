@@ -80,3 +80,13 @@ Sumber pemenuhan dicatat per item/pemenuhan agar asal barang dan harga perolehan
 - Perubahan status dan transaksi penting memiliki jejak audit.
 - Validasi hak akses mengikuti peran pengguna dan RLS.
 - Jangan melakukan perubahan database produksi atau data historis sebelum skema, migrasi, dan dampaknya diaudit.
+
+
+## 9. Standar tampilan riwayat dan detail
+
+- Setiap daftar riwayat transaksi/dokumen wajib menyediakan kolom **Aksi** dengan tindakan **Lihat** atau **Detail**.
+- Detail dibuka di tampilan depan (modal/dialog), bukan disisipkan jauh di bawah tabel atau halaman.
+- Modal detail menampilkan informasi lengkap dokumen terkait, termasuk item komoditas, volume, harga, status, pihak terkait, dan jejak proses yang relevan.
+- Modal dapat ditutup dengan tombol tutup dan klik area luar; pada perangkat mobile konten tetap nyaman dibaca dan tabel dapat digulir horizontal bila diperlukan.
+- Aksi detail bersifat baca/tinjau; perubahan data hanya melalui tindakan Edit atau proses khusus dengan hak akses yang sesuai.
+- Standar ini berlaku untuk riwayat mitra, permintaan, penawaran, kontrak, pesanan, pengadaan, pengiriman, invoice, dan pembayaran.
