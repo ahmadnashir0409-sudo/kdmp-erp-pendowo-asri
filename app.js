@@ -8191,7 +8191,7 @@ window.saveInventoryProduct=async function(){
       const {data:product,error}=await supabaseClient
         .from("inventory_products")
         .insert(payload)
-        .select()
+        .select("id")
         .single();
 
       if(error)throw error;
