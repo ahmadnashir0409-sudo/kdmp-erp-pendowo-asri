@@ -9826,7 +9826,7 @@ function renderOfftakerPartnerRows(){
   target.innerHTML=rows.map(p=>`
    <tr>
     <td><strong>${offtakerEscape(p.nama)}</strong><br><small>${offtakerEscape(p.kategori_mitra||"Mitra pembeli")}</small></td>
-    <td>${offtakerEscape(p.nama_pic||"-")}<br><small>${offtakerEscape(p.telepon||"-")}</small></td>
+    <td>${offtakerEscape(p.telepon||"-")}<br><small>${offtakerEscape(p.email||"-")}</small></td>
     <td>${offtakerEscape((p.komoditas_minat||[]).join(", ")||"Belum ditentukan")}</td>
     <td><span class="offtaker-status ${p.is_active===false?"offtaker-status-inactive":"offtaker-status-active"}">${p.is_active===false?"Nonaktif":"Aktif"}</span></td>
     <td><div class="offtaker-row-actions">
@@ -9861,7 +9861,6 @@ function showOfftakerPartnerDetail(id){
   <div class="offtaker-detail-grid">
    ${field("Nama Mitra",p.nama)}
    ${field("Kategori Mitra",p.kategori_mitra)}
-   ${field("Nama PIC",p.nama_pic)}
    ${field("Telepon",p.telepon)}
    ${field("Email",p.email)}
    ${field("Wilayah Layanan",p.wilayah_layanan)}
@@ -9879,17 +9878,16 @@ function showOfftakerPartnerForm(id=null){
  const modal=openOfftakerPartnerModal(p?"Edit Mitra Offtaker":"Tambah Mitra Offtaker",`
   <form id="offtakerPartnerForm">
    <div class="offtaker-form-grid">
-    <div class="offtaker-form-field"><label>Nama Perusahaan / Mitra *</label><input name="nama" required maxlength="180" value="${value("nama")}" placeholder="Nama perusahaan atau pembeli"></div>
+    <div class="offtaker-form-field"><label>Nama Mitra *</label><input name="nama" required maxlength="180" value="${value("nama")}" placeholder="Masukkan nama mitra"></div>
     <div class="offtaker-form-field"><label>Kategori Mitra</label><select name="kategori_mitra">
      <option value="">Pilih kategori</option>
      ${["Perusahaan","Distributor","Pabrik","Pedagang Besar","Koperasi","Lembaga Pemerintah","Lainnya"].map(v=>'<option '+(p?.kategori_mitra===v?'selected':'')+'>'+v+'</option>').join("")}
     </select></div>
-    <div class="offtaker-form-field"><label>Nama PIC</label><input name="nama_pic" maxlength="120" value="${value("nama_pic")}" placeholder="Nama penanggung jawab"></div>
     <div class="offtaker-form-field"><label>Nomor Telepon / WhatsApp</label><input name="telepon" maxlength="40" value="${value("telepon")}" placeholder="08xxxxxxxxxx"></div>
-    <div class="offtaker-form-field"><label>Email</label><input name="email" type="email" maxlength="180" value="${value("email")}" placeholder="email@perusahaan.com"></div>
-    <div class="offtaker-form-field"><label>Wilayah Layanan</label><input name="wilayah_layanan" maxlength="180" value="${value("wilayah_layanan")}" placeholder="Contoh: Lampung"></div>
+    <div class="offtaker-form-field"><label>Email (Opsional)</label><input name="email" type="email" maxlength="180" value="${value("email")}" placeholder="email@perusahaan.com"><span class="offtaker-form-help">Alamat surat elektronik untuk komunikasi atau dokumen resmi. Boleh dikosongkan.</span></div>
+    <div class="offtaker-form-field"><label>Wilayah Layanan (Opsional)</label><input name="wilayah_layanan" maxlength="180" value="${value("wilayah_layanan")}" placeholder="Contoh: Lampung"></div>
     <div class="offtaker-form-field full"><label>Komoditas yang Diminati</label><input name="komoditas_minat" value="${value("komoditas_minat")}" placeholder="Beras, jagung, minyak goreng"><span class="offtaker-form-help">Pisahkan beberapa komoditas dengan koma. Ini hanya preferensi mitra, bukan penambahan stok.</span></div>
-    <div class="offtaker-form-field full"><label>Alamat</label><textarea name="alamat" maxlength="1000" placeholder="Alamat kantor / gudang">${value("alamat")}</textarea></div>
+    <div class="offtaker-form-field full"><label>Alamat (Opsional)</label><textarea name="alamat" maxlength="1000" placeholder="Alamat kantor / gudang">${value("alamat")}</textarea></div>
     <div class="offtaker-form-field full"><label>Catatan</label><textarea name="catatan" maxlength="2000" placeholder="Informasi tambahan tentang mitra">${value("catatan")}</textarea></div>
    </div>
    <div id="offtakerPartnerFormFeedback" class="offtaker-feedback" hidden></div>
@@ -9909,7 +9907,6 @@ function showOfftakerPartnerForm(id=null){
    jenis:"pelanggan",
    is_offtaker:true,
    kategori_mitra:String(fd.get("kategori_mitra")||"").trim()||null,
-   nama_pic:String(fd.get("nama_pic")||"").trim()||null,
    telepon:String(fd.get("telepon")||"").trim()||null,
    email:String(fd.get("email")||"").trim()||null,
    wilayah_layanan:String(fd.get("wilayah_layanan")||"").trim()||null,
@@ -9957,11 +9954,11 @@ function setupOfftakerPartnerRegistry(){
    <div class="offtaker-toolbar-actions">${offtakerCanManagePartners()?'<button type="button" class="offtaker-btn offtaker-btn-primary" id="offtakerAddPartner">+ Tambah Mitra</button>':''}</div>
   </div>
   <div class="offtaker-toolbar" style="margin-top:15px">
-   <input class="offtaker-search" id="offtakerPartnerSearch" type="search" placeholder="Cari nama, PIC, telepon, komoditas...">
+   <input class="offtaker-search" id="offtakerPartnerSearch" type="search" placeholder="Cari nama, telepon, email, komoditas...">
    <select class="offtaker-search" id="offtakerPartnerFilter" style="width:auto"><option value="aktif">Mitra Aktif</option><option value="nonaktif">Mitra Nonaktif</option><option value="semua">Semua Mitra</option></select>
   </div>
   <div class="offtaker-table-wrap"><table class="offtaker-table">
-   <thead><tr><th>Nama Mitra</th><th>Kontak PIC</th><th>Komoditas Diminati</th><th>Status</th><th>Aksi</th></tr></thead>
+   <thead><tr><th>Nama Mitra</th><th>Kontak</th><th>Komoditas Diminati</th><th>Status</th><th>Aksi</th></tr></thead>
    <tbody id="offtakerPartnerRows"><tr><td colspan="5">Memuat data...</td></tr></tbody>
   </table></div>
   <div class="offtaker-form-help" style="margin-top:10px">Tombol Lihat membuka detail mitra dalam modal. Mitra yang dinonaktifkan tidak dihapus dan riwayatnya tetap tersimpan.</div>`;
