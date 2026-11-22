@@ -90,12 +90,17 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM public.invoices i
     WHERE v_original.keterangan = 'Jurnal otomatis invoice ' || i.invoice_number
-  ) THEN
+  ) OR v_original.keterangan LIKE 'Pembayaran invoice %' THEN
     RAISE EXCEPTION 'Jurnal invoice harus ditangani melalui modul invoice.';
   END IF;
 
+  IF v_original.keterangan LIKE 'Pembalik penjualan toko %' THEN
+    RAISE EXCEPTION 'Jurnal pembalik POS tidak boleh dibalik secara manual.';
+  END IF;
+
   IF v_original.keterangan LIKE 'Jurnal simpanan %'
-     OR v_original.keterangan LIKE 'Jurnal pembayaran angsuran %' THEN
+     OR v_original.keterangan LIKE 'Jurnal pembayaran angsuran %'
+     OR v_original.keterangan LIKE 'Jurnal pencairan pinjaman %' THEN
     RAISE EXCEPTION 'Jurnal simpanan/pinjaman harus dikoreksi melalui transaksi modul asal.';
   END IF;
 
