@@ -9742,3 +9742,271 @@ window.showPage=function(page,button){
   if(panel)panel.style.display="grid";
  }
 };
+
+
+/* =====================================================
+   OFFTAKER — DATA MITRA (TAHAP 1)
+   Menggunakan business_partners agar data mitra tidak terduplikasi.
+   ===================================================== */
+const offtakerPartnerCss=document.createElement("style");
+offtakerPartnerCss.textContent=`
+.offtaker-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.offtaker-toolbar-actions{display:flex;gap:9px;flex-wrap:wrap}
+.offtaker-btn{border:0;border-radius:9px;padding:10px 14px;font-weight:600;cursor:pointer}
+.offtaker-btn-primary{background:#9d202b;color:#fff}
+.offtaker-btn-secondary{background:#f1f2f4;color:#30343b}
+.offtaker-search{width:min(340px,100%);padding:10px 12px;border:1px solid #ddd;border-radius:9px;background:#fff;color:#222}
+.offtaker-table-wrap{overflow-x:auto;margin-top:14px}
+.offtaker-table{width:100%;border-collapse:collapse;min-width:720px}
+.offtaker-table th,.offtaker-table td{padding:11px 10px;text-align:left;border-bottom:1px solid #eee;font-size:13px;vertical-align:middle}
+.offtaker-table th{font-size:11px;text-transform:uppercase;color:#777;background:#fafafa}
+.offtaker-row-actions{display:flex;gap:6px;white-space:nowrap}
+.offtaker-action{border:0;border-radius:7px;padding:7px 9px;cursor:pointer;font-size:12px}
+.offtaker-action-view{background:#eef3ff;color:#254b8c}
+.offtaker-action-edit{background:#fff4df;color:#805500}
+.offtaker-action-disable{background:#fff0f0;color:#a51f2b}
+.offtaker-status{display:inline-block;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.offtaker-status-active{background:#e8f6ed;color:#237342}
+.offtaker-status-inactive{background:#f1f1f1;color:#666}
+#offtakerPartnerModal{position:fixed;inset:0;z-index:10080;display:none;align-items:center;justify-content:center;padding:14px;background:rgba(15,23,42,.6);backdrop-filter:blur(3px)}
+#offtakerPartnerModal .offtaker-dialog{width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;color:#252525;border-radius:15px;box-shadow:0 24px 80px rgba(0,0,0,.3)}
+#offtakerPartnerModal .offtaker-dialog-head{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 19px;background:#fff;border-bottom:1px solid #eee}
+#offtakerPartnerModal .offtaker-dialog-head h3{margin:0;font-size:17px}
+#offtakerPartnerModal .offtaker-dialog-body{padding:18px}
+.offtaker-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.offtaker-form-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.offtaker-form-field.full{grid-column:1/-1}
+.offtaker-form-field label{font-size:12px;font-weight:600;color:#555}
+.offtaker-form-field input,.offtaker-form-field select,.offtaker-form-field textarea{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #d9dce1;border-radius:8px;background:#fff;color:#222;font:inherit}
+.offtaker-form-field textarea{min-height:82px;resize:vertical}
+.offtaker-form-help{font-size:11px;color:#777}
+.offtaker-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.offtaker-detail-item{background:#f7f7f7;border-radius:9px;padding:11px}
+.offtaker-detail-item small{display:block;color:#777;margin-bottom:5px;font-size:11px}
+.offtaker-detail-item strong{font-size:13px;overflow-wrap:anywhere}
+.offtaker-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:17px}
+.offtaker-feedback{padding:10px 12px;border-radius:8px;background:#f5f6f7;color:#555;font-size:13px;margin-top:10px}
+.offtaker-feedback.error{background:#fff0f0;color:#a51f2b}
+@media(max-width:600px){.offtaker-form-grid,.offtaker-detail-grid{grid-template-columns:1fr}.offtaker-form-field.full{grid-column:auto}#offtakerPartnerModal{padding:7px;align-items:flex-end}#offtakerPartnerModal .offtaker-dialog{max-height:94vh;border-radius:14px 14px 9px 9px}#offtakerPartnerModal .offtaker-dialog-body{padding:14px}}
+`;
+document.head.appendChild(offtakerPartnerCss);
+
+let offtakerPartnerCache=[];
+let offtakerPartnerSearch="";
+let offtakerPartnerFilter="aktif";
+
+function offtakerCanManagePartners(){
+ return ["manajer","admin_keuangan"].includes(window.currentUser?.role);
+}
+function offtakerEscape(value){
+ return typeof escapeHTML==="function" ? escapeHTML(String(value??"")) : String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+}
+function ensureOfftakerPartnerModal(){
+ let modal=document.getElementById("offtakerPartnerModal");
+ if(modal)return modal;
+ modal=document.createElement("div");
+ modal.id="offtakerPartnerModal";
+ modal.innerHTML=`
+  <div class="offtaker-dialog" role="dialog" aria-modal="true" aria-labelledby="offtakerPartnerModalTitle">
+   <div class="offtaker-dialog-head"><h3 id="offtakerPartnerModalTitle">Data Mitra Offtaker</h3><button type="button" class="offtaker-btn offtaker-btn-secondary" id="offtakerPartnerModalClose">Tutup ✕</button></div>
+   <div class="offtaker-dialog-body" id="offtakerPartnerModalBody"></div>
+  </div>`;
+ document.body.appendChild(modal);
+ const close=()=>{modal.style.display="none";document.body.style.overflow="";};
+ modal.querySelector("#offtakerPartnerModalClose").addEventListener("click",close);
+ modal.addEventListener("click",event=>{if(event.target===modal)close();});
+ modal._close=close;
+ modal._escape=event=>{if(event.key==="Escape"&&modal.style.display==="flex")close();};
+ document.addEventListener("keydown",modal._escape);
+ return modal;
+}
+function openOfftakerPartnerModal(title,bodyHtml){
+ const modal=ensureOfftakerPartnerModal();
+ modal.querySelector("#offtakerPartnerModalTitle").textContent=title;
+ modal.querySelector("#offtakerPartnerModalBody").innerHTML=bodyHtml;
+ modal.style.display="flex";
+ document.body.style.overflow="hidden";
+ return modal;
+}
+function renderOfftakerPartnerRows(){
+ const target=document.getElementById("offtakerPartnerRows");
+ if(!target)return;
+ const needle=offtakerPartnerSearch.trim().toLowerCase();
+ const rows=offtakerPartnerCache.filter(p=>{
+  const active=p.is_active!==false;
+  if(offtakerPartnerFilter==="aktif"&&!active)return false;
+  if(offtakerPartnerFilter==="nonaktif"&&active)return false;
+  if(!needle)return true;
+  return [p.nama,p.nama_pic,p.telepon,p.email,p.alamat,p.kategori_mitra,...(p.komoditas_minat||[])].some(v=>String(v||"").toLowerCase().includes(needle));
+ });
+ if(!rows.length){
+  target.innerHTML='<tr><td colspan="5"><div class="offtaker-empty"><strong>Belum ada mitra yang cocok</strong><span>Tambahkan mitra baru atau ubah kata pencarian/filter.</span></div></td></tr>';
+ }else{
+  target.innerHTML=rows.map(p=>`
+   <tr>
+    <td><strong>${offtakerEscape(p.nama)}</strong><br><small>${offtakerEscape(p.kategori_mitra||"Mitra pembeli")}</small></td>
+    <td>${offtakerEscape(p.nama_pic||"-")}<br><small>${offtakerEscape(p.telepon||"-")}</small></td>
+    <td>${offtakerEscape((p.komoditas_minat||[]).join(", ")||"Belum ditentukan")}</td>
+    <td><span class="offtaker-status ${p.is_active===false?"offtaker-status-inactive":"offtaker-status-active"}">${p.is_active===false?"Nonaktif":"Aktif"}</span></td>
+    <td><div class="offtaker-row-actions">
+     <button type="button" class="offtaker-action offtaker-action-view" data-offtaker-action="view" data-id="${p.id}">Lihat</button>
+     ${offtakerCanManagePartners()?'<button type="button" class="offtaker-action offtaker-action-edit" data-offtaker-action="edit" data-id="'+p.id+'">Edit</button>':''}
+     ${offtakerCanManagePartners()&&p.is_active!==false?'<button type="button" class="offtaker-action offtaker-action-disable" data-offtaker-action="disable" data-id="'+p.id+'">Nonaktifkan</button>':''}
+    </div></td>
+   </tr>`).join("");
+ }
+ const count=document.getElementById("offtakerPartnerCount");
+ if(count)count.textContent=offtakerPartnerCache.filter(p=>p.is_active!==false).length;
+}
+async function loadOfftakerPartners(){
+ const target=document.getElementById("offtakerPartnerRows");
+ if(target)target.innerHTML='<tr><td colspan="5">Memuat data mitra...</td></tr>';
+ const {data,error}=await supabaseClient.from("business_partners")
+  .select("id,nama,jenis,telepon,alamat,created_at,is_offtaker,nama_pic,email,kategori_mitra,wilayah_layanan,komoditas_minat,catatan,is_active")
+  .eq("is_offtaker",true).order("nama",{ascending:true});
+ if(error){
+  if(target)target.innerHTML='<tr><td colspan="5"><div class="offtaker-feedback error">Gagal memuat data mitra: '+offtakerEscape(error.message)+'</div></td></tr>';
+  console.error("Load Offtaker partners:",error);
+  return;
+ }
+ offtakerPartnerCache=data||[];
+ renderOfftakerPartnerRows();
+}
+function showOfftakerPartnerDetail(id){
+ const p=offtakerPartnerCache.find(x=>x.id===id);
+ if(!p)return;
+ const field=(label,value)=>'<div class="offtaker-detail-item"><small>'+label+'</small><strong>'+offtakerEscape(value||"-")+'</strong></div>';
+ openOfftakerPartnerModal("Detail Mitra Offtaker",`
+  <div class="offtaker-detail-grid">
+   ${field("Nama Mitra",p.nama)}
+   ${field("Kategori Mitra",p.kategori_mitra)}
+   ${field("Nama PIC",p.nama_pic)}
+   ${field("Telepon",p.telepon)}
+   ${field("Email",p.email)}
+   ${field("Wilayah Layanan",p.wilayah_layanan)}
+   ${field("Komoditas Diminati",(p.komoditas_minat||[]).join(", "))}
+   ${field("Status",p.is_active===false?"Nonaktif":"Aktif")}
+   <div class="offtaker-detail-item" style="grid-column:1/-1"><small>Alamat</small><strong>${offtakerEscape(p.alamat||"-")}</strong></div>
+   <div class="offtaker-detail-item" style="grid-column:1/-1"><small>Catatan</small><strong>${offtakerEscape(p.catatan||"-")}</strong></div>
+  </div>`);
+}
+function showOfftakerPartnerForm(id=null){
+ if(!offtakerCanManagePartners()){alert("Akun ini hanya dapat melihat data mitra.");return;}
+ const p=id?offtakerPartnerCache.find(x=>x.id===id):null;
+ if(id&&!p)return;
+ const value=(key)=>offtakerEscape(p?.[key]??"");
+ const modal=openOfftakerPartnerModal(p?"Edit Mitra Offtaker":"Tambah Mitra Offtaker",`
+  <form id="offtakerPartnerForm">
+   <div class="offtaker-form-grid">
+    <div class="offtaker-form-field"><label>Nama Perusahaan / Mitra *</label><input name="nama" required maxlength="180" value="${value("nama")}" placeholder="Nama perusahaan atau pembeli"></div>
+    <div class="offtaker-form-field"><label>Kategori Mitra</label><select name="kategori_mitra">
+     <option value="">Pilih kategori</option>
+     ${["Perusahaan","Distributor","Pabrik","Pedagang Besar","Koperasi","Lembaga Pemerintah","Lainnya"].map(v=>'<option '+(p?.kategori_mitra===v?'selected':'')+'>'+v+'</option>').join("")}
+    </select></div>
+    <div class="offtaker-form-field"><label>Nama PIC</label><input name="nama_pic" maxlength="120" value="${value("nama_pic")}" placeholder="Nama penanggung jawab"></div>
+    <div class="offtaker-form-field"><label>Nomor Telepon / WhatsApp</label><input name="telepon" maxlength="40" value="${value("telepon")}" placeholder="08xxxxxxxxxx"></div>
+    <div class="offtaker-form-field"><label>Email</label><input name="email" type="email" maxlength="180" value="${value("email")}" placeholder="email@perusahaan.com"></div>
+    <div class="offtaker-form-field"><label>Wilayah Layanan</label><input name="wilayah_layanan" maxlength="180" value="${value("wilayah_layanan")}" placeholder="Contoh: Lampung"></div>
+    <div class="offtaker-form-field full"><label>Komoditas yang Diminati</label><input name="komoditas_minat" value="${value("komoditas_minat")}" placeholder="Beras, jagung, minyak goreng"><span class="offtaker-form-help">Pisahkan beberapa komoditas dengan koma. Ini hanya preferensi mitra, bukan penambahan stok.</span></div>
+    <div class="offtaker-form-field full"><label>Alamat</label><textarea name="alamat" maxlength="1000" placeholder="Alamat kantor / gudang">${value("alamat")}</textarea></div>
+    <div class="offtaker-form-field full"><label>Catatan</label><textarea name="catatan" maxlength="2000" placeholder="Informasi tambahan tentang mitra">${value("catatan")}</textarea></div>
+   </div>
+   <div id="offtakerPartnerFormFeedback" class="offtaker-feedback" hidden></div>
+   <div class="offtaker-dialog-actions">
+    <button type="button" class="offtaker-btn offtaker-btn-secondary" id="offtakerPartnerCancel">Batal</button>
+    <button type="submit" class="offtaker-btn offtaker-btn-primary" id="offtakerPartnerSave">Simpan Mitra</button>
+   </div>
+  </form>`);
+ modal.querySelector("#offtakerPartnerCancel").addEventListener("click",()=>modal._close());
+ modal.querySelector("#offtakerPartnerForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=event.currentTarget;
+  const fd=new FormData(form);
+  const commodities=String(fd.get("komoditas_minat")||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const payload={
+   nama:String(fd.get("nama")||"").trim(),
+   jenis:"pelanggan",
+   is_offtaker:true,
+   kategori_mitra:String(fd.get("kategori_mitra")||"").trim()||null,
+   nama_pic:String(fd.get("nama_pic")||"").trim()||null,
+   telepon:String(fd.get("telepon")||"").trim()||null,
+   email:String(fd.get("email")||"").trim()||null,
+   wilayah_layanan:String(fd.get("wilayah_layanan")||"").trim()||null,
+   komoditas_minat:commodities,
+   alamat:String(fd.get("alamat")||"").trim()||null,
+   catatan:String(fd.get("catatan")||"").trim()||null
+  };
+  const save=modal.querySelector("#offtakerPartnerSave");
+  const feedback=modal.querySelector("#offtakerPartnerFormFeedback");
+  save.disabled=true;save.textContent="Menyimpan...";
+  try{
+   let result;
+   if(p){
+    result=await supabaseClient.from("business_partners").update(payload).eq("id",p.id).select("id").single();
+   }else{
+    result=await supabaseClient.from("business_partners").insert(payload).select("id").single();
+   }
+   if(result.error)throw result.error;
+   await loadOfftakerPartners();
+   modal._close();
+  }catch(error){
+   feedback.hidden=false;feedback.className="offtaker-feedback error";
+   feedback.textContent="Gagal menyimpan mitra: "+(error.message||"Kesalahan tidak diketahui");
+   save.disabled=false;save.textContent="Simpan Mitra";
+  }
+ });
+}
+async function deactivateOfftakerPartner(id){
+ if(!offtakerCanManagePartners())return;
+ const p=offtakerPartnerCache.find(x=>x.id===id);
+ if(!p||!confirm("Nonaktifkan mitra "+p.nama+"? Data dan riwayatnya tetap disimpan."))return;
+ const {error}=await supabaseClient.from("business_partners").update({is_active:false}).eq("id",id);
+ if(error){alert("Gagal menonaktifkan mitra: "+error.message);return;}
+ await loadOfftakerPartners();
+}
+function setupOfftakerPartnerRegistry(){
+ const root=document.getElementById("offtakerContent");
+ if(!root||document.getElementById("offtakerPartnerRegistry"))return;
+ const section=document.createElement("div");
+ section.id="offtakerPartnerRegistry";
+ section.className="offtaker-panel";
+ section.innerHTML=`
+  <div class="offtaker-toolbar">
+   <div><h3>Data Mitra Offtaker</h3><p>Daftar perusahaan, distributor, pabrik, dan pembeli mitra KDMP.</p></div>
+   <div class="offtaker-toolbar-actions">${offtakerCanManagePartners()?'<button type="button" class="offtaker-btn offtaker-btn-primary" id="offtakerAddPartner">+ Tambah Mitra</button>':''}</div>
+  </div>
+  <div class="offtaker-toolbar" style="margin-top:15px">
+   <input class="offtaker-search" id="offtakerPartnerSearch" type="search" placeholder="Cari nama, PIC, telepon, komoditas...">
+   <select class="offtaker-search" id="offtakerPartnerFilter" style="width:auto"><option value="aktif">Mitra Aktif</option><option value="nonaktif">Mitra Nonaktif</option><option value="semua">Semua Mitra</option></select>
+  </div>
+  <div class="offtaker-table-wrap"><table class="offtaker-table">
+   <thead><tr><th>Nama Mitra</th><th>Kontak PIC</th><th>Komoditas Diminati</th><th>Status</th><th>Aksi</th></tr></thead>
+   <tbody id="offtakerPartnerRows"><tr><td colspan="5">Memuat data...</td></tr></tbody>
+  </table></div>
+  <div class="offtaker-form-help" style="margin-top:10px">Tombol Lihat membuka detail mitra dalam modal. Mitra yang dinonaktifkan tidak dihapus dan riwayatnya tetap tersimpan.</div>`;
+ root.appendChild(section);
+ const add=document.getElementById("offtakerAddPartner");
+ if(add)add.addEventListener("click",()=>showOfftakerPartnerForm());
+ document.getElementById("offtakerPartnerSearch").addEventListener("input",event=>{offtakerPartnerSearch=event.target.value;renderOfftakerPartnerRows();});
+ document.getElementById("offtakerPartnerFilter").addEventListener("change",event=>{offtakerPartnerFilter=event.target.value;renderOfftakerPartnerRows();});
+ section.addEventListener("click",event=>{
+  const button=event.target.closest("[data-offtaker-action]");
+  if(!button)return;
+  const id=button.dataset.id;
+  if(button.dataset.offtakerAction==="view")showOfftakerPartnerDetail(id);
+  if(button.dataset.offtakerAction==="edit")showOfftakerPartnerForm(id);
+  if(button.dataset.offtakerAction==="disable")deactivateOfftakerPartner(id);
+ });
+ loadOfftakerPartners();
+}
+
+const kdmpShowPageBeforeOfftakerRegistry=window.showPage;
+window.showPage=function(page,button){
+ const result=kdmpShowPageBeforeOfftakerRegistry(page,button);
+ if(page==="offtaker"){
+  setupOfftakerPartnerRegistry();
+  const registry=document.getElementById("offtakerPartnerRegistry");
+  if(registry)registry.style.display="block";
+ }
+ return result;
+};
