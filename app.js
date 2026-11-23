@@ -1506,7 +1506,7 @@ async function openBalanceAccountDetail(accountId,endDate) {
     const pageSize=500;
     while(true) {
       const {data,error}=await supabaseClient.from("journal_lines")
-        .select("account_id,journal_id,debit,kredit,journal_entries!inner(tanggal,nomor_jurnal,keterangan,status)")
+        .select("account_id,journal_id,debit,kredit,journal_entries!inner(id,tanggal,nomor_jurnal,keterangan,status)")
         .eq("account_id",accountId)
         .eq("journal_entries.status","posted")
         .lte("journal_entries.tanggal",endDate)
@@ -7815,6 +7815,7 @@ function filterExportDate(rows, fields, start, end) {
 }
 
 async function buildKDMPReport(type,start,end) {
+  await getTestDataRegistry();
   const emptySheet = (name, rows, message) => ({
     name,
     rows: rows.length ? rows : [{ Informasi: message || "Tidak ada data pada periode yang dipilih." }]
@@ -7832,7 +7833,7 @@ async function buildKDMPReport(type,start,end) {
       .lte("journal_entries.tanggal",end);
     if (error) throw error;
 
-    let rows = (data || []).filter(line => line.journal_entries?.status === "posted");
+    let rows = excludeTestJournalLines((data || []).filter(line => line.journal_entries?.status === "posted"));
     if (type === "hpp") {
       rows = rows.filter(line => /harga pokok|hpp/i.test(
         (line.accounts?.nama_akun || "") + " " + (line.accounts?.kode_akun || "")
@@ -7857,15 +7858,15 @@ async function buildKDMPReport(type,start,end) {
 
   if (type === "kas") {
     const [transactions,reconciliations] = await Promise.all([
-      fetchExportTable("financial_transactions", "tanggal,jenis,nominal,keterangan,akun_kas_id,akun_lawan_id,journal_id"),
+      fetchExportTable("financial_transactions", "id,tanggal,jenis,nominal,keterangan,akun_kas_id,akun_lawan_id,journal_id"),
       fetchExportTable("bank_reconciliations", "*")
     ]);
-    const tx = filterExportDate(transactions,["tanggal"],start,end).map(x => ({
+    const tx = filterExportDate(excludeTestRows(transactions,"financial_transactions"),["tanggal"],start,end).map(x => ({
       Tanggal:x.tanggal, Jenis:x.jenis, Keterangan:x.keterangan || "",
       Nominal:Number(x.nominal || 0), ID_Akun_Kas:x.akun_kas_id || "",
       ID_Akun_Lawan:x.akun_lawan_id || "", ID_Jurnal:x.journal_id || ""
     }));
-    const rec = (reconciliations || []).filter(x =>
+    const rec = excludeTestRows(reconciliations,"bank_reconciliations").filter(x =>
       String(x.period_start || "") <= end && String(x.period_end || "") >= start
     );
     const recIds = rec.map(x => x.id);
@@ -7874,7 +7875,7 @@ async function buildKDMPReport(type,start,end) {
       const {data,error} = await supabaseClient.from("bank_reconciliation_items")
         .select("*").in("reconciliation_id",recIds);
       if (error) throw error;
-      items = (data || []).filter(x => x.transaction_date >= start && x.transaction_date <= end);
+      items = excludeTestRows(data,"bank_reconciliation_items").filter(x => x.transaction_date >= start && x.transaction_date <= end);
     }
     return [
       emptySheet("Transaksi Kas",tx),
@@ -7892,13 +7893,13 @@ async function buildKDMPReport(type,start,end) {
 
   if (type === "invoice") {
     const invoices = await fetchExportTable("invoices", "*");
-    const rows = filterExportDate(invoices,["issue_date"],start,end);
+    const rows = filterExportDate(excludeTestRows(invoices,"invoices"),["issue_date"],start,end);
     const ids = rows.map(x => x.id);
     let items = [];
     if (ids.length) {
       const {data,error} = await supabaseClient.from("invoice_items").select("*").in("invoice_id",ids);
       if (error) throw error;
-      items = data || [];
+      items = excludeTestRows(data,"invoice_items");
     }
     return [
       emptySheet("Invoice",rows.map(x => ({
@@ -7951,16 +7952,16 @@ async function buildKDMPReport(type,start,end) {
 
   if (type === "simpanan") {
     const [savings,loans,installments,payments] = await Promise.all([
-      fetchExportTable("member_savings_transactions", "transaction_number,member_id,transaction_date,savings_type,transaction_type,amount,payment_method,notes"),
-      fetchExportTable("member_loans", "loan_number,member_id,application_date,principal_amount,term_months,monthly_interest_rate,status"),
-      fetchExportTable("loan_installments", "loan_id,installment_number,due_date,principal_due,service_due,total_due,paid_amount,status"),
-      fetchExportTable("loan_installment_payments", "payment_number,installment_id,amount,payment_date,payment_method,notes")
+      fetchExportTable("member_savings_transactions", "id,transaction_number,member_id,transaction_date,savings_type,transaction_type,amount,payment_method,notes"),
+      fetchExportTable("member_loans", "id,loan_number,member_id,application_date,principal_amount,term_months,monthly_interest_rate,status"),
+      fetchExportTable("loan_installments", "id,loan_id,installment_number,due_date,principal_due,service_due,total_due,paid_amount,status"),
+      fetchExportTable("loan_installment_payments", "id,payment_number,installment_id,amount,payment_date,payment_method,notes")
     ]);
-    const fs = filterExportDate(savings,["transaction_date"],start,end);
-    const fl = filterExportDate(loans,["application_date"],start,end);
-    const fi = filterExportDate(installments,["due_date"],start,end);
+    const fs = filterExportDate(excludeTestRows(savings,"member_savings_transactions"),["transaction_date"],start,end);
+    const fl = filterExportDate(excludeTestRows(loans,"member_loans"),["application_date"],start,end);
+    const fi = filterExportDate(excludeTestRows(installments,"loan_installments"),["due_date"],start,end);
     const installmentIds = new Set(fi.map(x => x.id));
-    const fp = filterExportDate(payments,["payment_date"],start,end);
+    const fp = filterExportDate(excludeTestRows(payments,"loan_installment_payments"),["payment_date"],start,end);
     return [
       emptySheet("Transaksi Simpanan",fs.map(x => ({ Nomor:x.transaction_number, ID_Anggota:x.member_id,
         Tanggal:x.transaction_date, Jenis_Simpanan:x.savings_type, Transaksi:x.transaction_type,
@@ -7981,11 +7982,11 @@ async function buildKDMPReport(type,start,end) {
   if (type === "persediaan") {
     const [products,movements] = await Promise.all([
       fetchExportTable("inventory_products", "id,product_code,product_name,category,unit,current_stock,purchase_price,selling_price,minimum_stock,is_active"),
-      fetchExportTable("inventory_movements", "movement_number,product_id,movement_type,quantity,stock_before,stock_after,unit_cost,movement_date,reference_number,notes")
+      fetchExportTable("inventory_movements", "id,movement_number,product_id,movement_type,quantity,stock_before,stock_after,unit_cost,movement_date,reference_number,notes")
     ]);
     const activeProducts = products.filter(x => x.is_active !== false);
     const productMap = new Map(activeProducts.map(x => [x.id,x]));
-    const periodMovements = filterExportDate(movements,["movement_date"],start,end);
+    const periodMovements = filterExportDate(excludeTestRows(movements,"inventory_movements"),["movement_date"],start,end);
     return [
       emptySheet("Mutasi Persediaan",periodMovements.map(x => {
         const product = productMap.get(x.product_id) || {};
