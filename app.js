@@ -1817,6 +1817,164 @@ async function loadIncomeStatement() {
 }
 
 // ==========================================
+// LAPORAN BULANAN KDMP
+// ==========================================
+function setupMonthlyReport(){
+  const page=document.getElementById("modulePage");
+  if(!page||document.getElementById("monthlyReportContent"))return;
+  const section=document.createElement("section");
+  section.id="monthlyReportContent";
+  section.className="erp-content";
+  section.innerHTML=
+    '<style>'+
+    '#monthlyReportContent{display:grid;gap:16px}'+
+    '.monthly-toolbar,.monthly-panel,.monthly-card{background:#fff;border:1px solid #e9e9e9;border-radius:12px;padding:16px}'+
+    '.monthly-toolbar{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}'+
+    '.monthly-toolbar label{display:block;font-size:13px;font-weight:650;margin-bottom:7px}'+
+    '.monthly-toolbar input{padding:10px;border:1px solid #ddd;border-radius:8px;font:inherit}'+
+    '.monthly-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}'+
+    '.monthly-card small{display:block;color:#777;margin-bottom:8px}.monthly-card strong{font-size:18px;overflow-wrap:anywhere}'+
+    '.monthly-sub{display:block;color:#888;font-size:11px;margin-top:6px}'+
+    '.monthly-panel h3{margin:0 0 8px}.monthly-panel p{color:#777;font-size:12px;line-height:1.5}'+
+    '.monthly-table-wrap{overflow-x:auto}.monthly-table{width:100%;border-collapse:collapse;min-width:500px}'+
+    '.monthly-table th,.monthly-table td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:12px}'+
+    '.monthly-table th{background:#fafafa;color:#666}.monthly-right{text-align:right!important}'+
+    '.monthly-button{border:0;border-radius:8px;background:#a71925;color:white;padding:11px 15px;font-weight:650;cursor:pointer}'+
+    '.monthly-button:disabled{opacity:.6}.monthly-note{padding:12px;border-radius:8px;background:#fff8e8;border:1px solid #f1dfb7;color:#75551c;font-size:12px;line-height:1.5}'+
+    '@media(max-width:800px){.monthly-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
+    '@media(max-width:480px){.monthly-card{padding:12px}.monthly-card strong{font-size:15px}}'+
+    '@media print{#monthlyReportContent .monthly-toolbar button{display:none}}'+
+    '</style>'+
+    '<div class="monthly-toolbar"><div><label for="monthlyReportPeriod">Periode laporan</label><input type="month" id="monthlyReportPeriod"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="monthly-button" id="monthlyReportRefresh">Tampilkan Laporan</button><button class="monthly-button" id="monthlyReportPrint" style="background:#334155">Cetak / Simpan PDF</button></div></div>'+
+    '<div id="monthlyReportMessage" class="erp-message erp-muted">Pilih periode untuk memuat laporan.</div>'+
+    '<h3>Ringkasan Keuangan</h3><div class="monthly-grid">'+
+    '<div class="monthly-card"><small>Pendapatan Tercatat</small><strong id="monthlyIncome">Rp0</strong><span class="monthly-sub">Jurnal posted</span></div>'+
+    '<div class="monthly-card"><small>Beban Tercatat</small><strong id="monthlyExpense">Rp0</strong><span class="monthly-sub">Jurnal posted</span></div>'+
+    '<div class="monthly-card"><small>Surplus / Defisit</small><strong id="monthlySurplus">Rp0</strong><span class="monthly-sub">Pendapatan dikurangi beban</span></div>'+
+    '<div class="monthly-card"><small>Saldo Kas & Bank</small><strong id="monthlyCash">Rp0</strong><span class="monthly-sub">Saldo sampai akhir periode</span></div></div>'+
+    '<h3>Aktivitas Operasional</h3><div class="monthly-grid">'+
+    '<div class="monthly-card"><small>Penjualan Toko</small><strong id="monthlyStoreSales">Rp0</strong><span class="monthly-sub" id="monthlyStoreCount">0 transaksi</span></div>'+
+    '<div class="monthly-card"><small>Invoice Penjualan</small><strong id="monthlyInvoiceSales">Rp0</strong><span class="monthly-sub" id="monthlyInvoiceSalesCount">0 invoice</span></div>'+
+    '<div class="monthly-card"><small>Invoice Pembelian</small><strong id="monthlyInvoicePurchases">Rp0</strong><span class="monthly-sub" id="monthlyInvoicePurchasesCount">0 invoice</span></div>'+
+    '<div class="monthly-card"><small>Nilai Persediaan</small><strong id="monthlyStockValue">Rp0</strong><span class="monthly-sub" id="monthlyStockCount">0 barang</span></div>'+
+    '<div class="monthly-card"><small>Setoran Simpanan</small><strong id="monthlySavings">Rp0</strong><span class="monthly-sub">Pada periode ini</span></div>'+
+    '<div class="monthly-card"><small>Pinjaman Dicairkan</small><strong id="monthlyLoans">Rp0</strong><span class="monthly-sub" id="monthlyLoanCount">0 pencairan</span></div>'+
+    '<div class="monthly-card"><small>Mitra Offtaker Aktif</small><strong id="monthlyOfftaker">0</strong><span class="monthly-sub">Jumlah mitra terdaftar</span></div>'+
+    '<div class="monthly-card"><small>Aktivitas Operasional</small><strong id="monthlyActivities">0</strong><span class="monthly-sub">Catatan kegiatan</span></div></div>'+
+    '<div class="monthly-panel"><h3>Rincian Pendapatan & Beban</h3><p>Rincian akun dari jurnal berstatus posted pada periode terpilih.</p><div class="monthly-table-wrap"><table class="monthly-table"><thead><tr><th>Kode Akun</th><th>Nama Akun</th><th class="monthly-right">Pendapatan</th><th class="monthly-right">Beban</th></tr></thead><tbody id="monthlyAccountBody"><tr><td colspan="4">Belum dimuat.</td></tr></tbody></table></div></div>'+
+    '<div class="monthly-panel"><h3>Aktivitas Terbaru</h3><p>Catatan kegiatan operasional pada periode terpilih.</p><div class="monthly-table-wrap"><table class="monthly-table"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Aktivitas</th><th>Status</th></tr></thead><tbody id="monthlyActivityBody"><tr><td colspan="4">Belum dimuat.</td></tr></tbody></table></div></div>'+
+    '<div class="monthly-note">Pendapatan dan beban bersumber dari jurnal posted. Penjualan toko dan invoice ditampilkan sebagai indikator operasional dan tidak ditambahkan lagi ke pendapatan jurnal agar tidak terjadi penghitungan ganda. Nilai persediaan memakai current_stock × harga beli. Offtaker saat ini baru menampilkan jumlah mitra karena transaksi Offtaker belum memiliki tabel transaksi terintegrasi. Data transaksi UMKM belum tersedia di database.</div>';
+  page.appendChild(section);
+  const now=new Date();
+  document.getElementById("monthlyReportPeriod").value=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  document.getElementById("monthlyReportRefresh").addEventListener("click",loadMonthlyReport);
+  document.getElementById("monthlyReportPrint").addEventListener("click",()=>window.print());
+}
+
+async function loadMonthlyReport(){
+  const period=document.getElementById("monthlyReportPeriod")?.value;
+  const message=document.getElementById("monthlyReportMessage");
+  const button=document.getElementById("monthlyReportRefresh");
+  if(!period||!message||!button)return;
+  const parts=period.split("-").map(Number),year=parts[0],month=parts[1];
+  const start=period+"-01";
+  const end=new Date(year,month,0).toISOString().slice(0,10);
+  const nextStart=new Date(year,month,1).toISOString().slice(0,10);
+  const setText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
+  const read=async(label,query)=>{
+    const result=await query;
+    if(result.error){console.warn("Laporan bulanan - "+label,result.error);return {data:null,error:result.error};}
+    return {data:result.data||[],error:null};
+  };
+  message.textContent="Mengambil data laporan "+period+"...";
+  message.className="erp-message erp-muted";
+  button.disabled=true;button.textContent="Memuat...";
+  try{
+    const results=await Promise.all([
+      read("akun",supabaseClient.from("accounts").select("id,kode_akun,nama_akun,kategori,saldo_normal").eq("aktif",true)),
+      read("jurnal periode",supabaseClient.from("journal_lines").select("account_id,debit,kredit,journal_entries!inner(tanggal,status)").eq("journal_entries.status","posted").gte("journal_entries.tanggal",start).lte("journal_entries.tanggal",end)),
+      read("saldo kas",supabaseClient.from("journal_lines").select("account_id,debit,kredit,journal_entries!inner(tanggal,status)").eq("journal_entries.status","posted").lte("journal_entries.tanggal",end)),
+      read("penjualan toko",supabaseClient.from("store_sales").select("id,total,sale_date,status").eq("status","selesai").gte("sale_date",start+"T00:00:00").lt("sale_date",nextStart+"T00:00:00")),
+      read("invoice",supabaseClient.from("invoices").select("id,invoice_type,total,paid_amount,issue_date").gte("issue_date",start).lte("issue_date",end)),
+      read("persediaan",supabaseClient.from("inventory_products").select("id,current_stock,purchase_price,is_active").eq("is_active",true)),
+      read("simpanan",supabaseClient.from("member_savings_transactions").select("amount,transaction_type,transaction_date").eq("transaction_type","setoran").gte("transaction_date",start+"T00:00:00").lt("transaction_date",nextStart+"T00:00:00")),
+      read("pinjaman",supabaseClient.from("member_loans").select("id,principal_amount,disbursed_at,status").eq("status","dicairkan").gte("disbursed_at",start+"T00:00:00").lt("disbursed_at",nextStart+"T00:00:00")),
+      read("mitra Offtaker",supabaseClient.from("business_partners").select("id").eq("is_offtaker",true).eq("is_active",true)),
+      read("aktivitas",supabaseClient.from("operational_daily_logs").select("id,activity_date,activity_type,title,status").gte("activity_date",start).lte("activity_date",end).order("activity_date",{ascending:false}).limit(30))
+    ]);
+    const [ar,jr,cr,sr,ir,pr,svr,lr,orr,actr]=results;
+    const accounts=ar.data||[];
+    const accountMap=new Map(accounts.map(a=>[a.id,a]));
+    const totals=new Map(accounts.map(a=>[a.id,{income:0,expense:0}]));
+    (jr.data||[]).forEach(line=>{
+      const a=accountMap.get(line.account_id);if(!a)return;
+      const debit=Number(line.debit||0),credit=Number(line.kredit||0);
+      const balance=String(a.saldo_normal||"").toLowerCase()==="kredit"?credit-debit:debit-credit;
+      const t=totals.get(a.id);
+      if(a.kategori==="pendapatan")t.income+=balance;
+      if(a.kategori==="beban")t.expense+=balance;
+    });
+    const rows=accounts.map(a=>Object.assign({},a,totals.get(a.id)||{income:0,expense:0})).filter(a=>(a.kategori==="pendapatan"&&a.income!==0)||(a.kategori==="beban"&&a.expense!==0));
+    const income=rows.reduce((sum,a)=>sum+(a.kategori==="pendapatan"?a.income:0),0);
+    const expense=rows.reduce((sum,a)=>sum+(a.kategori==="beban"?a.expense:0),0);
+    setText("monthlyIncome",formatRupiah(income));
+    setText("monthlyExpense",formatRupiah(expense));
+    setText("monthlySurplus",formatRupiah(income-expense));
+    const cashIds=new Set(accounts.filter(a=>a.kategori==="aset"&&/kas|bank/i.test(a.nama_akun||"")).map(a=>a.id));
+    const cash=(cr.data||[]).filter(l=>cashIds.has(l.account_id)).reduce((sum,l)=>sum+Number(l.debit||0)-Number(l.kredit||0),0);
+    setText("monthlyCash",formatRupiah(cash));
+    const sales=sr.data||[];
+    setText("monthlyStoreSales",formatRupiah(sales.reduce((sum,x)=>sum+Number(x.total||0),0)));
+    setText("monthlyStoreCount",sales.length+" transaksi selesai");
+    const invoices=ir.data||[],saleInvoices=invoices.filter(x=>x.invoice_type==="penjualan"),purchaseInvoices=invoices.filter(x=>x.invoice_type==="pembelian");
+    setText("monthlyInvoiceSales",formatRupiah(saleInvoices.reduce((sum,x)=>sum+Number(x.total||0),0)));
+    setText("monthlyInvoiceSalesCount",saleInvoices.length+" invoice");
+    setText("monthlyInvoicePurchases",formatRupiah(purchaseInvoices.reduce((sum,x)=>sum+Number(x.total||0),0)));
+    setText("monthlyInvoicePurchasesCount",purchaseInvoices.length+" invoice");
+    const products=pr.data||[];
+    setText("monthlyStockValue",formatRupiah(products.reduce((sum,x)=>sum+Number(x.current_stock||0)*Number(x.purchase_price||0),0)));
+    setText("monthlyStockCount",products.length+" jenis barang aktif");
+    const savings=svr.data||[];
+    setText("monthlySavings",formatRupiah(savings.reduce((sum,x)=>sum+Number(x.amount||0),0)));
+    const loans=lr.data||[];
+    setText("monthlyLoans",formatRupiah(loans.reduce((sum,x)=>sum+Number(x.principal_amount||0),0)));
+    setText("monthlyLoanCount",loans.length+" pencairan pada periode");
+    setText("monthlyOfftaker",(orr.data||[]).length);
+    const activities=actr.data||[];
+    setText("monthlyActivities",activities.length);
+    const accountBody=document.getElementById("monthlyAccountBody");
+    if(accountBody){
+      accountBody.replaceChildren();
+      if(!rows.length)accountBody.innerHTML='<tr><td colspan="4">Belum ada jurnal pendapatan atau beban pada periode ini.</td></tr>';
+      rows.forEach(a=>{
+        const tr=document.createElement("tr");
+        [a.kode_akun,a.nama_akun,formatRupiah(a.income),formatRupiah(a.expense)].forEach((v,i)=>{const td=document.createElement("td");td.textContent=v;if(i>1)td.className="monthly-right";tr.appendChild(td);});
+        accountBody.appendChild(tr);
+      });
+    }
+    const activityBody=document.getElementById("monthlyActivityBody");
+    if(activityBody){
+      activityBody.replaceChildren();
+      if(!activities.length)activityBody.innerHTML='<tr><td colspan="4">Belum ada catatan aktivitas pada periode ini.</td></tr>';
+      activities.forEach(a=>{
+        const tr=document.createElement("tr");
+        [a.activity_date,a.activity_type,a.title,a.status].forEach(v=>{const td=document.createElement("td");td.textContent=v||"-";tr.appendChild(td);});
+        activityBody.appendChild(tr);
+      });
+    }
+    const failed=results.filter(x=>x.error).length;
+    message.textContent=failed?"Laporan dimuat sebagian. "+failed+" sumber data gagal dibaca; periksa hak akses atau koneksi tabel.":"Laporan berhasil dimuat untuk "+period+". Angka keuangan berasal dari jurnal posted.";
+    message.className=failed?"erp-message erp-error":"erp-message erp-success";
+  }catch(error){
+    console.error("Laporan bulanan gagal:",error);
+    message.textContent="Gagal memuat laporan bulanan: "+(error.message||"Kesalahan tidak diketahui");
+    message.className="erp-message erp-error";
+  }finally{
+    button.disabled=false;button.textContent="Tampilkan Laporan";
+  }
+}
+
+// ==========================================
 // NAVIGASI
 // ==========================================
 function showPage(page,button) {
@@ -1840,7 +1998,8 @@ function showPage(page,button) {
       coa:"coaContent",
       jurnal:"journalContent",
       "buku-besar":"ledgerContent",
-      laporan:"reportContent"
+      laporan:"reportContent",
+      bulanan:"monthlyReportContent"
     };
 
     Object.entries(visibility).forEach(([key,id])=>{
@@ -1853,6 +2012,7 @@ function showPage(page,button) {
     if(page==="jurnal"){setupJournal();loadJournalHistory();}
     if(page==="buku-besar"){setupLedger();if(document.getElementById("ledgerAccount")?.value)loadLedger();}
     if(page==="laporan"){setupReports();loadIncomeStatement();loadBalanceSheet();loadCashFlow();}
+    if(page==="bulanan"){setupMonthlyReport();loadMonthlyReport();}
   }
 
   document.querySelectorAll(".menu button").forEach(element=>element.classList.remove("active"));
