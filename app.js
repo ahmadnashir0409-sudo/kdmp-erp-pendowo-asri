@@ -29,6 +29,29 @@ let financialAccountsCache = [];
 let journalRowCount = 0;
 let financialType = "pemasukan";
 
+// Registry non-destruktif untuk memisahkan data uji dari data operasional.
+let testDataRegistryCache = null;
+async function getTestDataRegistry() {
+  if (testDataRegistryCache) return testDataRegistryCache;
+  const {data,error} = await supabaseClient.from("test_data_registry").select("source_table,record_id");
+  if (error) throw error;
+  const registry = new Map();
+  (data || []).forEach(row => {
+    if (!registry.has(row.source_table)) registry.set(row.source_table,new Set());
+    registry.get(row.source_table).add(String(row.record_id));
+  });
+  testDataRegistryCache = registry;
+  return registry;
+}
+function excludeTestRows(rows,sourceTable,idField="id") {
+  const excluded = testDataRegistryCache?.get(sourceTable) || new Set();
+  return (rows || []).filter(row => !excluded.has(String(row[idField] || "")));
+}
+function excludeTestJournalLines(rows) {
+  const excluded = testDataRegistryCache?.get("journal_entries") || new Set();
+  return (rows || []).filter(row => !excluded.has(String(row.journal_entries?.id || "")));
+}
+
 // CSS TAMBAHAN
 const style = document.createElement("style");
 style.textContent = `
@@ -227,7 +250,8 @@ async function getAllFinancialTransactions() {
     if (!data || data.length < pageSize) break;
     from += pageSize;
   }
-  return all;
+  await getTestDataRegistry();
+  return excludeTestRows(all,"financial_transactions");
 }
 
 async function getDashboardCashBalance() {
@@ -247,13 +271,15 @@ async function getDashboardCashBalance() {
   while (true) {
     const {data,error} = await supabaseClient
       .from("journal_lines")
-      .select("account_id,debit,kredit,journal_entries!inner(status)")
+      .select("account_id,debit,kredit,journal_entries!inner(id,status)")
       .in("account_id",accountIds)
       .eq("journal_entries.status","posted")
       .range(from,from+pageSize-1);
 
     if (error) throw error;
-    (data || []).forEach(line=>{
+    const registry = await getTestDataRegistry();
+    const testJournals = registry.get("journal_entries") || new Set();
+    (data || []).filter(line => !testJournals.has(String(line.journal_entries?.id || ""))).forEach(line=>{
       balance += Number(line.debit || 0) - Number(line.kredit || 0);
     });
     if (!data || data.length < pageSize) break;
@@ -1893,17 +1919,24 @@ async function loadMonthlyReport(){
   try{
     const results=await Promise.all([
       read("akun",supabaseClient.from("accounts").select("id,kode_akun,nama_akun,kategori,saldo_normal").eq("aktif",true)),
-      read("jurnal periode",supabaseClient.from("journal_lines").select("account_id,debit,kredit,journal_entries!inner(tanggal,status)").eq("journal_entries.status","posted").gte("journal_entries.tanggal",start).lte("journal_entries.tanggal",end)),
-      read("saldo kas",supabaseClient.from("journal_lines").select("account_id,debit,kredit,journal_entries!inner(tanggal,status)").eq("journal_entries.status","posted").lte("journal_entries.tanggal",end)),
+      read("jurnal periode",supabaseClient.from("journal_lines").select("account_id,debit,kredit,journal_entries!inner(id,tanggal,status)").eq("journal_entries.status","posted").gte("journal_entries.tanggal",start).lte("journal_entries.tanggal",end)),
+      read("saldo kas",supabaseClient.from("journal_lines").select("account_id,debit,kredit,journal_entries!inner(id,tanggal,status)").eq("journal_entries.status","posted").lte("journal_entries.tanggal",end)),
       read("penjualan toko",supabaseClient.from("store_sales").select("id,total,sale_date,status").eq("status","selesai").gte("sale_date",start+"T00:00:00").lt("sale_date",nextStart+"T00:00:00")),
       read("invoice",supabaseClient.from("invoices").select("id,invoice_type,total,paid_amount,issue_date").gte("issue_date",start).lte("issue_date",end)),
       read("persediaan",supabaseClient.from("inventory_products").select("id,current_stock,purchase_price,is_active").eq("is_active",true)),
-      read("simpanan",supabaseClient.from("member_savings_transactions").select("amount,transaction_type,transaction_date").eq("transaction_type","setoran").gte("transaction_date",start+"T00:00:00").lt("transaction_date",nextStart+"T00:00:00")),
+      read("simpanan",supabaseClient.from("member_savings_transactions").select("id,amount,transaction_type,transaction_date").eq("transaction_type","setoran").gte("transaction_date",start+"T00:00:00").lt("transaction_date",nextStart+"T00:00:00")),
       read("pinjaman",supabaseClient.from("member_loans").select("id,principal_amount,disbursed_at,status").eq("status","dicairkan").gte("disbursed_at",start+"T00:00:00").lt("disbursed_at",nextStart+"T00:00:00")),
       read("mitra Offtaker",supabaseClient.from("business_partners").select("id").eq("is_offtaker",true).eq("is_active",true)),
       read("aktivitas",supabaseClient.from("operational_daily_logs").select("id,activity_date,activity_type,title,status").gte("activity_date",start).lte("activity_date",end).order("activity_date",{ascending:false}).limit(30))
     ]);
     const [ar,jr,cr,sr,ir,pr,svr,lr,orr,actr]=results;
+    await getTestDataRegistry();
+    jr.data=excludeTestJournalLines(jr.data);
+    cr.data=excludeTestJournalLines(cr.data);
+    sr.data=excludeTestRows(sr.data,"store_sales");
+    ir.data=excludeTestRows(ir.data,"invoices");
+    svr.data=excludeTestRows(svr.data,"member_savings_transactions");
+    lr.data=excludeTestRows(lr.data,"member_loans");
     const accounts=ar.data||[];
     const accountMap=new Map(accounts.map(a=>[a.id,a]));
     const totals=new Map(accounts.map(a=>[a.id,{income:0,expense:0}]));
@@ -7114,25 +7147,25 @@ async function loadManagerDashboardCards() {
         .select("id,total_due,paid_amount,status,due_date")
         .neq("status", "lunas"),
       supabaseClient.from("member_loans")
-        .select("id", { count: "exact", head: true })
+        .select("id,status")
         .eq("status", "diajukan"),
       supabaseClient.from("journal_entries")
-        .select("id", { count: "exact", head: true })
+        .select("id,status")
         .eq("status", "draft"),
       supabaseClient.from("store_sales")
-        .select("sale_number,total,status")
+        .select("id,sale_number,total,status")
         .eq("status", "selesai"),
       supabaseClient.from("store_sale_items")
-        .select("sale_id,product_id"),
+        .select("id,sale_id,product_id"),
       supabaseClient.from("inventory_movements")
-        .select("reference_number"),
+        .select("id,reference_number"),
       supabaseClient.from("journal_entries")
-        .select("nomor_jurnal,keterangan")
+        .select("id,nomor_jurnal,keterangan")
         .eq("status", "posted"),
       supabaseClient.from("invoice_payments")
         .select("id"),
       supabaseClient.from("member_loans")
-        .select("loan_number,status,disbursement_method")
+        .select("id,loan_number,status,disbursement_method")
         .eq("status", "dicairkan")
     ]);
 
@@ -7140,7 +7173,17 @@ async function loadManagerDashboardCards() {
       if (result.error) throw result.error;
     }
 
-    const installments = results[0].data || [];
+    await getTestDataRegistry();
+    const installments = excludeTestRows(results[0].data,"loan_installments");
+    const pendingRows = excludeTestRows(results[1].data,"member_loans");
+    const draftRows = excludeTestRows(results[2].data,"journal_entries");
+    const sales = excludeTestRows(results[3].data,"store_sales");
+    const saleIds = new Set(sales.map(sale => String(sale.id)));
+    const saleItems = excludeTestRows(results[4].data,"store_sale_items").filter(item => saleIds.has(String(item.sale_id)));
+    const movementRefs = new Set(excludeTestRows(results[5].data,"inventory_movements").map(x => String(x.reference_number || "")));
+    const journals = excludeTestRows(results[6].data,"journal_entries");
+    const paymentRows = excludeTestRows(results[7].data,"invoice_payments");
+    const disbursedLoans = excludeTestRows(results[8].data,"member_loans");
     const today = todayDate();
     const unpaid = installments.filter(item =>
       Number(item.total_due || 0) > Number(item.paid_amount || 0)
@@ -7149,13 +7192,8 @@ async function loadManagerDashboardCards() {
       sum + Math.max(0, Number(item.total_due || 0) - Number(item.paid_amount || 0)), 0);
     const overdue = unpaid.filter(item => item.due_date && item.due_date < today).length;
 
-    const pending = results[1].count || 0;
-    const drafts = results[2].count || 0;
-
-    const sales = results[3].data || [];
-    const saleItems = results[4].data || [];
-    const movementRefs = new Set((results[5].data || []).map(x => String(x.reference_number || "")));
-    const journals = results[6].data || [];
+    const pending = pendingRows.length;
+    const drafts = draftRows.length;
     const missingSaleJournal = sales.filter(sale =>
       !journals.some(j => String(j.keterangan || "").includes(sale.sale_number))
     ).length;
@@ -7165,13 +7203,11 @@ async function loadManagerDashboardCards() {
     const missingProductLinks = saleItems.filter(item => !item.product_id).length;
 
     const journalNumbers = new Set((journals || []).map(j => String(j.nomor_jurnal || "").toUpperCase()));
-    const paymentRows = results[7].data || [];
     const missingPaymentJournals = paymentRows.filter(payment => {
       const key = String(payment.id || "").replaceAll("-", "").slice(0, 8).toUpperCase();
       return ![...journalNumbers].some(number => number.includes(key));
     }).length;
 
-    const disbursedLoans = results[8].data || [];
     const loansMissingMethod = disbursedLoans.filter(loan => !loan.disbursement_method).length;
 
     const anomalyCount = missingSaleJournal + missingSaleMovement +
