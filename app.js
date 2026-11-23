@@ -7110,83 +7110,99 @@ async function loadManagerDashboardCards() {
 
   try {
     const results = await Promise.all([
-      supabaseClient
-        .from("loan_installments")
+      supabaseClient.from("loan_installments")
         .select("id,total_due,paid_amount,status,due_date")
         .neq("status", "lunas"),
-
-      supabaseClient
-        .from("member_loans")
+      supabaseClient.from("member_loans")
         .select("id", { count: "exact", head: true })
         .eq("status", "diajukan"),
-
-      supabaseClient
-        .from("journal_entries")
+      supabaseClient.from("journal_entries")
         .select("id", { count: "exact", head: true })
-        .eq("status", "draft")
+        .eq("status", "draft"),
+      supabaseClient.from("store_sales")
+        .select("sale_number,total,status")
+        .eq("status", "selesai"),
+      supabaseClient.from("store_sale_items")
+        .select("sale_id,product_id"),
+      supabaseClient.from("inventory_movements")
+        .select("reference_number"),
+      supabaseClient.from("journal_entries")
+        .select("nomor_jurnal,keterangan")
+        .eq("status", "posted"),
+      supabaseClient.from("invoice_payments")
+        .select("id"),
+      supabaseClient.from("member_loans")
+        .select("loan_number,status,disbursement_method")
+        .eq("status", "dicairkan")
     ]);
 
-    const installmentResult = results[0];
-    const pendingResult = results[1];
-    const draftResult = results[2];
+    for (const result of results) {
+      if (result.error) throw result.error;
+    }
 
-    if (installmentResult.error) throw installmentResult.error;
-    if (pendingResult.error) throw pendingResult.error;
-    if (draftResult.error) throw draftResult.error;
-
-    const installments = installmentResult.data || [];
+    const installments = results[0].data || [];
     const today = todayDate();
-
     const unpaid = installments.filter(item =>
       Number(item.total_due || 0) > Number(item.paid_amount || 0)
     );
-
     const outstanding = unpaid.reduce((sum, item) =>
-      sum + Math.max(
-        0,
-        Number(item.total_due || 0) - Number(item.paid_amount || 0)
-      ), 0);
+      sum + Math.max(0, Number(item.total_due || 0) - Number(item.paid_amount || 0)), 0);
+    const overdue = unpaid.filter(item => item.due_date && item.due_date < today).length;
 
-    const overdue = unpaid.filter(item =>
-      item.due_date && item.due_date < today
+    const pending = results[1].count || 0;
+    const drafts = results[2].count || 0;
+
+    const sales = results[3].data || [];
+    const saleItems = results[4].data || [];
+    const movementRefs = new Set((results[5].data || []).map(x => String(x.reference_number || "")));
+    const journals = results[6].data || [];
+    const missingSaleJournal = sales.filter(sale =>
+      !journals.some(j => String(j.keterangan || "").includes(sale.sale_number))
     ).length;
+    const missingSaleMovement = sales.filter(sale =>
+      !movementRefs.has(String(sale.sale_number || ""))
+    ).length;
+    const missingProductLinks = saleItems.filter(item => !item.product_id).length;
 
-    const pending = pendingResult.count || 0;
-    const drafts = draftResult.count || 0;
-    const warnings = overdue + drafts;
+    const journalNumbers = new Set((journals || []).map(j => String(j.nomor_jurnal || "").toUpperCase()));
+    const paymentRows = results[7].data || [];
+    const missingPaymentJournals = paymentRows.filter(payment => {
+      const key = String(payment.id || "").replaceAll("-", "").slice(0, 8).toUpperCase();
+      return ![...journalNumbers].some(number => number.includes(key));
+    }).length;
+
+    const disbursedLoans = results[8].data || [];
+    const loansMissingMethod = disbursedLoans.filter(loan => !loan.disbursement_method).length;
+
+    const anomalyCount = missingSaleJournal + missingSaleMovement +
+      missingProductLinks + missingPaymentJournals + loansMissingMethod;
+    const warnings = overdue + drafts + anomalyCount;
 
     outstandingElement.textContent = formatRupiah(outstanding);
-    outstandingCountElement.textContent =
-      unpaid.length + " angsuran masih memiliki sisa tagihan";
-
+    outstandingCountElement.textContent = unpaid.length + " angsuran masih memiliki sisa tagihan";
     pendingElement.textContent = pending;
-
     warningElement.textContent = warnings;
     detailElement.textContent =
-      drafts + " jurnal draft • " + overdue + " angsuran terlambat";
+      drafts + " jurnal draft • " + overdue + " angsuran terlambat • " +
+      missingSaleJournal + " POS tanpa jurnal • " +
+      missingSaleMovement + " POS tanpa mutasi • " +
+      missingProductLinks + " detail POS tanpa produk • " +
+      missingPaymentJournals + " pembayaran invoice perlu pemeriksaan • " +
+      loansMissingMethod + " pencairan tanpa metode";
 
     if (messageElement) {
-      messageElement.textContent =
-        "Monitoring berhasil diperbarui.";
-      messageElement.style.color = "#18743b";
+      messageElement.textContent = "Monitoring diperbarui. Peringatan historis bersifat pemeriksaan; tidak ada data yang diubah.";
+      messageElement.style.color = anomalyCount > 0 ? "#a16207" : "#18743b";
     }
-
   } catch (error) {
     console.error("Monitoring dashboard:", error);
-
     outstandingElement.textContent = "Gagal";
     pendingElement.textContent = "Gagal";
     warningElement.textContent = "Gagal";
-
-    outstandingCountElement.textContent =
-      "Data tagihan belum dapat dibaca";
-
-    detailElement.textContent =
-      "Data pembukuan belum dapat dibaca";
-
+    outstandingCountElement.textContent = "Data tagihan belum dapat dibaca";
+    detailElement.textContent = "Audit pembukuan belum dapat dibaca";
     if (messageElement) {
-      messageElement.textContent =
-        "Monitoring gagal dimuat: " + (error.message || "Periksa koneksi database.");
+      messageElement.textContent = "Monitoring gagal dimuat: " + (error.message || "Periksa koneksi database.");
       messageElement.style.color = "#b91c2c";
     }
   }
