@@ -18,6 +18,7 @@ const modules = {
   offtaker: ["🤝", "Offtaker", "Pengelolaan mitra pembeli, permintaan komoditas, dan penyerapan hasil usaha KDMP."],
   umkm: ["🏪", "UMKM", "Pendataan dan pengembangan usaha mikro, kecil, dan menengah desa."],
   bulanan: ["📅", "Laporan Bulanan", "Rekapitulasi keuangan setiap bulan."],
+  "tutup-buku": ["🔒", "Tutup Buku", "Pemeriksaan dan penutupan periode akuntansi koperasi."],
   monitoring: ["🛡️", "Monitoring Manajer", "Pemantauan aktivitas dan kondisi keuangan."],
   "rumus-kamus": ["📚", "Rumus Excel & Kamus Akuntansi", "Pusat referensi rumus spreadsheet dan istilah akuntansi."],
   pengaturan: ["⚙️", "Pengaturan", "Pengaturan sistem dan pengguna."]
@@ -1975,6 +1976,40 @@ async function loadMonthlyReport(){
 }
 
 // ==========================================
+// TUTUP BUKU — FONDASI HALAMAN
+// ==========================================
+function setupClosingBook(){
+  const page=document.getElementById('modulePage');
+  if(!page||document.getElementById('closingBookContent'))return;
+  const section=document.createElement('section');
+  section.id='closingBookContent';
+  section.className='erp-content';
+  section.innerHTML=[
+    '<div class="erp-card" style="border-left:4px solid #b99751">',
+      '<h3>🔒 Pusat Tutup Buku</h3>',
+      '<p>Halaman ini disiapkan untuk pemeriksaan dan penutupan periode akuntansi KDMP.</p>',
+      '<div class="financial-note" style="margin-top:14px"><strong>Fitur belum diaktifkan.</strong> Belum ada periode yang dapat dikunci dan belum ada jurnal penutup yang dibuat dari halaman ini.</div>',
+    '</div>',
+    '<div class="report-summary">',
+      '<div class="report-card"><small>Status Periode</small><strong>Belum dikonfigurasi</strong></div>',
+      '<div class="report-card"><small>Pemeriksaan Jurnal</small><strong>Belum dijalankan</strong></div>',
+      '<div class="report-card"><small>Jurnal Penutup</small><strong>Belum tersedia</strong></div>',
+    '</div>',
+    '<div class="erp-card"><h3>Tahapan Tutup Buku</h3>',
+      '<ol style="line-height:1.9;padding-left:22px">',
+        '<li>Pilih periode bulanan atau tahunan.</li>',
+        '<li>Periksa jurnal, transaksi, dan saldo akun.</li>',
+        '<li>Tinjau hasil usaha dan pratinjau jurnal penutup.</li>',
+        '<li>Dapatkan persetujuan pejabat yang berwenang.</li>',
+        '<li>Posting jurnal penutup dan kunci periode dengan jejak audit.</li>',
+      '</ol>',
+      '<p class="erp-muted">Tutup buku hanya akan diaktifkan setelah validasi akuntansi, hak akses, dan prosedur pembukaan kembali selesai diuji. Tidak ada data atau jurnal historis yang diubah pada tahap ini.</p>',
+    '</div>'
+  ].join('');
+  page.appendChild(section);
+}
+
+// ==========================================
 // NAVIGASI
 // ==========================================
 function showPage(page,button) {
@@ -1999,7 +2034,8 @@ function showPage(page,button) {
       jurnal:"journalContent",
       "buku-besar":"ledgerContent",
       laporan:"reportContent",
-      bulanan:"monthlyReportContent"
+      bulanan:"monthlyReportContent",
+      "tutup-buku":"closingBookContent"
     };
 
     Object.entries(visibility).forEach(([key,id])=>{
@@ -2013,6 +2049,7 @@ function showPage(page,button) {
     if(page==="buku-besar"){setupLedger();if(document.getElementById("ledgerAccount")?.value)loadLedger();}
     if(page==="laporan"){setupReports();loadIncomeStatement();loadBalanceSheet();loadCashFlow();}
     if(page==="bulanan"){setupMonthlyReport();loadMonthlyReport();}
+    if(page==="tutup-buku"){setupClosingBook();}
   }
 
   document.querySelectorAll(".menu button").forEach(element=>element.classList.remove("active"));
@@ -9620,11 +9657,11 @@ const KDMP_ROLE_PAGES={
   manajer:["dashboard",...Object.keys(modules)],
   admin_keuangan:[
     "dashboard","keuangan","coa","jurnal","buku-besar","laporan",
-    "utang-piutang","bank","invoice","simpanan","bulanan","offtaker","umkm","rumus-kamus"
+    "utang-piutang","bank","invoice","simpanan","bulanan","tutup-buku","offtaker","umkm","rumus-kamus"
   ],
   kasir:["toko","rumus-kamus"],
   admin_gudang:["persediaan","rumus-kamus"],
-  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","offtaker","umkm","monitoring","rumus-kamus"]
+  pengurus:["dashboard","buku-besar","laporan","simpanan","bulanan","tutup-buku","offtaker","umkm","monitoring","rumus-kamus"]
 };
 
 function kdmpCanAccessPage(page,role=window.currentUser?.role){
