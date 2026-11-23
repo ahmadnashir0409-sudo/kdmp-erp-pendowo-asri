@@ -1905,8 +1905,10 @@ async function loadMonthlyReport(){
   if(!period||!message||!button)return;
   const parts=period.split("-").map(Number),year=parts[0],month=parts[1];
   const start=period+"-01";
-  const end=new Date(year,month,0).toISOString().slice(0,10);
-  const nextStart=new Date(year,month,1).toISOString().slice(0,10);
+  // Gunakan komponen tanggal lokal secara eksplisit agar tidak bergeser
+  // ke hari sebelumnya akibat konversi UTC dari toISOString() di zona WIB.
+  const end=period+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
+  const nextStart=year+"-"+String(month+1).padStart(2,"0")+"-01";
   const setText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value;};
   const read=async(label,query)=>{
     const result=await query;
